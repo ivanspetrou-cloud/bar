@@ -564,27 +564,29 @@ function labSettings(toggle) {
     const rows = h('div', { class: 'col tb-rows' });
     function draw(c) {
       rows.hidden = !c.on;
-      rows.replaceChildren(
-        h('div', { class: 'sw' }, h('span', {}, 'Поведение'), seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
-        c.mode === 'always' && h('div', { class: 'sw' }, h('span', {}, 'Резервировать место', h('span', { class: 'muted' }, ' · окна заканчиваются над таскбаром')), toggle(c.reserve, (v) => set({ reserve: v }))),
-        h('div', { class: 'sw' }, h('span', {}, 'Одинаковый размер на всех мониторах', h('span', { class: 'muted' }, ' · по сантиметрам, как на основном')), toggle(c.same !== false, (v) => set({ same: v }))),
+      const line = (label, ctl, title) => h('div', { class: 'sw tb-line', title: title || '' }, h('span', { class: 'tb-lbl' }, label), ctl);
+      rows.replaceChildren(...[
+        line('Поведение', seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v })),
+          c.mode === 'hide' ? 'Подведите мышь к нижнему краю — таскбар выедет' : 'Таскбар всегда виден; в полноэкранных видео и играх прячется сам'),
+        c.mode === 'always' ? line('Резервировать место', toggle(c.reserve, (v) => set({ reserve: v })), 'Развёрнутые окна заканчиваются над таскбаром') : null,
+        line('Одинаковый размер на мониторах', toggle(c.same !== false, (v) => set({ same: v })), 'По сантиметрам — как на основном мониторе'),
         // размер — отдельно для каждого монитора
-        ...(c.displays || []).map((m) => h('div', { class: 'sw' },
-          h('span', {}, `Размер на мониторе ${m.n}`, h('span', { class: 'muted' }, ` · ${m.w}×${m.h}${m.primary ? ', основной' : ''}`)),
-          seg([['s', 'S'], ['m', 'M'], ['l', 'L']], m.size, (v) => set({ sizes: { ...(c.sizes || {}), [m.id]: v } })))),
-        h('div', { class: 'sw' }, h('span', {}, 'Увеличение при наведении'), toggle(c.magnify, (v) => set({ magnify: v }))),
-        h('button', { class: 'btn sm', style: { alignSelf: 'flex-start' }, onclick: () => openTool('tbset') }, I('dock'), 'Закреплённые, кнопки и ярлыки…'),
-        h('div', { class: 'muted small tb-note' }, c.mode === 'hide'
-          ? 'Подведите мышь к нижнему краю экрана — таскбар выедет. Панель Windows спрятана, пока он включён.'
-          : c.reserve ? 'Развёрнутые окна заканчиваются над таскбаром. В полноэкранных видео и играх он прячется сам.'
-          : 'Таскбар всегда виден поверх окон, окна идут до самого низа экрана. В полноэкранных видео и играх он прячется сам.'));
+        ...(c.displays || []).map((m) => line(
+          h('span', {}, `Монитор ${m.n}`, h('span', { class: 'muted' }, ` · ${m.w}×${m.h}`)),
+          seg([['s', 'S'], ['m', 'M'], ['l', 'L']], m.size, (v) => set({ sizes: { ...(c.sizes || {}), [m.id]: v } })),
+          m.primary ? 'Основной монитор' : '')),
+        h('button', { class: 'sw tb-more', onclick: () => openTool('tbset') },
+          h('span', { class: 'tb-more-ic', html: icon('dock') }),
+          h('span', { class: 'tb-more-t' }, h('b', {}, 'Расширенные настройки таскбара'), h('span', { class: 'muted small' }, 'Закреплённые программы, кнопки, ярлыки, увеличение')),
+          h('span', { class: 'tb-more-go', html: icon('fwd') })),
+      ].filter(Boolean));
     }
     tbBox.replaceChildren(
-      h('div', { class: 'sw' }, h('span', {}, h('b', {}, 'Таскбар Bar'), h('span', { class: 'muted' }, ' · вместо панели задач Windows')), toggle(t.on, (v) => set({ on: v }))),
+      h('div', { class: 'sw tb-line', title: 'Вместо панели задач Windows' }, h('span', { class: 'tb-lbl' }, h('b', {}, 'Таскбар Bar')), toggle(t.on, (v) => set({ on: v }))),
       rows);
     draw(t);
   });
-  return h('div', { class: 'split' },
+  return h('div', { class: 'split', style: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } },
     h('div', { class: 'col' }, ...LAB_OPTS.map(row), chimeRow()),
     tbBox);
 }

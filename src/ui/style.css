@@ -884,7 +884,7 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 #island.alert { animation: alert 1.2s var(--soft) 4; }
 .chime-row .slider { flex: 1; min-width: 110px; margin-left: 8px; }
 .chime-row > span:first-child { white-space: nowrap; }
-.chime-v { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.chime-v { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
 .tb-rows { animation: slide .3s var(--soft); }
 .tb-note { padding: 2px var(--in); }
 
@@ -913,3 +913,16 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .tbs-right::-webkit-scrollbar { width: 6px; }
 .tbs-right::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
 .tbs-right::-webkit-scrollbar-button { display: none; height: 0; }
+
+/* настройки таскбара во вкладке «Дополнительно»: одна строка — одна настройка */
+.tb-line { min-height: 44px; }
+.tb-lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tb-more { width: 100%; border: 0; cursor: pointer; color: var(--fg); text-align: left; gap: 12px; justify-content: flex-start; transition: background .15s; }
+.tb-more:hover { background: var(--card-hi); }
+.tb-more:hover .tb-more-go { transform: translateX(3px); color: var(--fg); }
+.tb-more-ic { width: 32px; height: 32px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--acc) 22%, var(--ctl)); color: var(--acc-text); display: grid; place-items: center; flex: none; }
+.tb-more-ic svg.i { width: 18px; height: 18px; }
+.tb-more-t { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.tb-more-t .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-more-go { color: var(--mut); display: grid; transition: transform .2s var(--spring), color .15s; }
+.tb-more-go svg.i { width: 16px; height: 16px; }
