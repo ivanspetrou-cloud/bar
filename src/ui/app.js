@@ -391,7 +391,16 @@ const S = { layout: '', audio: null, media: null, net: null, bt: [], hid: [], bt
 // { имя: { level, t } } — последний удачный ответ устройства
 const devLast = store.get('devLast2', {});
 const FRESH = 10 * 60e3; // один пропущенный опрос не делает устройство «отключённым»
-function devList() {
+// устройства, скрытые в Настройках → Показатели (по имени): не видны в карточке, в нотче, в игре и в уведомлениях
+const devHidden = new Set(store.get('devHidden', []));
+function setDevShown(name, on) {
+  if (on) devHidden.delete(name); else devHidden.add(name);
+  store.set('devHidden', [...devHidden]);
+  renderBar();
+  const card = document.querySelector('#home .card.devs');
+  if (card && card._draw) card._draw();
+}
+function devList(all) {
   const hid = S.hid.map((x) => { const [name, level, con, chg, kind] = String(x).split('|'); return { name, level: +level, connected: con === '1', charging: chg === '1', kind }; });
   const list = [...hid, ...S.bt.map((d) => ({ ...d }))];
   let changed = false;
@@ -406,7 +415,7 @@ function devList() {
     else if (!d.connected && d.level > 0) d.last = d.level;
   }
   if (changed) store.set('devLast2', devLast);
-  return list;
+  return all ? list : list.filter((d) => !devHidden.has(d.name));
 }
 const liveHooks = new Set();
 let artUrl = '', artSrc = '';
@@ -1478,7 +1487,40 @@ tool({
       liveHooks.add(upd);
       body._cleanup = () => liveHooks.delete(upd);
       body.title = 'Показатели видны в свёрнутом нотче и в шапке панели. Опрашивается только то, что включено.';
-      body.append(grid);
+      body.append(grid, devPick());
+    }
+
+    // какие устройства показывать: все, что Bar видит сейчас или видел раньше
+    function devPick() {
+      const box = h('div', { class: 'dev-pick' });
+      const st = (d) => !d ? 'давно не на связи' : d.connected ? (d.level >= 0 ? d.level + '%' + (d.charging ? ' · заряжается' : '') : 'на связи') : 'нет связи' + (d.last != null ? ' · ' + d.last + '%' : '');
+      const draw = () => {
+        const cur = new Map(devList(true).map((d) => [d.name, d]));
+        const names = [...new Set([...cur.keys(), ...Object.keys(devLast), ...devHidden])].sort((a, b) => (!!cur.get(b) - !!cur.get(a)) || a.localeCompare(b));
+        const rows = [...box.querySelectorAll('.sw')];
+        if (rows.length && names.length === rows.length && rows.every((r, i) => r.dataset.n === names[i])) {
+          rows.forEach((r) => { const e = r.querySelector('.dev-st'); if (e) e.textContent = st(cur.get(r.dataset.n)); });
+          return;
+        }
+        const grid = h('div', { class: 'ind-grid' });
+        names.forEach((n, i) => {
+          const d = cur.get(n);
+          const row = h('div', { class: 'sw' + (devHidden.has(n) ? ' dev-off' : ''), 'data-n': n, title: n },
+            h('span', { class: 'dev-ic', html: icon(devIcon(n, d && d.kind)) }),
+            h('span', { class: 'ind-lbl' }, h('span', {}, n), h('span', { class: 'muted small dev-st' }, st(d))),
+            toggle(!devHidden.has(n), (v) => { setDevShown(n, v); row.classList.toggle('dev-off', !v); }));
+          row.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 320, delay: i * 30, easing: 'cubic-bezier(.3,1.2,.5,1)', fill: 'backwards' });
+          grid.append(row);
+        });
+        box.replaceChildren(h('div', { class: 'dev-pick-h' }, h('span', {}, 'Устройства'), h('span', { class: 'muted small' }, 'выключенные не показываются в нотче, на главной и в уведомлениях')),
+          names.length ? grid : h('div', { class: 'muted small' }, S.btLoaded ? 'Bar пока не нашёл устройств с зарядом.' : 'Ищу устройства…'));
+      };
+      draw();
+      const hook = (p) => { if ('bt' in p || 'hid' in p) draw(); };
+      liveHooks.add(hook);
+      const prev = body._cleanup;
+      body._cleanup = () => { liveHooks.delete(hook); if (prev) prev(); };
+      return box;
     }
 
     // YouTube Music — в вашем браузере, связь через расширение «Bar — YouTube Music»
