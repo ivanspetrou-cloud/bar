@@ -610,7 +610,7 @@ app.whenReady().then(() => {
   music = setupMusic({ send });
   setupUpdater({ send });
   game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats });
-  taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: () => { if (!win) return; send('open-tool', 'apps'); win.focus(); } });
+  taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: (id = 'apps') => { if (!win) return; send('open-tool', id); win.focus(); } });
   ipcMain.on('tb-search', () => openSearch());
   // то, что уже лежит в буфере при запуске, тоже попадает в историю
   loadClips().then(async () => {

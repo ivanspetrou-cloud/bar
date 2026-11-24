@@ -573,6 +573,7 @@ function labSettings(toggle) {
           h('span', {}, `Размер на мониторе ${m.n}`, h('span', { class: 'muted' }, ` · ${m.w}×${m.h}${m.primary ? ', основной' : ''}`)),
           seg([['s', 'S'], ['m', 'M'], ['l', 'L']], m.size, (v) => set({ sizes: { ...(c.sizes || {}), [m.id]: v } })))),
         h('div', { class: 'sw' }, h('span', {}, 'Увеличение при наведении'), toggle(c.magnify, (v) => set({ magnify: v }))),
+        h('button', { class: 'btn sm', style: { alignSelf: 'flex-start' }, onclick: () => openTool('tbset') }, I('dock'), 'Закреплённые, кнопки и ярлыки…'),
         h('div', { class: 'muted small tb-note' }, c.mode === 'hide'
           ? 'Подведите мышь к нижнему краю экрана — таскбар выедет. Панель Windows спрятана, пока он включён.'
           : c.reserve ? 'Развёрнутые окна заканчиваются над таскбаром. В полноэкранных видео и играх он прячется сам.'
@@ -587,6 +588,113 @@ function labSettings(toggle) {
     h('div', { class: 'col' }, ...LAB_OPTS.map(row), chimeRow()),
     tbBox);
 }
+// ============ 14. Настройки таскбара: закреплённые, кнопки, ярлыки ============
+// Открывается правым кликом по пустому месту дока или из Настройки → Дополнительно.
+Object.assign(LUCIDE, { dock: 'PanelBottom', up: 'ChevronUp', down: 'ChevronDown', grip2: 'GripVertical', recycle: 'Trash2', dl: 'Download', docs: 'FileText', pc: 'HardDrive', wset: 'Settings2', tmgr: 'Activity', fold: 'FolderPlus' });
+const TB_PLACES = [['recycle', 'Корзина', 'recycle'], ['downloads', 'Загрузки', 'dl'], ['documents', 'Документы', 'docs'], ['pc', 'Этот компьютер', 'pc'], ['settings', 'Параметры Windows', 'wset'], ['taskmgr', 'Диспетчер задач', 'tmgr']];
+const TB_TOOLS = ['timer', 'stopwatch', 'calendar', 'notes', 'calc', 'voice', 'clip', 'shelf', 'shot', 'color', 'ocr', 'qrscan', 'mirror', 'phone', 'system', 'text'];
+tool({
+  id: 'tbset', name: 'Таскбар', icon: 'dock', hidden: true,
+  height: () => 520,
+  view(el) {
+    let c = null;
+    const left = h('div', { class: 'col tbs-col' }), right = h('div', { class: 'col tbs-col tbs-right' });
+    el.append(h('div', { class: 'split tbs' }, left, right));
+    const set = async (patch) => { c = await bar.taskbarSet(patch); drawRight(); };
+
+    // ---- слева: закреплённые ----
+    const pins = () => store.get('dock', []) || [];
+    const savePins = (list) => { store.set('dock', list); Apps.dock = list; refreshDock && refreshDock(true); };
+    let picking = false, q = '';
+    function drawLeft(fresh) {
+      const list = pins();
+      const rows = h('div', { class: 'list tbs-pins' });
+      if (!list.length) rows.append(h('div', { class: 'muted small tbs-empty' }, 'Пока ничего не закреплено. Добавьте программы — они будут в доке всегда, даже закрытые.'));
+      list.forEach((a, i) => {
+        const img = h('img', { alt: '' });
+        const row = h('div', { class: 'item tbs-pin', draggable: 'true' },
+          h('span', { class: 'tbs-grip', html: icon('grip2') }), img, h('span', { class: 'txt' }, a.name),
+          h('button', { class: 'ib', title: 'Выше', disabled: i === 0 ? '' : null, onclick: () => move(i, -1) }, I('up')),
+          h('button', { class: 'ib', title: 'Ниже', disabled: i === list.length - 1 ? '' : null, onclick: () => move(i, 1) }, I('down')),
+          h('button', { class: 'ib', title: 'Открепить', onclick: () => { row.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(14px)' }], { duration: 180 }).onfinish = () => { savePins(pins().filter((x) => x.id !== a.id)); drawLeft(); }; } }, I('x')));
+        Apps.icon(a, img);
+        // перетаскивание строк — порядок в доке
+        row.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-pin', String(i)); row.classList.add('drag'); });
+        row.addEventListener('dragend', () => row.classList.remove('drag'));
+        row.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('text/x-pin')) { e.preventDefault(); row.classList.add('over'); } });
+        row.addEventListener('dragleave', () => row.classList.remove('over'));
+        row.addEventListener('drop', (e) => { e.preventDefault(); row.classList.remove('over'); const from = +e.dataTransfer.getData('text/x-pin'); if (from !== i) { const l = pins(); const [x] = l.splice(from, 1); l.splice(i, 0, x); savePins(l); drawLeft(); } });
+        if (fresh && i === list.length - 1) row.style.animation = 'pop .45s var(--spring) both';
+        rows.append(row);
+      });
+      const head = h('div', { class: 'row tbs-head' }, h('b', {}, 'Закреплённые'), h('span', { class: 'muted small' }, `${list.length} из 14`), h('span', { class: 'grow' }),
+        h('button', { class: 'btn sm' + (picking ? ' on' : ''), onclick: () => { picking = !picking; drawLeft(); } }, I(picking ? 'x' : 'plus'), picking ? 'Готово' : 'Добавить'));
+      left.replaceChildren(head, picking ? picker() : rows);
+    }
+    function move(i, d) { const l = pins(); const [x] = l.splice(i, 1); l.splice(i + d, 0, x); savePins(l); drawLeft(); }
+    // выбор программы из «Пуска» с поиском
+    function picker() {
+      const inp = h('input', { class: 'field', placeholder: 'Найти программу', value: q });
+      const list = h('div', { class: 'list tbs-pick' });
+      const fill = async () => {
+        const all = await Apps.load();
+        const have = new Set(pins().map((x) => x.id));
+        const nq = sNorm(q.trim());
+        const found = all.filter((a) => !have.has(a.id) && (!nq || sMatch(a.name, nq) > 0)).sort((x, y) => (nq ? sMatch(y.name, nq) - sMatch(x.name, nq) : 0) || x.name.localeCompare(y.name, 'ru')).slice(0, 60);
+        list.replaceChildren(...found.map((a) => {
+          const img = h('img', { alt: '' }); Apps.icon(a, img);
+          return h('div', { class: 'item', onclick: () => { const l = pins(); if (l.length >= 14) { flash('В доке до 14 программ'); return; } l.push({ id: a.id, name: a.name, exe: a.exe || '', lnk: a.lnk || '', uwp: a.uwp || '' }); savePins(l); flash(`${a.name} — в таскбаре`); fill(); } },
+            img, h('span', { class: 'txt' }, a.name), h('span', { class: 'ib', html: icon('plus') }));
+        }));
+        if (!found.length) list.append(h('div', { class: 'muted small tbs-empty' }, 'Ничего не нашлось'));
+      };
+      inp.addEventListener('input', () => { q = inp.value; fill(); });
+      setTimeout(() => inp.focus(), 50);
+      fill();
+      return h('div', { class: 'col', style: { flex: '1', minHeight: '0' } }, inp, list);
+    }
+
+    // ---- справа: кнопки, ярлыки, поведение ----
+    function drawRight() {
+      if (!c) return;
+      const sw = (name, on, fn, desc) => h('div', { class: 'sw' }, h('span', {}, name, desc ? h('span', { class: 'muted' }, ' · ' + desc) : null), toggleEl(on, fn));
+      const has = (x) => (c.extras || []).some((y) => (x.place && y.place === x.place) || (x.tool && y.tool === x.tool) || (x.path && y.path === x.path));
+      const flip = (x) => set({ extras: has(x) ? c.extras.filter((y) => !((x.place && y.place === x.place) || (x.tool && y.tool === x.tool) || (x.path && y.path === x.path))) : [...(c.extras || []), x] });
+      const chip = (x, label, ic) => h('button', { class: 'chip tbs-chip' + (has(x) ? ' on' : ''), onclick: () => flip(x) }, I(ic), label);
+      const folders = (c.extras || []).filter((x) => x.path);
+      right.replaceChildren(
+        h('b', { class: 'tbs-cap' }, 'Кнопки'),
+        h('div', { class: 'tbs-chips' },
+          h('button', { class: 'chip tbs-chip' + (c.btn.start ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, start: !c.btn.start } }) }, I('apps'), 'Приложения'),
+          h('button', { class: 'chip tbs-chip' + (c.btn.search ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, search: !c.btn.search } }) }, I('search'), 'Поиск'),
+          h('button', { class: 'chip tbs-chip' + (c.btn.desktop ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, desktop: !c.btn.desktop } }) }, I('minimize'), 'Свернуть всё'),
+          h('button', { class: 'chip tbs-chip' + (c.running ? ' on' : ''), onclick: () => set({ running: !c.running }) }, I('apps'), 'Открытые программы')),
+        h('b', { class: 'tbs-cap' }, 'Места Windows'),
+        h('div', { class: 'tbs-chips' }, ...TB_PLACES.map(([id, label, ic]) => chip({ place: id, name: label }, label, ic))),
+        h('b', { class: 'tbs-cap' }, 'Инструменты Bar'),
+        h('div', { class: 'tbs-chips' }, ...TB_TOOLS.filter((id) => TOOLS_BY_ID[id]).map((id) => chip({ tool: id, name: TOOLS_BY_ID[id].name }, TOOLS_BY_ID[id].short || TOOLS_BY_ID[id].name, TOOLS_BY_ID[id].icon))),
+        h('b', { class: 'tbs-cap' }, 'Папки'),
+        h('div', { class: 'tbs-chips' },
+          ...folders.map((x) => h('button', { class: 'chip tbs-chip on', title: x.path + ' — нажмите, чтобы убрать', onclick: () => flip(x) }, I('folder'), x.name)),
+          h('button', { class: 'chip tbs-chip add', onclick: async () => { const pth = await bar.pickFolder(); if (pth && !has({ path: pth })) set({ extras: [...(c.extras || []), { path: pth, name: pth.split(/[\\/]/).filter(Boolean).pop() || pth }] }); } }, I('fold'), 'Добавить папку')),
+        h('b', { class: 'tbs-cap' }, 'Поведение'),
+        h('div', { class: 'sw' }, h('span', {}, 'Таскбар'), segEl([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
+        sw('Увеличение при наведении', c.magnify, (v) => set({ magnify: v })),
+        h('div', { class: 'muted small' }, 'Размер на каждом мониторе — в Настройки → Дополнительно. Порядок программ — перетаскиванием слева.'));
+    }
+    const toggleEl = (on, fn) => { const b = h('button', { class: 'toggle' + (on ? ' on' : ''), role: 'switch', 'aria-checked': String(!!on) }); b.onclick = () => { b.classList.toggle('on'); fn(b.classList.contains('on')); }; return b; };
+    const segEl = (opts, val, fn) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', { class: v === val ? 'on' : '', onclick: () => fn(v) }, label)));
+
+    drawLeft();
+    bar.taskbarGet().then((x) => { c = x; drawRight(); });
+    // закрепили в доке нотча или в самом таскбаре — список обновится
+    const onStore = (e) => { if (e.key === 'bar.dock' && !picking) drawLeft(); };
+    window.addEventListener('storage', onStore);
+    return () => window.removeEventListener('storage', onStore);
+  },
+});
+SRCH_KW.tbset = 'таскбар панель задач док закрепить taskbar dock';
+
 // таскбар просит открыть инструмент (кнопка «Пуск» → все приложения)
 bar.onOpenTool((id) => { if (!TOOLS_BY_ID[id]) return; expand({ auto: true }); openTool(id); });
 openHooks.add(() => pushNeed());

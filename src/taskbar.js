@@ -2,7 +2,8 @@
 // • Окна: события Windows (winevents.ps1) → список окон (agent: taskwins) → во все доки; доки на всех мониторах одинаковые.
 // • Режимы: «прятаться» — выезжает от нижнего края; «всегда» — виден всегда (по желанию — с резервом места, AppBar).
 // • Панель Windows (и на других мониторах) прячется, пока таскбар Bar включён, и возвращается при выключении или выходе.
-const { BrowserWindow, screen, ipcMain } = require('electron');
+const { BrowserWindow, screen, ipcMain, shell, dialog } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -15,7 +16,12 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
   let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
   const thumbs = new Map(); // окно → последний снимок (для свёрнутых: снят в момент сворачивания)
-  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, same: true, ...(settings.taskbar || {}) });
+  // btn — какие кнопки показывать; running — открытые незакреплённые программы; extras — ярлыки (папки, места Windows, инструменты Bar)
+  const cfg = () => {
+    const c = { on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, same: true, running: true, extras: [], ...(settings.taskbar || {}) };
+    c.btn = { start: true, search: true, desktop: true, ...((settings.taskbar || {}).btn || {}) };
+    return c;
+  };
   // размер — свой у каждого монитора (по умолчанию общий)
   const sizeOf = (display) => (cfg().sizes || {})[display.id] || cfg().size;
   const cfgFor = (d) => ({ ...cfg(), size: sizeOf(d.display), zoom: d.zoom || 1 });
@@ -244,6 +250,27 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   ipcMain.on('tb-refresh', () => refreshSoon());
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику
   ipcMain.on('tb-apps', () => openApps && openApps());              // все приложения — в нотче, в стиле Bar
+  ipcMain.on('tb-tool', (_e, id) => { if (/^[a-z]{2,16}$/.test(String(id)) && openApps) openApps(String(id)); }); // инструмент Bar / настройки таскбара
+  // ярлыки дока: только эти места Windows и существующие папки
+  const PLACES = {
+    recycle: () => spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref(),
+    downloads: () => spawn('explorer.exe', ['shell:Downloads'], { detached: true, stdio: 'ignore' }).unref(),
+    documents: () => spawn('explorer.exe', ['shell:Personal'], { detached: true, stdio: 'ignore' }).unref(),
+    pc: () => spawn('explorer.exe', ['shell:MyComputerFolder'], { detached: true, stdio: 'ignore' }).unref(),
+    settings: () => shell.openExternal('ms-settings:'),
+    taskmgr: () => spawn('taskmgr.exe', [], { detached: true, stdio: 'ignore' }).unref(),
+  };
+  ipcMain.on('tb-open', (_e, x) => {
+    try {
+      if (x && x.place && PLACES[x.place]) return PLACES[x.place]();
+      if (x && x.path && fs.statSync(String(x.path)).isDirectory()) shell.openPath(String(x.path));
+    } catch {}
+  });
+  ipcMain.handle('pick-folder', async (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(w, { title: 'Папка для таскбара', properties: ['openDirectory'] });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  });
   ipcMain.on('tb-desktop', () => call('showdesktop'));
   ipcMain.on('tb-closewin', (_e, hwnd) => { if (Number.isFinite(+hwnd)) call('closewin', String(+hwnd)).then(refreshSoon); });
   // превью окон при наведении: снимок только запрошенных окон (PrintWindow в агенте, ~десятки мс на окно)

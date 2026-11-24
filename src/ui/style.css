@@ -887,3 +887,29 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .chime-v { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
 .tb-rows { animation: slide .3s var(--soft); }
 .tb-note { padding: 2px var(--in); }
+
+/* настройки таскбара */
+.tbs { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; }
+.tbs-col { min-height: 0; }
+.tbs-right { overflow-y: auto; padding-right: 4px; gap: 8px; }
+.tbs-head { flex-wrap: nowrap; gap: 8px; }
+.tbs-head b, .tbs-cap { font-size: var(--fs-title); }
+.tbs-cap { margin-top: 4px; font-size: var(--fs-body); color: var(--fg-2); }
+.tbs-pins, .tbs-pick { flex: 1; }
+.tbs-pin { gap: 10px; cursor: grab; }
+.tbs-pin.drag { opacity: .4; }
+.tbs-pin.over { box-shadow: inset 0 2px 0 var(--acc-g); }
+.tbs-pin .ib:disabled { opacity: .25; pointer-events: none; }
+.tbs-grip { color: var(--mut); display: grid; }
+.tbs-grip svg.i { width: 14px; height: 14px; }
+.tbs-empty { padding: 12px 4px; }
+.tbs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tbs-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: var(--card); color: var(--fg-2); cursor: pointer; font-weight: 600; font-size: var(--fs-cap); transition: background .15s, color .15s, transform .2s var(--spring); }
+.tbs-chip svg.i { width: 14px; height: 14px; }
+.tbs-chip:hover { background: var(--card-hi); }
+.tbs-chip:active { transform: scale(.95); }
+.tbs-chip.on { background: color-mix(in srgb, var(--acc) 22%, var(--card)); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--acc-g); }
+.tbs-chip.add { color: var(--acc-text); }
+.tbs-right::-webkit-scrollbar { width: 6px; }
+.tbs-right::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
+.tbs-right::-webkit-scrollbar-button { display: none; height: 0; }

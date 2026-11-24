@@ -17,14 +17,14 @@ function h(tag, props = {}, ...kids) {
 }
 const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2' };
 function icon(n) {
-  const node = window.lucide && window.lucide.icons && window.lucide.icons[LUC[n]];
+  const node = window.lucide && window.lucide.icons && window.lucide.icons[LUC[n] || n];
   const inner = node ? node.map(([tag, a]) => `<${tag} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('') : '';
   return `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
 }
 
 const SIZES = { s: 44, m: 52, l: 62 };
 const tb = $('#tb'), tip = $('#tb-tip');
-let cfg = { on: true, mode: 'hide', size: 'm', magnify: true };
+let cfg = { on: true, mode: 'hide', size: 'm', magnify: true, running: true, extras: [], btn: { start: true, search: true, desktop: true } };
 let wins = [];
 let pins = store.get('dock', []) || [];
 const els = new Map();          // key → элемент (переиспользуем, чтобы анимации не сбрасывались)
@@ -111,15 +111,20 @@ function fixed(id, ic, label, fn, alt) {
 
 function render() {
   const [pinned, running] = model();
+  const b = cfg.btn || {};
+  const run = cfg.running === false ? [] : running;
+  const extras = (cfg.extras || []).map(extraEl);
   const want = [
-    fixed('sys:start', 'start', 'Приложения', () => bar.tbApps(), () => bar.tbStart()), // правый клик — «Пуск» Windows
-    fixed('sys:search', 'search', 'Поиск', () => bar.tbSearch()),
-    sep('sep1'),
+    b.start !== false && fixed('sys:start', 'start', 'Приложения', () => bar.tbApps(), () => bar.tbStart()), // правый клик — «Пуск» Windows
+    b.search !== false && fixed('sys:search', 'search', 'Поиск', () => bar.tbSearch()),
+    (b.start !== false || b.search !== false) && sep('sep1'),
     ...pinned.map(itemEl),
-    running.length && pinned.length ? sep('sep2') : null,
-    ...running.map(itemEl),
-    sep('sep3'),
-    fixed('sys:desktop', 'desktop', 'Свернуть всё', () => toggleDesk()),
+    run.length && pinned.length ? sep('sep2') : null,
+    ...run.map(itemEl),
+    extras.length && (pinned.length || run.length) ? sep('sep4') : null,
+    ...extras,
+    b.desktop !== false && sep('sep3'),
+    b.desktop !== false && fixed('sys:desktop', desk ? 'restore' : 'desktop', desk ? 'Развернуть всё' : 'Свернуть всё', () => toggleDesk()),
   ].filter(Boolean);
   const keep = new Set(want);
   // ушедшие — сжимаются и исчезают
@@ -144,6 +149,52 @@ function render() {
   }
   magnify(lastX);
 }
+// ярлыки: места Windows, свои папки, инструменты Bar
+const EX_ICON = {
+  recycle: 'Trash2', downloads: 'Download', documents: 'FileText', pc: 'HardDrive', settings: 'Settings', taskmgr: 'Activity',
+  timer: 'Hourglass', stopwatch: 'Timer', notes: 'NotebookPen', calc: 'Calculator', voice: 'Mic', clip: 'ClipboardList', shelf: 'Inbox',
+  calendar: 'CalendarDays', mirror: 'ScanFace', shot: 'Camera', color: 'Pipette', ocr: 'ScanText', qrscan: 'ScanQrCode', phone: 'Smartphone',
+  system: 'Activity', music: 'Music', text: 'Type', apps: 'LayoutGrid',
+};
+const exKey = (x) => 'x:' + (x.place || (x.tool ? 'tool:' + x.tool : x.path));
+function extraEl(x) {
+  const key = exKey(x);
+  let el = els.get(key);
+  if (!el) {
+    el = h('button', { class: 'tbi sys ex', 'aria-label': x.name }, h('span', { class: 'tb-ic', html: icon(EX_ICON[x.place || x.tool] || 'Folder') }));
+    el.addEventListener('click', () => {
+      el.querySelector('.tb-ic').animate([{ transform: 'none' }, { transform: 'translateY(-6px)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+      if (el._x.tool) bar.tbTool(el._x.tool); else bar.tbOpen(el._x);
+    });
+    el.addEventListener('contextmenu', async (e) => {
+      e.preventDefault(); menuOpen = true;
+      const pick = await bar.popupMenu([{ id: 'del', label: 'Убрать из таскбара' }, { sep: true }, { id: 'set', label: 'Настройки таскбара…' }]);
+      menuOpen = false;
+      if (pick === 'del') bar.taskbarSet({ extras: (cfg.extras || []).filter((y) => exKey(y) !== exKey(el._x)) });
+      if (pick === 'set') bar.tbTool('tbset');
+    });
+    el.addEventListener('mouseenter', () => { prevClose(); showTip(el); });
+    el._new = true;
+    els.set(key, el);
+  }
+  el._x = x; el._label = x.name;
+  return el;
+}
+// правый клик по пустому месту дока — настройки
+tb.addEventListener('contextmenu', async (e) => {
+  if (e.target.closest('.tbi')) return;
+  e.preventDefault(); menuOpen = true;
+  const pick = await bar.popupMenu([
+    { id: 'set', label: 'Настройки таскбара…' },
+    { sep: true },
+    { id: 'mode', label: cfg.mode === 'hide' ? 'Всегда показывать' : 'Прятать у нижнего края' },
+    { id: 'mag', label: cfg.magnify ? 'Без увеличения при наведении' : 'Увеличение при наведении' },
+  ]);
+  menuOpen = false;
+  if (pick === 'set') bar.tbTool('tbset');
+  if (pick === 'mode') bar.taskbarSet({ mode: cfg.mode === 'hide' ? 'always' : 'hide' });
+  if (pick === 'mag') bar.taskbarSet({ magnify: !cfg.magnify });
+});
 function sep(id) { let el = els.get(id); if (!el) { el = h('span', { class: 'tb-sep' }); els.set(id, el); } return el; }
 
 // ---------- действия ----------
@@ -234,10 +285,13 @@ function prevOpen(el) {
     return card;
   });
   prev.replaceChildren(...cards);
-  const first = prev.hidden;
+  // «впервые» — и когда превью закрыто, и когда оно ещё закрывается: тогда оно появляется на месте заново,
+  // а не доезжает со старого места снизу
+  const first = prev.hidden || !prev.classList.contains('on');
   prev.hidden = false;
+  if (first) { prev.style.transition = 'none'; prev.classList.remove('on'); }
   prevPlace(first);
-  if (first) { prev.classList.remove('on'); void prev.offsetWidth; }
+  if (first) { void prev.offsetWidth; prev.style.transition = ''; }
   prev.classList.add('on');
   prevThumbs();
   clearInterval(prevThumbT); prevThumbT = setInterval(prevThumbs, 1500); // пока открыто — живые
@@ -258,8 +312,12 @@ async function prevThumbs() {
     const u = map && map[c._w.hwnd];
     if (!u) continue;
     let img = c._shot.querySelector('img');
-    if (!img) { img = h('img', { alt: '' }); c._shot.append(img); img.addEventListener('load', () => img.classList.add('ok'), { once: true }); }
-    img.src = u;
+    if (img && img.src === u) continue;
+    // картинку сначала декодируем, потом показываем — без подтормаживания на первом кадре
+    const next = new Image(); next.src = u;
+    try { await next.decode(); } catch { continue; }
+    if (!img) { img = h('img', { alt: '' }); c._shot.append(img); }
+    img.src = u; img.classList.add('ok');
   }
 }
 function prevClose() {
