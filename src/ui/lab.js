@@ -295,7 +295,7 @@ tool({
         frame.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.3,1.3,.5,1)' });
         const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
         const cur = stream.getVideoTracks()[0].getSettings().deviceId;
-        sel.replaceChildren(...cams.map((c, i) => h('option', { value: c.deviceId, selected: c.deviceId === cur }, (c.label || `Камера ${i + 1}`).replace(/s*([0-9a-f]{4}:[0-9a-f]{4})$/i, ''))));
+        sel.replaceChildren(...cams.map((c, i) => h('option', { value: c.deviceId, selected: c.deviceId === cur }, (c.label || `Камера ${i + 1}`).replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, ''))));
         sel.hidden = cams.length < 2;
       } catch (e) { ph.hidden = false; ph.textContent = /NotFound|DevicesNotFound/.test(e && e.name) ? 'Камера не найдена' : 'Камера недоступна: проверьте, не занята ли она другой программой и разрешена ли в параметрах Windows'; }
     };
@@ -427,6 +427,69 @@ const srchRunBase = srchRun;
 srchRun = function (r, alt) {
   if (r && r.key === 'cmd:conv') { r.run(); return; } // число скопировано — панель остаётся открытой
   return srchRunBase(r, alt);
+};
+
+// ============ 11. Перетаскивание файлов: «На полку» или «На телефон» ============
+// Как лоток и AirDrop у NotchNook: две зоны прямо в нотче; файлы на телефон уходят через полку и страницу Bar по Wi‑Fi.
+const dropEl = h('div', { class: 'dropzones', hidden: true },
+  h('div', { class: 'dz', 'data-z': 'shelf' }, h('span', { class: 'dz-ic', html: icon('shelf') }), h('b', {}, 'На полку'), h('span', { class: 'muted small' }, 'держать под рукой')),
+  h('div', { class: 'dz', 'data-z': 'phone' }, h('span', { class: 'dz-ic', html: icon('phone') }), h('b', {}, 'На телефон'), h('span', { class: 'muted small' }, 'по Wi‑Fi, через QR-код')));
+$('.content').append(dropEl);
+const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+let dropHot = null;
+function dropShow() {
+  if (!dropEl.hidden) return;
+  dropEl.hidden = false;
+  dropEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  dropEl.querySelectorAll('.dz').forEach((z, i) => z.animate([{ opacity: 0, transform: 'translateY(-10px) scale(.94)' }, { opacity: 1, transform: 'none' }], { duration: 420, delay: 60 + i * 60, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' }));
+}
+function dropHide() { dropEl.hidden = true; dropHot = null; dropEl.querySelectorAll('.dz').forEach((z) => z.classList.remove('hot')); }
+async function sendToPhone() {
+  openTool('phone');
+  if (!Bridge.url) {
+    try { Object.assign(Bridge, await bar.bridgeStart(Shelf.items.map((i) => i.path))); setAct('bridge', { html: () => `<span class="dot"></span><span>Телефон</span>` }); }
+    catch { flash('Не удалось открыть порт', 3000); return; }
+    if (current === 'phone') openTool('phone');
+  }
+  flash('Откройте страницу на телефоне — файлы уже там', 3500);
+}
+island.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  e.stopImmediatePropagation();
+  setInteractive(true); expand(); dropShow();
+}, true);
+island.addEventListener('dragover', (e) => {
+  if (dropEl.hidden) return;
+  e.preventDefault();
+  const z = e.target.closest && e.target.closest('.dz');
+  if (z !== dropHot) { dropEl.querySelectorAll('.dz').forEach((x) => x.classList.toggle('hot', x === z)); dropHot = z; }
+}, true);
+island.addEventListener('dragleave', (e) => { if (!dropEl.hidden && !(e.relatedTarget && island.contains(e.relatedTarget))) dropHide(); }, true);
+island.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const zone = dropHot ? dropHot.dataset.z : 'shelf';
+  dropHide();
+  const files = [...(e.dataTransfer.files || [])].map((f) => bar.filePath(f)).filter(Boolean);
+  if (!files.length) return;
+  Shelf.add(files);
+  if (zone === 'phone') sendToPhone(); else openTool('shelf');
+}, true);
+
+// ============ 12. Плавная смена содержимого свёрнутого нотча ============
+// Когда в таблетке меняется «главное» (трек → громкость → напоминание…), старое уходит вверх, новое приходит снизу.
+const renderBarBase = renderBar;
+let barKind = null;
+// eslint-disable-next-line no-func-assign
+renderBar = function () {
+  renderBarBase();
+  if (state === 'open') { barKind = null; return; }
+  let kind = 'clock';
+  for (const id of ACT_ORDER) if (acts.has(id)) { kind = id; break; }
+  if (barKind !== null && kind !== barKind && !Game.on) {
+    for (const el of [barL, barR]) el.animate([{ opacity: 0, transform: 'translateY(7px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+  barKind = kind;
 };
 
 // ============ 10. Настройки Lab ============

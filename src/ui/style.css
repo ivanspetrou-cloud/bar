@@ -861,3 +861,13 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .lab-tips svg.i { width: 16px; height: 16px; color: var(--acc-text); margin-top: 2px; }
 /* живой эквалайзер обновляется ~22 раза в секунду — короткий переход вместо длинного */
 #island.live-eq span.eq i { transition: transform .07s linear; }
+
+/* перетаскивание файлов: две зоны */
+.dropzones { position: absolute; inset: 0 var(--pad) var(--pad); z-index: 5; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); background: var(--bg); }
+.dz { border: 2px dashed var(--ctl-hi); border-radius: var(--r-card); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--fg-2); transition: border-color .2s, background .2s, transform .3s var(--spring); }
+.dz * { pointer-events: none; }
+.dz b { font-size: var(--fs-title); color: var(--fg); }
+.dz-ic { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--card-hi); color: var(--fg); transition: background .2s, color .2s, transform .3s var(--spring); }
+.dz-ic svg.i { width: 24px; height: 24px; }
+.dz.hot { border-color: var(--acc-g); background: color-mix(in srgb, var(--acc) 12%, transparent); transform: scale(1.02); }
+.dz.hot .dz-ic { background: var(--acc); color: var(--on-acc); transform: scale(1.12) translateY(-2px); }
