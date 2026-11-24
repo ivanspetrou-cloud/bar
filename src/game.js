@@ -175,7 +175,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
     if (open || !panelOpen) return;
     panelT = setTimeout(() => { panelOpen = false; seenCount = 1; }, 900); // после анимации сворачивания
   });
-  ipcMain.handle('game-stage', () => { const m = active ? active.mon : lastMon; if (m) winCtl.stage(m); return !!m; });
+  ipcMain.handle('game-stage', (_e, box) => { const m = active ? active.mon : lastMon; if (m) winCtl.stage(m, box); return !!m; });
   ipcMain.handle('game-exit-done', () => { winCtl.pill(); const f = exitDone; exitDone = null; if (f) setTimeout(f, 30); return true; });
   ipcMain.handle('game-get', async () => ({ ...G, active: active ? { name: active.name, manual: !!active.manual } : null, presentmon: !!presentMonPath(), perm: await fpsPermission() }));
   ipcMain.handle('game-set', (_e, patch) => {

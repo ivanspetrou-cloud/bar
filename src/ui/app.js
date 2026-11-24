@@ -2728,7 +2728,7 @@ const srchTyping = () => document.activeElement === srchInput;
 // ============ игровой режим: плашка в углу и перелёт ============
 // Главный процесс (game.js) узнаёт игру и растягивает окно на монитор («сцена»); здесь нотч плывёт в угол,
 // превращаясь в плашку с показателями; потом окно ужимается ровно до плашки (game-dock).
-const Game = { on: false, corner: 'tr', show: {}, st: {}, rect: null, W: 0, H: 0, busy: false, chain: Promise.resolve() };
+const Game = { off: { x: 0, y: 0 }, on: false, corner: 'tr', show: {}, st: {}, rect: null, W: 0, H: 0, busy: false, chain: Promise.resolve() };
 const hudEl = h('div', { class: 'hud', 'aria-hidden': 'true' });
 island.append(hudEl);
 const HUD_M = 0, HUD_H = 34; // плашка прилегает к краям экрана, как сам нотч
@@ -2764,6 +2764,15 @@ function applyFade(on) {
   const o = on ? 1 - (Game.fade || 0) / 100 : 1;
   island.animate([{ opacity: getComputedStyle(island).opacity }, { opacity: o }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
 }
+// окно-сцена охватывает только путь перелёта; Game.off — его левый верхний угол на мониторе
+function pathBox(a, b) {
+  const pad = 24;
+  const x = Math.max(0, Math.min(a.x, b.x) - pad), y = Math.max(0, Math.min(a.y, b.y) - pad);
+  const r = Math.min(Game.W, Math.max(a.x + a.w, b.x + b.w) + pad), btm = Math.min(Game.H, Math.max(a.y + a.h, b.y + b.h) + pad);
+  return { x, y, w: r - x, h: btm - y };
+}
+const loc = (r) => ({ x: r.x - Game.off.x, y: r.y - Game.off.y, w: r.w, h: r.h });
+async function toStage(from, to) { const box = pathBox(from, to); Game.off = { x: box.x, y: box.y }; await bar.gameStage(box); }
 function setIslandRect(r) {
   island.style.transform = `translate(${r.x}px, ${r.y}px)`;
   island.style.width = r.w + 'px'; island.style.height = r.h + 'px';
@@ -2826,19 +2835,19 @@ async function gameEnter(m) {
   const fromW = parseFloat(island.style.getPropertyValue('--pill-w')) || island.offsetWidth || 196;
   const from = { x: (Game.W - fromW) / 2, y: 0, w: fromW, h: 32 };
   let to;
-  await swapWindow(() => bar.gameStage(), () => {
-    island.classList.add('game');
-    hudEl.innerHTML = hudEl._h = hudHtml();
-    to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
-    setIslandRect(from);
-  });
+  bar.animBoost(true);
+  island.classList.add('game');
+  hudEl.innerHTML = hudEl._h = hudHtml();
+  to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
+  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
   barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
   hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
-  const a = await fly(from, to, 'pill', Game.corner);
+  const a = await fly(loc(from), loc(to), 'pill', Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
-  setIslandRect(to); a.cancel();
+  setIslandRect(loc(to)); a.cancel();
   Game.rect = to;
   await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
+  bar.animBoost(false);
   applyFade(true);
   Game.busy = false;
 }
@@ -2847,12 +2856,14 @@ async function gameMove(to, fromCorner) {
   const from = Game.rect;
   island.getAnimations().forEach((x) => x.cancel());
   island.classList.remove('game-tc');
-  await swapWindow(() => bar.gameStage(), () => setIslandRect(from));
-  const a = await fly(from, to, fromCorner, Game.corner);
+  bar.animBoost(true);
+  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
+  const a = await fly(loc(from), loc(to), fromCorner, Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
-  setIslandRect(to); a.cancel();
+  setIslandRect(loc(to)); a.cancel();
   Game.rect = to;
   await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
+  bar.animBoost(false);
   applyFade(true);
   Game.busy = false;
 }
@@ -2863,14 +2874,16 @@ async function gameExit(m) {
   const wasTc = Game.corner === 'tc';
   island.getAnimations().forEach((x) => x.cancel()); // снять прозрачность
   island.classList.remove('game-tc');
-  await swapWindow(() => bar.gameStage(), () => setIslandRect(from));
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
   const to = { x: (m.w - pillW) / 2, y: 0, w: pillW, h: 32 };
+  bar.animBoost(true);
+  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
   hudEl.getAnimations().forEach((x) => x.cancel());
   hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
   barEl.getAnimations().forEach((x) => x.cancel());
   barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
-  const a = await fly(from, to, Game.corner, 'pill');
+  const a = await fly(loc(from), loc(to), Game.corner, 'pill');
+  bar.animBoost(false);
   winFull = false;
   await swapWindow(() => bar.gameExitDone(), () => {
     Game.on = false; Game.rect = null;

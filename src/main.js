@@ -96,7 +96,11 @@ ipcMain.handle('win-size', (_e, mode) => {
 // Окно в игровом режиме: «сцена» — весь монитор игры на время анимации перелёта, «плашка» — ровно размер плашки в углу.
 // В обоих случаях окно полностью прозрачно для мыши: в игре оно ничего не перехватывает.
 const gameWin = {
-  stage(mon) { if (!win) return; winMode = 'stage'; win.setIgnoreMouseEvents(true); win.setBounds({ x: mon.x, y: mon.y, width: mon.width, height: mon.height }); },
+  // «сцена» — только прямоугольник пути перелёта (box, относительно монитора), а не весь монитор:
+  // Windows смешивает с игрой в каждом кадре в десятки раз меньшую площадь
+  stage(mon, box) { if (!win) return; winMode = 'stage'; win.setIgnoreMouseEvents(true);
+    const b = box && box.w > 0 ? box : { x: 0, y: 0, w: mon.width, h: mon.height };
+    win.setBounds({ x: Math.round(mon.x + b.x), y: Math.round(mon.y + b.y), width: Math.ceil(b.w), height: Math.ceil(b.h) }); },
   hud(mon, r, hover) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true, hover ? { forward: true } : undefined); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); },
   pill() { if (!win) return; winMode = 'pill'; placeWindow(); win.setIgnoreMouseEvents(true, { forward: true }); },
 };
@@ -133,6 +137,14 @@ ipcMain.on('interactive', (_e, on) => {
   else win.setIgnoreMouseEvents(true, { forward: true });
 });
 ipcMain.on('focus', () => win && win.focus());
+// На время анимаций игрового режима — повышенный приоритет процессов отрисовки Bar (видеокарта и страница),
+// чтобы игра не отнимала у них кадры; после — обычный.
+ipcMain.on('anim-boost', (e, on) => {
+  const pr = on ? os.constants.priority.PRIORITY_ABOVE_NORMAL : os.constants.priority.PRIORITY_NORMAL;
+  const pids = app.getAppMetrics().filter((m) => m.type === 'GPU').map((m) => m.pid);
+  try { pids.push(e.sender.getOSProcessId()); } catch {}
+  for (const pid of pids) { try { os.setPriority(pid, pr); } catch {} }
+});
 // только для самопроверки: список окон
 if (process.env.BAR_SNAP) ipcMain.handle('debug-windows', () => BrowserWindow.getAllWindows().map((w) => ({ title: w.getTitle(), visible: w.isVisible(), focused: w.isFocused(), bounds: w.getBounds(), url: w.webContents.getURL().slice(0, 90) })));
 
