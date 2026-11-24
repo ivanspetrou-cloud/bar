@@ -313,6 +313,47 @@ namespace Bar {
     [DllImport("hid.dll")] static extern int HidP_GetCaps(IntPtr p, out HIDP_CAPS c);
     [DllImport("hid.dll")] static extern bool HidD_SetFeature(Microsoft.Win32.SafeHandles.SafeFileHandle h, byte[] b, int len);
     [DllImport("hid.dll")] static extern bool HidD_GetFeature(Microsoft.Win32.SafeHandles.SafeFileHandle h, byte[] b, int len);
+    [DllImport("hid.dll")] static extern bool HidD_GetInputReport(Microsoft.Win32.SafeHandles.SafeFileHandle h, byte[] b, int len);
+    [StructLayout(LayoutKind.Explicit, Size = 72)] struct HIDP_VALUE_CAPS {
+      [FieldOffset(0)] public ushort UsagePage; [FieldOffset(2)] public byte ReportID; [FieldOffset(12)] public byte IsRange;
+      [FieldOffset(18)] public ushort BitSize; [FieldOffset(40)] public int LogicalMin; [FieldOffset(44)] public int LogicalMax;
+      [FieldOffset(56)] public ushort Usage; [FieldOffset(58)] public ushort UsageMax;
+    }
+    [DllImport("hid.dll")] static extern int HidP_GetValueCaps(int type, [In, Out] HIDP_VALUE_CAPS[] caps, ref ushort len, IntPtr pp);
+    [DllImport("hid.dll")] static extern int HidP_GetUsageValue(int type, ushort page, ushort link, ushort usage, out uint value, IntPtr pp, byte[] report, int len);
+    const int HIDP_OK = 0x00110000;
+
+    // Стандарт HID: «Battery Strength» (страница 0x06, использование 0x20). Многие приёмники разных марок отдают
+    // заряд так — без своих протоколов. Только чтение: Get Feature / Get Input Report, команды не шлются.
+    static int StdBattery(string p) {
+      using (var h = Open(p, 0, 0)) {
+        if (h.IsInvalid) return -1;
+        IntPtr pp; if (!HidD_GetPreparsedData(h, out pp)) return -1;
+        try {
+          HIDP_CAPS c; HidP_GetCaps(pp, out c);
+          foreach (int type in new[] { 2, 0 }) {     // сначала feature, потом input
+            ushort n = (ushort)(type == 2 ? c.i : c.c);
+            if (n == 0) continue;
+            var vc = new HIDP_VALUE_CAPS[n];
+            if (HidP_GetValueCaps(type, vc, ref n, pp) != HIDP_OK) continue;
+            for (int k = 0; k < n; k++) {
+              if (vc[k].UsagePage != 0x06 || (vc[k].IsRange == 0 ? vc[k].Usage != 0x20 : (vc[k].Usage > 0x20 || vc[k].UsageMax < 0x20))) continue;
+              int len = type == 2 ? c.FeatureReportByteLength : c.InputReportByteLength;
+              if (len <= 0) continue;
+              var buf = new byte[len]; buf[0] = vc[k].ReportID;
+              bool ok = type == 2 ? HidD_GetFeature(h, buf, len) : HidD_GetInputReport(h, buf, len);
+              if (!ok) continue;
+              uint v; if (HidP_GetUsageValue(type, 0x06, 0, 0x20, out v, pp, buf, len) != HIDP_OK) continue;
+              int mn = vc[k].LogicalMin, mx = vc[k].LogicalMax;
+              if (mx <= mn) { mn = 0; mx = vc[k].BitSize >= 8 ? 255 : (1 << vc[k].BitSize) - 1; }
+              if (mx == 100 && mn == 0) return (int)Math.Min(100, v);
+              return (int)Math.Round(Math.Max(0, Math.Min(1.0, ((double)v - mn) / (mx - mn))) * 100);
+            }
+          }
+        } catch { } finally { HidD_FreePreparsedData(pp); }
+      }
+      return -1;
+    }
 
     static List<string> Paths(string vid) {
       var res = new List<string>(); Guid g; HidD_GetHidGuid(out g);
@@ -562,6 +603,23 @@ namespace Bar {
         if (r == null || r[2] != 0x00) { outp.Add(nm + "|-1|0|0|" + kind); continue; }   // приёмник есть, устройство спит или вне связи
         int lvl = Math.Min((int)r[6], 100);
         outp.Add(nm + "|" + (lvl > 0 ? lvl : -2) + "|1|" + (r[7] == 0x01 ? "1" : "0") + "|" + kind);
+      }
+      // любые другие устройства: стандартный заряд HID (Battery Strength), если он есть
+      var known = new HashSet<string> { "1532", "1b1c", "0c45", "3554", "1038" };
+      foreach (var p in Paths("")) {
+        var m = System.Text.RegularExpressions.Regex.Match(p.ToLower(), @"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})");
+        if (!m.Success || known.Contains(m.Groups[1].Value)) continue;
+        HIDP_CAPS c; string name;
+        if (!Caps(p, out c, out name) || c.UsagePage == 0x01 && (c.Usage == 0x02 || c.Usage == 0x06)) continue; // сами мышь/клавиатура система держит — заряд ищем в остальных коллекциях
+        string key = "std" + m.Groups[1].Value + m.Groups[2].Value;
+        if (seen.Contains(key)) continue;
+        int lv = StdBattery(p);
+        if (lv < 0) continue;
+        seen.Add(key);
+        string nm = Pretty(string.IsNullOrEmpty(name) ? m.Groups[1].Value.ToUpper() + ":" + m.Groups[2].Value.ToUpper() : name);
+        string ln = nm.ToLower();
+        string kind = System.Text.RegularExpressions.Regex.IsMatch(ln, "keyboard|клав|kb") ? "keyboard" : System.Text.RegularExpressions.Regex.IsMatch(ln, "mouse|мыш") ? "mouse" : System.Text.RegularExpressions.Regex.IsMatch(ln, "headset|head|наушн|buds") ? "headphones" : System.Text.RegularExpressions.Regex.IsMatch(ln, "controller|gamepad|pad") ? "gamepad" : "";
+        outp.Add(nm + "|" + lv + "|1|0|" + kind);
       }
       foreach (var p in Paths("0c45")) {
         HIDP_CAPS c; string name;
@@ -845,18 +903,42 @@ function Invoke-Media($what) {
 
 # ---------- Bluetooth ----------
 function Get-BtBatteries {
-  $kBat = '{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2'
-  $kCon = '{83DA6326-97A6-4088-9453-A1923F573B29} 15'
-  $devs = @(Get-PnpDevice -Class Bluetooth -PresentOnly -ErrorAction SilentlyContinue)
-  $props = @($devs | Get-PnpDeviceProperty -KeyName $kBat, $kCon -ErrorAction SilentlyContinue)
+  # Все сопряжённые Bluetooth-устройства (обычные и BLE): на связи ли, заряд и зарядка (если Windows их знает),
+  # тип — из «класса устройства» (телефон, наушники, мышь, клавиатура, геймпад, компьютер).
+  $kBat = '{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2'; $kChg = '{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 3'
+  $kCon = '{83DA6326-97A6-4088-9453-A1923F573B29} 15'; $kCod = 'DEVPKEY_Bluetooth_ClassOfDevice'
+  $devs = @(Get-PnpDevice -Class Bluetooth -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^(BTHENUM|BTHLE)\\DEV_' })
+  $props = @($devs | Get-PnpDeviceProperty -KeyName $kBat, $kChg, $kCon, $kCod -ErrorAction SilentlyContinue)
   $byId = @{}
   foreach ($p in $props) { if (-not $byId[$p.InstanceId]) { $byId[$p.InstanceId] = @{} }; $byId[$p.InstanceId][$p.KeyName] = $p.Data }
   $out = @{}
   foreach ($d in $devs) {
-    $v = $byId[$d.InstanceId]; if (-not $v -or $v[$kBat] -eq $null) { continue }
-    $name = $d.FriendlyName; $con = [bool]$v[$kCon]
-    if (-not $out[$name] -or ($con -and -not $out[$name].connected)) { $out[$name] = [ordered]@{ name = $name; level = [int]$v[$kBat]; connected = $con } }
+    $v = $byId[$d.InstanceId]; if (-not $v) { $v = @{} }
+    $name = $d.FriendlyName; if (-not $name) { continue }
+    $con = [bool]$v[$kCon]
+    $lvl = if ($v[$kBat] -ne $null) { [int]$v[$kBat] } else { -1 }
+    if (-not $con -and $lvl -lt 0) { continue }          # не на связи и заряд неизвестен — не показываем
+    $kind = ''
+    if ($v[$kCod]) {
+      $cod = [int]$v[$kCod]; $major = ($cod -shr 8) -band 0x1F; $minor = ($cod -shr 2) -band 0x3F
+      $kind = switch ($major) {
+        1 { 'laptop' } 2 { 'phone' } 4 { 'headphones' }
+        5 { if ($minor -band 0x10) { 'keyboard' } elseif ($minor -band 0x20) { 'mouse' } elseif (($minor -band 0x0F) -in 1, 2) { 'gamepad' } else { '' } }
+        default { '' }
+      }
+    }
+    $o = [ordered]@{ name = $name; level = $(if ($lvl -ge 0) { $lvl } elseif ($con) { -2 } else { -1 }); connected = $con; charging = [bool]$v[$kChg]; kind = $kind }
+    # у одного устройства бывает и обычный, и BLE-узел (телефон) — склеиваем по адресу, берём узел на связи и с зарядом
+    $addr = if ($d.InstanceId -match 'DEV_([0-9A-F]{12})') { $matches[1] } else { $d.InstanceId }
+    $prev = $out[$addr]
+    if (-not $prev -or ($con -and -not $prev.connected) -or ($o.level -ge 0 -and $prev.level -lt 0)) {
+      if ($prev -and -not $o.kind) { $o.kind = $prev.kind }
+      $out[$addr] = $o
+    } elseif ($prev -and -not $prev.kind -and $kind) { $prev.kind = $kind }
   }
+  # одинаковые имена (два геймпада Xbox) — различаем номером
+  $seenN = @{}
+  foreach ($o in $out.Values) { $n = $o.name; $seenN[$n] = 1 + [int]$seenN[$n]; if ($seenN[$n] -gt 1) { $o.name = "$n $($seenN[$n])" } }
   @($out.Values)
 }
 
