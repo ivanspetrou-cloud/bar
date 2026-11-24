@@ -27,6 +27,7 @@ app.on('web-contents-created', (_e, wc) => {
 const createBridge = require('./bridge');
 const setupSensors = require('./sensors');
 const setupUpdater = require('./updater');
+const setupGame = require('./game');
 const setupMusic = require('./music'); // регистрирует схему barimg:// — до готовности приложения
 
 if (process.env.BAR_NOGPU) app.disableHardwareAcceleration(); // только для замеров
@@ -39,6 +40,7 @@ let tray = null;
 let capture = null; // { mode, width, height, data }
 let sensors = null;
 let music = null;
+let game = null;
 
 if (process.env.BAR_SNAP) app.setPath('userData', path.join(process.env.BAR_SNAP, 'profile'));
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -75,10 +77,18 @@ function placeWindow() {
   win.setBounds({ x: Math.round(d.bounds.x + (d.bounds.width - w) / 2), y: d.bounds.y, width: w, height: h });
 }
 ipcMain.handle('win-size', (_e, mode) => {
+  if (winMode === 'stage' || winMode === 'hud') return winMode; // в игровом режиме окном управляет game.js
   mode = mode === 'full' ? 'full' : 'pill';
   if (win && mode !== winMode) { winMode = mode; placeWindow(); }
   return winMode;
 });
+// Окно в игровом режиме: «сцена» — весь монитор игры на время анимации перелёта, «плашка» — ровно размер плашки в углу.
+// В обоих случаях окно полностью прозрачно для мыши: в игре оно ничего не перехватывает.
+const gameWin = {
+  stage(mon) { if (!win) return; winMode = 'stage'; win.setIgnoreMouseEvents(true); win.setBounds({ x: mon.x, y: mon.y, width: mon.width, height: mon.height }); },
+  hud(mon, r) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); },
+  pill() { if (!win) return; winMode = 'pill'; placeWindow(); win.setIgnoreMouseEvents(true, { forward: true }); },
+};
 
 function createWindow() {
   win = new BrowserWindow({
@@ -107,7 +117,7 @@ function createWindow() {
 }
 
 ipcMain.on('interactive', (_e, on) => {
-  if (!win) return;
+  if (!win || winMode === 'stage' || winMode === 'hud') return;
   if (on) win.setIgnoreMouseEvents(false);
   else win.setIgnoreMouseEvents(true, { forward: true });
 });
@@ -449,9 +459,9 @@ function trayImage() {
 // ---------- горячие клавиши ----------
 // Ctrl+Alt+буква не используем: на Windows это AltGr, им набирают @ € { } [ ] \ на немецкой и многих других раскладках.
 // Win+Shift+T / C / A / S / R / V и цифры часто заняты самой Windows — по умолчанию берём свободные
-const HOTKEY_DEFAULTS = { toggle: 'Super+Shift+B', search: 'Super+Shift+F', ocr: 'Super+Shift+O', color: 'Super+Shift+D', shot: 'Super+Shift+X', qrscan: 'Super+Shift+Q' };
+const HOTKEY_DEFAULTS = { toggle: 'Super+Shift+B', search: 'Super+Shift+F', game: 'Super+Shift+G', ocr: 'Super+Shift+O', color: 'Super+Shift+D', shot: 'Super+Shift+X', qrscan: 'Super+Shift+Q' };
 const HOTKEY_ACTIONS = {
-  toggle: () => toggle(), search: () => openSearch(), ocr: () => startCapture('ocr'), color: () => startCapture('color'),
+  toggle: () => toggle(), search: () => openSearch(), game: () => game && game.hotkey(), ocr: () => startCapture('ocr'), color: () => startCapture('color'),
   shot: () => startCapture('shot'), qrscan: () => startCapture('qrscan'),
 };
 let hotkeyStatus = {};
@@ -469,6 +479,7 @@ function hotkeyProblem(acc) {
 }
 function registerHotkeys() {
   globalShortcut.unregisterAll();
+  if (process.env.BAR_SNAP) { hotkeyStatus = {}; return; } // тестовый экземпляр не занимает горячие клавиши основного
   hotkeyStatus = {};
   for (const [id, acc] of Object.entries(hotkeyMap())) {
     if (!acc) { hotkeyStatus[id] = 'off'; continue; }
@@ -528,6 +539,8 @@ function openSearch() {
 }
 function toggle() {
   if (!win) return;
+  // во время игры: сначала нотч возвращается наверх, потом открывается панель
+  if (game && game.isActive()) { game.leave(() => { send('toggle'); win.focus(); }); return; }
   if (settings.hidden) { settings.hidden = false; saveSettings(); win.showInactive(); buildTrayMenu(); }
   send('toggle');
   win.focus();
@@ -544,6 +557,7 @@ function startIdleWatch() {
   idleTimer = setInterval(() => {
     const pt = screen.getCursorScreenPoint();
     const b = screen.getPrimaryDisplay().bounds; // нотч живёт на основном мониторе
+    if (game && game.isActive()) return; // в игре нотч не прячем — он в углу
     const onMine = pt.x >= b.x && pt.x < b.x + b.width && pt.y >= b.y && pt.y < b.y + b.height;
     const moved = !idlePt || pt.x !== idlePt.x || pt.y !== idlePt.y;
     idlePt = pt;
@@ -568,6 +582,7 @@ app.whenReady().then(() => {
   sensors = setupSensors({ send, getWin: () => win, getStats });
   music = setupMusic({ send });
   setupUpdater({ send });
+  game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats });
   // то, что уже лежит в буфере при запуске, тоже попадает в историю
   loadClips().then(async () => {
     const t = await readClip();
@@ -612,6 +627,7 @@ app.on('will-quit', () => {
   bridge.stop();
   if (sensors) sensors.stop();
   if (music) music.stop();
+  if (game) game.stop();
   if (ps) try { ps.kill(); } catch {}
 });
 app.on('window-all-closed', () => app.quit());

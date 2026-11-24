@@ -143,7 +143,7 @@ const LUCIDE = {
   coffee: 'Coffee', apps: 'LayoutGrid', sun: 'Sun', moon: 'Moon', laptop: 'Laptop', minimize: 'Minus',
   bolt: 'Zap', taskbar: 'PanelBottom', eye: 'Eye', wifi: 'Wifi', wifihigh: 'WifiHigh', wifilow: 'WifiLow',
   heart: 'Heart', thumbsdown: 'ThumbsDown', shuffle: 'Shuffle', repeat: 'Repeat', repeat1: 'Repeat1', search: 'Search',
-  ram: 'MemoryStick', cpu: 'Cpu', download: 'Download', check: 'Check', code: 'Code', layout: 'LayoutDashboard', grip: 'GripVertical', disc: 'Disc3', redo: 'RotateCw', globe: 'Globe', enter: 'CornerDownLeft',
+  ram: 'MemoryStick', cpu: 'Cpu', gpu: 'Gpu', ping: 'Activity', download: 'Download', check: 'Check', code: 'Code', layout: 'LayoutDashboard', grip: 'GripVertical', disc: 'Disc3', redo: 'RotateCw', globe: 'Globe', enter: 'CornerDownLeft',
 };
 const iconCache = new Map();
 const attrEsc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -186,6 +186,7 @@ function shrinkWinSoon(ms = 600) {
   }, ms);
 }
 function expand(opts = {}) {
+  if (Game.on) return;
   if (!winFull) { growWin().then(() => expand(opts)); return; }
   clearTimeout(leaveT); clearTimeout(enterT); clearTimeout(autoT);
   if (opts.auto) {
@@ -266,6 +267,7 @@ setInterval(() => {
 function setOled(on) { Oled.on = !!on; store.set('oled', Oled.on); oledApply(); }
 
 function hoverIn() {
+  if (Game.on) return; // в игре плашка не реагирует на мышь
   wakeLive();
   growWin();
   clearTimeout(leaveT);
@@ -430,6 +432,8 @@ let indCfg = { ...IND_DEFAULT, ...store.get('ind', {}) };
 const indOn = (id) => !!indCfg[id];
 function setInd(id, on) { indCfg[id] = on; store.set('ind', indCfg); pushNeed(); if (id === 'media') syncMedia(); renderBar(); }
 function pushNeed() {
+  // в игре — только то, что нужно плашке: микрофон и заряд устройств
+  if (typeof Game !== 'undefined' && Game.on) { bar.sensorsNeed({ open: false, layout: false, audio: true, media: false, net: false, bt: true, stats: false }); return; }
   bar.sensorsNeed({
     open: state === 'open', layout: indOn('layout'), audio: indOn('volume') || indOn('mic'), media: indOn('media'),
     net: indOn('net') || indOn('speed'), bt: indOn('bt'), stats: indOn('cpu') || indOn('ram'),
@@ -881,7 +885,11 @@ const Rec = {
   mr: null, chunks: [], t0: 0, stream: null, analyser: null,
   on() { return !!this.mr; },
   async start() {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    // выбранный микрофон (Настройки диктофона); если его отключили — системный по умолчанию
+    const id = store.get('micId', '');
+    const base = { echoCancellation: true, noiseSuppression: true };
+    try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { ...base, deviceId: { exact: id } } : base }); }
+    catch (e) { if (!id) throw e; this.stream = await navigator.mediaDevices.getUserMedia({ audio: base }); flash('Выбранный микрофон не найден — записываю с системного', 3500); }
     const ac = new AudioContext();
     this.ac = ac;
     this.analyser = ac.createAnalyser(); this.analyser.fftSize = 64;
@@ -927,7 +935,7 @@ tool({
       [...wave.children].forEach((b, i) => { b.style.height = 4 + (d[i + 2] || 0) / 255 * 36 + 'px'; });
       raf = requestAnimationFrame(loop);
     };
-    const sync = () => { btn.classList.toggle('on', Rec.on()); if (Rec.on()) loop(); else { time.textContent = '00:00'; [...wave.children].forEach((b) => (b.style.height = '4px')); } };
+    const sync = () => { btn.classList.toggle('on', Rec.on()); if (typeof mic !== 'undefined') mic.disabled = Rec.on(); if (Rec.on()) loop(); else { time.textContent = '00:00'; [...wave.children].forEach((b) => (b.style.height = '4px')); } };
     btn.onclick = async () => {
       try {
         if (Rec.on()) { await Rec.stop(); loadList(); } else await Rec.start();
@@ -948,8 +956,21 @@ tool({
           h('audio', { controls: true, preload: 'none', src: 'file:///' + f.path.replace(/\\/g, '/') })));
       }
     }
-    el.append(h('div', { class: 'split' }, h('div', { class: 'hero' }, btn, time, wave, h('div', { class: 'muted small' }, 'Запись продолжается, даже если нотч свёрнут')), h('div', { class: 'col' }, list)));
-    sync(); loadList();
+    // выбор устройства записи: автоматический выбор Windows не всегда тот
+    const mic = h('select', { class: 'field mic-sel', 'aria-label': 'Микрофон для записи', title: 'Микрофон для записи' });
+    async function loadMics() {
+      let devs = [];
+      try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch {}
+      const cur = store.get('micId', '');
+      mic.replaceChildren(h('option', { value: '' }, 'Микрофон: как в Windows'),
+        ...devs.map((d, i) => h('option', { value: d.deviceId }, (d.label || `Микрофон ${i + 1}`).replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, ''))));
+      mic.value = devs.some((d) => d.deviceId === cur) ? cur : '';
+      mic.disabled = Rec.on();
+    }
+    mic.onchange = () => { store.set('micId', mic.value); flash(mic.value ? 'Микрофон выбран' : 'Микрофон как в Windows', 1500); };
+    navigator.mediaDevices.addEventListener('devicechange', loadMics);
+    el.append(h('div', { class: 'split' }, h('div', { class: 'hero' }, btn, time, wave, mic, h('div', { class: 'muted small' }, 'Запись продолжается, даже если нотч свёрнут')), h('div', { class: 'col' }, list)));
+    sync(); loadList(); loadMics();
     return () => cancelAnimationFrame(raf);
   },
 });
@@ -1342,14 +1363,14 @@ tool({
     const reset = h('button', { class: 'btn sm', onclick: () => { BarTheme.save({ ...BarTheme.DEFAULTS }); BarTheme.apply(); show('look'); } }, I('reset'), 'Сбросить оформление');
     const body = h('div', { class: 'settings col', style: { flex: '1', minHeight: '0' } });
     el.append(h('div', { class: 'row' }, tabs, h('span', { class: 'grow' }), reset), body);
-    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление']];
+    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры']];
     function show(t) {
       store.set('settingsTab', t);
       tabs.replaceChildren(...TABS.map(([k, n]) => h('button', { class: k === t ? 'on' : '', onclick: () => show(k) }, n)));
       reset.hidden = t !== 'look';
       if (body._cleanup) { body._cleanup(); body._cleanup = null; }
       body.replaceChildren();
-      ({ main, ind, look })[t]();
+      ({ main, ind, look, game })[t]();
     }
 
     function main() {
@@ -1426,7 +1447,7 @@ tool({
     function hotkeysCard() {
       const card = h('div', { class: 'card status col hk-card', style: { gap: '0' } });
       const msg = h('div', { class: 'small hk-msg' });
-      const NAMES = [['toggle', 'Открыть нотч'], ['search', 'Поиск'], ['ocr', 'Текст с экрана'], ['color', 'Пипетка'], ['shot', 'Скриншот'], ['qrscan', 'QR с экрана']];
+      const NAMES = [['toggle', 'Открыть нотч'], ['search', 'Поиск'], ['game', 'Игровой режим'], ['ocr', 'Текст с экрана'], ['color', 'Пипетка'], ['shot', 'Скриншот'], ['qrscan', 'QR с экрана']];
       const KEYNAME = (e) => {
         const c = e.code;
         if (/^Key[A-Z]$/.test(c)) return c.slice(3);
@@ -1472,6 +1493,54 @@ tool({
       bar.hotkeysGet().then((x) => { Object.assign(HK, x); draw(); });
       { const pc = body._cleanup; body._cleanup = () => { stopRec(); if (pc) pc(); }; }
       return card;
+    }
+
+
+    function game() {
+      bar.gameGet().then((g) => {
+        const CN = { tl: 'слева сверху', tr: 'справа сверху', bl: 'слева снизу', br: 'справа снизу' };
+        const screenEl = h('div', { class: 'g-screen', role: 'radiogroup', 'aria-label': 'Угол для игровой плашки' },
+          ...Object.keys(CN).map((c) => h('button', {
+            class: 'g-dot ' + c + (g.corner === c ? ' on' : ''), role: 'radio', 'aria-checked': String(g.corner === c), title: CN[c], 'aria-label': CN[c],
+            onclick: async () => { await bar.gameSet({ corner: c }); show('game'); },
+          })),
+          h('span', { class: 'g-screen-lbl muted small' }, CN[g.corner]));
+        const ITEMS = [['fps', 'FPS'], ['cpu', 'Процессор'], ['gpu', 'Видеокарта'], ['ram', 'Память'], ['ping', 'Пинг'], ['clock', 'Время']];
+        const chips = h('div', { class: 'g-chips' }, ...ITEMS.map(([k, n]) => h('button', {
+          class: 'qt' + (g.show[k] ? ' on' : ''), 'aria-pressed': String(!!g.show[k]),
+          onclick: async () => { await bar.gameSet({ show: { [k]: !g.show[k] } }); show('game'); },
+        }, n)));
+        const PERM = {
+          ok: ['muted', 'Доступ к кадрам игр есть'],
+          relogin: ['hi-t', 'Доступ выдан — выйдите из Windows и войдите снова, чтобы FPS заработал'],
+          no: ['muted', 'Windows показывает кадры чужих игр только с разрешением. Нужно один раз подтвердить запрос Windows.'],
+        }[g.perm] || ['muted', ''];
+        const permBtn = g.perm === 'no' && h('button', { class: 'btn sm pri', onclick: async (e) => {
+          const b = e.currentTarget; b.disabled = true; b.textContent = 'Подтвердите запрос Windows…';
+          await bar.gamePerm(); show('game');
+        } }, 'Разрешить FPS');
+        const name = (p) => String(p).split(/[\\/]/).pop().replace(/\.exe$/i, '');
+        const all = [...new Set([...(g.seen || []), ...(g.ignore || [])])];
+        const isIgn = (p) => (g.ignore || []).some((x) => x.toLowerCase() === p.toLowerCase());
+        const ignEl = all.length
+          ? h('div', { class: 'g-chips' }, ...all.map((p) => h('button', {
+              class: 'qt g-ign' + (isIgn(p) ? ' off' : ''), title: (isIgn(p) ? 'Не считается игрой — нажмите, чтобы снова считать' : 'Нажмите, чтобы не считать игрой') + '\n' + p,
+              onclick: async () => { const ign = isIgn(p) ? g.ignore.filter((x) => x.toLowerCase() !== p.toLowerCase()) : [...(g.ignore || []), p]; await bar.gameSet({ ignore: ign }); show('game'); },
+            }, I(isIgn(p) ? 'x' : 'gamepad'), name(p))))
+          : h('div', { class: 'muted small' }, 'Здесь появятся игры, которые Bar узнал. Нажатие — «не считать игрой».');
+        body.append(h('div', { class: 'split' },
+          h('div', { class: 'col' },
+            h('div', { class: 'sw' }, h('span', {}, 'Игровой режим ', h('span', { class: 'muted' }, '· сам включается в играх на весь экран')), toggle(g.auto, (v) => bar.gameSet({ auto: v }))),
+            h('div', { class: 'card col g-card' }, h('h4', {}, 'Куда переплывает нотч'), h('div', { class: 'row' }, screenEl,
+              h('div', { class: 'col', style: { gap: '6px', flex: '1' } },
+                h('button', { class: 'btn sm', onclick: () => bar.gamePreview() }, I('play'), 'Показать перелёт'),
+                h('span', { class: 'muted small' }, hk('game') ? `${hk('game')} — включить или выйти вручную` : '')))),
+            h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips)),
+          h('div', { class: 'col' },
+            h('div', { class: 'card col g-card' }, h('h4', {}, 'FPS'), h('div', { class: 'small ' + PERM[0] }, PERM[1]), permBtn,
+              !g.presentmon && h('div', { class: 'small red-t' }, 'PresentMon не найден — FPS недоступен')),
+            h('div', { class: 'card col g-card grow' }, h('h4', {}, 'Узнанные игры'), ignEl))));
+      });
     }
 
     function look() {
@@ -1639,7 +1708,8 @@ function refreshDock(full) {
     const list = Apps.dock || [];
     const btns = old.querySelectorAll('.dock-app.pinned');
     if (!full && btns.length === list.length) { list.forEach((a, i) => btns[i].classList.toggle('run', !!Apps.running(a))); return; }
-    old.replaceWith(dockEl());
+    // док уже на экране — подменяем тихо, без повторной анимации появления
+    const fresh = dockEl(); fresh.classList.add('quiet'); old.replaceWith(fresh);
   }
 }
 
@@ -1829,8 +1899,9 @@ tool({
       const shuffle = ib('shuffle', 'Перемешать', () => { anim(shuffle, 'spin'); mcmd('shuffle'); });
       // повтор: выкл → плейлист → один трек. Значок меняется только при смене режима и всегда с анимацией;
       // после нажатия сразу показываем следующий режим, не дожидаясь ответа страницы
-      const REPEAT_NEXT = { NONE: 'ALL', '': 'ALL', ALL: 'ONE', ONE: 'NONE' };
-      const REPEAT_TITLE = { NONE: 'Повтор выключен', ALL: 'Повтор плейлиста', ONE: 'Повтор трека' };
+      // порядок как у YouTube Music: выкл → один трек → все треки → выкл
+      const REPEAT_NEXT = { NONE: 'ONE', '': 'ONE', ONE: 'ALL', ALL: 'NONE' };
+      const REPEAT_TITLE = { NONE: 'Повтор выключен', ALL: 'Повторять все треки', ONE: 'Повторять один трек' };
       let repeatMode = null, optimisticT = 0;
       const setRepeat = (m, animate) => {
         m = m || 'NONE';
@@ -1882,7 +1953,16 @@ tool({
         update() {
           const st = MU.st || {};
           title.textContent = st.title || 'Ничего не играет';
-          artist.textContent = st.artist || (st.title ? '' : 'Включите трек в очереди, библиотеке или поиске');
+          // каждый артист — ссылка: открывает «Поиск» по его имени
+          const aText = st.artist || '';
+          if (aText !== artist._t) {
+            artist._t = aText;
+            if (!aText) artist.textContent = st.title ? '' : 'Включите трек в очереди, библиотеке или поиске';
+            else artist.replaceChildren(...aText.split(/(\s+и\s+|,\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+)/i).map((part, i) => i % 2
+              ? document.createTextNode(part)
+              : h('span', { class: 'mu-artist-link', role: 'button', tabindex: 0, title: `Найти «${part}»`,
+                  onclick: () => openSearchFor(part), onkeydown: (e) => { if (e.key === 'Enter') openSearchFor(part); } }, part)));
+          }
           const src = bimg(st.art);
           if (src !== artSrc) {
             artSrc = src;
@@ -2017,7 +2097,7 @@ tool({
       const run = () => { const v = q.value.trim(); if (v.length < 2) return; br.reset(() => bar.musicSearch(v), v); };
       q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 500); });
       q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(t); run(); } e.stopPropagation(); });
-      return { node, focus: () => q.focus() };
+      return { node, focus: () => q.focus(), query: (text) => { q.value = text; clearTimeout(t); run(); } };
     }
 
     function lyricsBlock() {
@@ -2034,6 +2114,13 @@ tool({
       return { node: body, onTrack: load };
     }
 
+    // открыть «Поиск» с готовым запросом (клик по имени артиста под обложкой)
+    const openSearchFor = (text) => {
+      const idx = ML.cols.findIndex((c) => c.includes('search'));
+      if (idx < 0 || !text) return;
+      ML.active[idx] = 'search'; saveML(); render();
+      setTimeout(() => blocks.search && blocks.search.query(text), 30);
+    };
     const MAKERS = { player: playerBlock, queue: queueBlock, library: libraryBlock, search: searchBlock, lyrics: lyricsBlock };
 
     // ---------- раскладка ----------
@@ -2284,7 +2371,7 @@ function soundCard() {
 
 // Короткое имя устройства для узкой колонки: без «Wireless» и без марки, если имя длинное (полное — в подсказке)
 function shortDev(n) {
-  let s = String(n || '').replace(/\s+wireless/i, '').replace(/controller/i, 'геймпад').trim();
+  let s = String(n || '').replace(/\s+wireless\b/i, '').replace(/\bcontroller\b/i, 'геймпад').trim();
   if (s.length > 16) s = s.replace(/^(razer|corsair|logitech|logi|steelseries|hyperx|ajazz|asus|rog|sony|microsoft)\s+/i, '');
   return s;
 }
@@ -2533,6 +2620,142 @@ document.addEventListener('keydown', (e) => {
 bar.onSearch(() => { expand(); srchFocus(true); });
 openHooks.add((open) => { if (open) Apps.load(); if (!open) setTimeout(() => { if (state !== 'open') srchClear(); }, 450); });
 const srchTyping = () => document.activeElement === srchInput;
+
+
+// ============ игровой режим: плашка в углу и перелёт ============
+// Главный процесс (game.js) узнаёт игру и растягивает окно на монитор («сцена»); здесь нотч плывёт в угол,
+// превращаясь в плашку с показателями; потом окно ужимается ровно до плашки (game-dock).
+const Game = { on: false, corner: 'tr', show: {}, st: {}, rect: null, W: 0, H: 0, busy: false, chain: Promise.resolve() };
+const hudEl = h('div', { class: 'hud', 'aria-hidden': 'true' });
+island.append(hudEl);
+const HUD_M = 14, HUD_H = 34;
+const hudVal = (v, suf, w) => `<b class="hud-v" style="min-width:${w}ch">${v == null ? '—' : v + suf}</b>`;
+function hudHtml() {
+  const s = Game.st || {}, sh = Game.show || {}, out = [];
+  if (sh.fps) {
+    const v = s.fps != null ? s.fps : s.fpsState === 'denied' ? '—' : '…';
+    out.push(`<span class="hud-it hud-fps" title="${s.fpsState === 'denied' ? 'FPS: нужно разрешение — Настройки → Игры' : 'Кадров в секунду'}"><b class="hud-v" style="min-width:3ch">${v}</b><span class="sub">FPS</span></span>`);
+  }
+  if (sh.cpu) out.push(`<span class="hud-it" title="Процессор">${icon('cpu')}${hudVal(s.cpu, '%', 4)}</span>`);
+  if (sh.gpu) out.push(`<span class="hud-it" title="Видеокарта">${icon('gpu')}${hudVal(s.gpu, '%', 4)}</span>`);
+  if (sh.ram) out.push(`<span class="hud-it" title="Память">${icon('ram')}${hudVal(s.ram, '%', 4)}</span>`);
+  if (sh.ping) out.push(`<span class="hud-it" title="Пинг">${icon('ping')}${hudVal(s.ping, ' мс', 6)}</span>`);
+  // важное, только когда случилось: микрофон выключен, садится мышь / наушники
+  if (S.audio && S.audio.micMuted) out.push(`<span class="hud-it red-t" title="Микрофон выключен">${icon('micoff')}</span>`);
+  for (const d of devList()) if (d.connected && d.level >= 0 && d.level <= 20 && !d.charging) out.push(`<span class="hud-it red-t" title="${esc(d.name)}">${icon(devIcon(d.name, d.kind))}${d.level}%</span>`);
+  if (sh.clock) out.push(`<span class="hud-it hud-clock">${clockStr()}</span>`);
+  return out.join('');
+}
+const cornerRect = (w, hh, c) => ({ x: c[1] === 'l' ? HUD_M : Game.W - w - HUD_M, y: c[0] === 't' ? HUD_M : Game.H - hh - HUD_M, w, h: hh });
+function setIslandRect(r) {
+  island.style.transform = `translate(${r.x}px, ${r.y}px)`;
+  island.style.width = r.w + 'px'; island.style.height = r.h + 'px';
+}
+const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+// Перелёт: нотч чуть «отрывается» от края, плывёт по дуге и мягко садится; форма — от выреза к плашке.
+function fly(from, to, { fromPill = false, toPill = false } = {}) {
+  const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14;
+  const rad = (pill) => (pill ? `0px 0px ${r}px ${r}px` : `${r}px`);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lift = fromPill || toPill ? 18 : 10;
+  const at = (t, dy, sc) => ({ offset: t, transform: `translate(${lerp(from.x, to.x, t)}px, ${lerp(from.y, to.y, t) + dy}px) scale(${sc})`,
+    width: lerp(from.w, to.w, t) + 'px', height: lerp(from.h, to.h, t) + 'px', borderRadius: `${r}px` });
+  const kf = [
+    { offset: 0, transform: `translate(${from.x}px, ${from.y}px) scale(1)`, width: from.w + 'px', height: from.h + 'px', borderRadius: rad(fromPill) },
+    at(0.22, fromPill ? lift : 0, 0.95),
+    at(0.7, toPill ? lift : 0, 0.98),
+    { offset: 1, transform: `translate(${to.x}px, ${to.y}px) scale(1)`, width: to.w + 'px', height: to.h + 'px', borderRadius: rad(toPill) },
+  ];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const a = island.animate(kf, { duration: reduce ? 1 : 950, easing: 'cubic-bezier(.65, 0, .25, 1)', fill: 'forwards' });
+  return a.finished.then(() => a, () => a);
+}
+async function gameEnter(m) {
+  if (Game.on) return;
+  Game.on = true; Game.busy = true; Game.corner = m.corner; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
+  if (state === 'open') { pinned = false; collapse(true); }
+  clearTimeout(shrinkT); winFull = true;
+  island.classList.remove('peek', 'idle', 'dim');
+  pushNeed();
+  const fromW = island.offsetWidth || 196;
+  island.classList.add('game');
+  hudEl.innerHTML = hudEl._h = hudHtml();
+  const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
+  const from = { x: (Game.W - fromW) / 2, y: 0, w: fromW, h: 32 };
+  setIslandRect(from);
+  barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
+  hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, delay: 480, fill: 'both' });
+  const a = await fly(from, to, { fromPill: true });
+  setIslandRect(to); a.cancel();
+  Game.rect = to;
+  await bar.gameDock(to);
+  await nextFrame();
+  setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  Game.busy = false;
+}
+async function gameMove(to) {
+  Game.busy = true;
+  const from = Game.rect;
+  setIslandRect(from);
+  await bar.gameStage(); await nextFrame();
+  const a = await fly(from, to);
+  setIslandRect(to); a.cancel();
+  Game.rect = to;
+  await bar.gameDock(to); await nextFrame();
+  setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  Game.busy = false;
+}
+async function gameExit(m) {
+  if (!Game.on) return;
+  Game.busy = true;
+  const from = Game.rect || cornerRect(200, HUD_H, Game.corner);
+  setIslandRect(from);
+  await bar.gameStage(); await nextFrame();
+  const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
+  const to = { x: (m.w - pillW) / 2, y: 0, w: pillW, h: 32 };
+  hudEl.getAnimations().forEach((x) => x.cancel());
+  hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
+  barEl.getAnimations().forEach((x) => x.cancel());
+  barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, delay: 640, fill: 'both' });
+  const a = await fly(from, to, { toPill: true });
+  Game.on = false; Game.rect = null; Game.busy = false;
+  island.classList.remove('game');
+  island.style.transform = ''; island.style.width = ''; island.style.height = '';
+  a.cancel();
+  hudEl.getAnimations().forEach((x) => x.cancel()); barEl.getAnimations().forEach((x) => x.cancel());
+  hudEl.innerHTML = hudEl._h = '';
+  winFull = false;
+  bar.gameExitDone();
+  pushNeed(); renderBar();
+}
+function drawHud() {
+  if (!Game.on || Game.busy) return;
+  const html = hudHtml();
+  if (html === hudEl._h) return;
+  hudEl.innerHTML = hudEl._h = html;
+  // плашка подстраивается под содержимое (например, появилось предупреждение о батарее)
+  const w = Math.ceil(hudEl.offsetWidth);
+  if (Game.rect && Math.abs(w - Game.rect.w) > 1) {
+    const r = cornerRect(w, HUD_H, Game.corner);
+    Game.rect = r; setIslandRect({ x: 0, y: 0, w: r.w, h: r.h }); bar.gameDock(r);
+  }
+}
+bar.onGame((m) => {
+  Game.chain = Game.chain.then(async () => {
+    try {
+      if (m.phase === 'enter') await gameEnter(m);
+      else if (m.phase === 'exit') await gameExit(m);
+      else if (m.phase === 'update' && Game.on) {
+        Game.show = m.show || Game.show; Game.W = m.w || Game.W; Game.H = m.h || Game.H;
+        hudEl.innerHTML = hudEl._h = hudHtml();
+        const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, m.corner);
+        if (m.corner !== Game.corner) { Game.corner = m.corner; await gameMove(to); }
+        else { Game.rect = to; setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }); bar.gameDock(to); }
+      }
+    } catch (e) { console.warn('game', e); Game.busy = false; }
+  });
+});
+bar.onGameStats((s) => { Game.st = s; drawHud(); });
 
 function renderHome() {
   homeEl.innerHTML = '';

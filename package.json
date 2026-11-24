@@ -57,6 +57,11 @@
     ],
     "extraResources": [
       {
+        "from": "vendor/presentmon",
+        "to": "presentmon",
+        "filter": ["PresentMon.exe", "LICENSE.txt"]
+      },
+      {
         "from": "extension",
         "to": "extension",
         "filter": [

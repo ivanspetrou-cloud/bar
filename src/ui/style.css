@@ -708,3 +708,38 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .mu-card-ph svg.i { width: 32px; height: 32px; }
 
 .mu-q-h { flex: none; padding: 10px 6px 2px; }
+#island.open .dock.quiet .dock-app { animation: none; }
+.mu-artist-link { cursor: pointer; border-radius: 3px; transition: color .15s; }
+.mu-artist-link:hover, .mu-artist-link:focus-visible { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; outline: none; }
+
+/* ---------- игровой режим: плашка в углу ---------- */
+#island.game { left: 0; top: 0; transition: none !important; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 90%, transparent);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); }
+#island.game .content { display: none; }
+#island.game .bar { pointer-events: none; }
+#island.game.dim .bar { opacity: 1; }
+.hud { position: absolute; left: 0; top: 0; height: 34px; display: none; align-items: center; gap: 12px; padding: 0 14px;
+  white-space: nowrap; font-weight: 600; pointer-events: none; opacity: 0; }
+#island.game .hud { display: flex; }
+.hud-it { display: inline-flex; align-items: center; gap: 4px; }
+.hud-it svg.i { width: 15px; height: 15px; color: var(--mut); }
+.hud-it.red-t svg.i { color: inherit; }
+.hud-v { text-align: right; font-weight: 600; }
+.hud-fps .hud-v { color: var(--hi-text); font-size: var(--fs-title); }
+.hud-fps .sub { font-size: 10px; letter-spacing: .04em; color: var(--mut); font-weight: 600; }
+.hud-clock { color: var(--fg-2); }
+
+/* ---------- настройки → Игры ---------- */
+.g-card { gap: 10px; }
+.g-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.g-chips .qt { flex: none; }
+.g-ign.off { color: var(--mut); text-decoration: line-through; }
+.g-screen { position: relative; width: 168px; height: 96px; flex: none; border-radius: 10px; border: 1.5px solid var(--ctl-hi);
+  background: linear-gradient(160deg, var(--card-hi), var(--bg)); }
+.g-dot { position: absolute; width: 34px; height: 14px; border: 0; border-radius: 7px; background: var(--ctl-hi); cursor: pointer;
+  transition: background .15s, transform .2s var(--spring); }
+.g-dot:hover { transform: scale(1.1); background: var(--mut); }
+.g-dot.on { background: var(--acc); }
+.g-dot.tl { left: 8px; top: 8px; } .g-dot.tr { right: 8px; top: 8px; } .g-dot.bl { left: 8px; bottom: 8px; } .g-dot.br { right: 8px; bottom: 8px; }
+.g-screen-lbl { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; }
+.mic-sel { width: min(100%, 300px); min-height: 32px; padding: 4px 10px; background: var(--ctl); border-color: transparent; font-size: var(--fs-cap); }

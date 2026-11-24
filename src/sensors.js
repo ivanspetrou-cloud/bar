@@ -242,8 +242,12 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.handle('app-icon', async (_e, a) => {
     const key = a.id || a.exe;
     if (iconCache.has(key)) return iconCache.get(key);
-    // кандидаты по порядку: exe → иконка, на которую указывает ярлык (у Office она в отдельном xlicons.exe) → сам ярлык.
-    // Берём первую, которая не стандартная заглушка Windows.
+    // 1) так, как иконку показывает «Пуск» (shell:AppsFolder\<AppID>) — подходит и обычным программам, и Store-приложениям
+    if (a.id && !a.id.startsWith('exe:')) {
+      const b64 = await safe(fast.call('appicon', a.id, 8000));
+      if (b64 && typeof b64 === 'string' && b64.length > 200) { const u = 'data:image/png;base64,' + b64; iconCache.set(key, u); return u; }
+    }
+    // 2) запасной путь: exe → иконка, на которую указывает ярлык → сам ярлык; без стандартной заглушки Windows
     let lnkInfo = {};
     if (a.lnk) { try { lnkInfo = shell.readShortcutLink(a.lnk); } catch {} }
     const gen = await genericIcon();

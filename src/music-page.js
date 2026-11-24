@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.2.7';
+  const BAR_PAGE_V = '0.2.9';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -31,8 +31,14 @@
     if (!id) return false;
     const cur = likeCache.id === id ? likeCache.status : '';
     const want = cur === kind ? 'INDIFFERENT' : kind;
-    await api(want === 'LIKE' ? 'like/like' : want === 'DISLIKE' ? 'like/dislike' : 'like/removelike', { target: { videoId: id } });
+    try { await api(want === 'LIKE' ? 'like/like' : want === 'DISLIKE' ? 'like/dislike' : 'like/removelike', { target: { videoId: id } }); }
+    catch { return false; }
     likeCache.id = id; likeCache.status = want;
+    // открытая страница сама не узнает об оценке — обновляем отметку у её кнопок этого трека
+    for (const el of document.querySelectorAll('ytmusic-like-button-renderer')) {
+      const d = el.data;
+      if (d && d.target && d.target.videoId === id) { try { el.data = Object.assign({}, d, { likeStatus: want }); el.setAttribute('like-status', want); } catch {} }
+    }
     return true;
   }
   const txt = (r) => (r && (r.runs ? r.runs.map((x) => x.text).join('') : r.simpleText)) || '';
@@ -177,10 +183,12 @@
       const rb = ctlBtn(RE_REPEAT);
       if (rb) {
         const lbl = (rb.getAttribute('aria-label') || rb.getAttribute('title') || '');
-        if (rb.getAttribute('aria-pressed') !== 'true' && /откл|выкл|off/i.test(lbl)) return 'NONE';
-        if (/одн|трек|one|track|song/i.test(lbl)) return 'ONE';
-        if (rb.getAttribute('aria-pressed') === 'true' || /все|плейлист|all|playlist/i.test(lbl)) return 'ALL';
-        return 'NONE';
+        // подпись — текущий режим: «Повтор отключен» → «Повторять один трек» → «Повторять все треки»
+        const w = ' ' + lbl.toLowerCase() + ' ';
+        if (rb.getAttribute('aria-pressed') !== 'true' || /откл|выкл| off /.test(w)) return 'NONE';
+        if (/ все | all |плейлист|playlist/.test(w)) return 'ALL';
+        if (/ один | одного | one /.test(w)) return 'ONE';
+        return 'ALL';
       }
       return b ? (b.getAttribute('repeat-mode') || '') : '';
     };

@@ -108,6 +108,30 @@ namespace Bar {
       return ExePath(pid);
     }
 
+    // ---------- игровой режим: что на переднем плане и на весь ли экран ----------
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out GRECT r);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref GMONINFO mi);
+    [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
+    [StructLayout(LayoutKind.Sequential)] struct GRECT { public int l, t, r, b; }
+    [StructLayout(LayoutKind.Sequential)] struct GMONINFO { public int cbSize; public GRECT mon; public GRECT work; public uint flags; }
+    // "полноэкранное(1/0)|состояние уведомлений|exe|pid|монитор x,y,w,h (физические пиксели)"
+    public static string GameState() {
+      IntPtr h = Target();
+      if (h == IntPtr.Zero) return "";
+      var cls = new StringBuilder(256); GetClassName(h, cls, 256);
+      string c = cls.ToString();
+      if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return "";
+      GRECT r; GetWindowRect(h, out r);
+      var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO));
+      GetMonitorInfo(MonitorFromWindow(h, 2), ref mi);
+      bool full = r.l <= mi.mon.l && r.t <= mi.mon.t && r.r >= mi.mon.r && r.b >= mi.mon.b;
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      int q = 0; try { SHQueryUserNotificationState(out q); } catch {}
+      return (full ? "1" : "0") + "|" + q + "|" + ExePath(pid) + "|" + pid + "|" + mi.mon.l + "," + mi.mon.t + "," + (mi.mon.r - mi.mon.l) + "," + (mi.mon.b - mi.mon.t);
+    }
+
     // Установленные раскладки: "hkl|ru-RU|Русский (Россия)|1 — текущая"
     public static string[] Layouts() {
       uint pid; uint tid = GetWindowThreadProcessId(Target(), out pid);
@@ -363,6 +387,69 @@ namespace Bar {
     }
   }
 
+
+  // ---------- загрузка видеокарты (сумма 3D-движков всех процессов), только в игровом режиме ----------
+  public static class Gpu {
+    static readonly Dictionary<string, PerformanceCounter> ctr = new Dictionary<string, PerformanceCounter>();
+    static DateTime scanned = DateTime.MinValue;
+    public static int Usage() {
+      if ((DateTime.Now - scanned).TotalSeconds > 60) {
+        scanned = DateTime.Now;
+        var names = new HashSet<string>();
+        foreach (var n in new PerformanceCounterCategory("GPU Engine").GetInstanceNames()) if (n.Contains("engtype_3D")) names.Add(n);
+        var gone = new List<string>(); foreach (var k in ctr.Keys) if (!names.Contains(k)) gone.Add(k);
+        foreach (var k in gone) { ctr[k].Dispose(); ctr.Remove(k); }
+        foreach (var n in names) if (!ctr.ContainsKey(n)) { try { var pc = new PerformanceCounter("GPU Engine", "Utilization Percentage", n, true); pc.NextValue(); ctr[n] = pc; } catch {} }
+      }
+      float sum = 0; var dead = new List<string>();
+      foreach (var kv in ctr) { try { sum += kv.Value.NextValue(); } catch { dead.Add(kv.Key); } }
+      foreach (var d in dead) ctr.Remove(d);
+      return (int)Math.Round(Math.Min(100f, sum));
+    }
+  }
+
+
+  // ---------- иконка приложения так, как её показывает «Пуск» (shell:AppsFolder\<AppID>) ----------
+  public static class ShellIcon {
+    [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellItemImageFactory { [PreserveSig] int GetImage(SIZE size, int flags, out IntPtr phbm); }
+    [StructLayout(LayoutKind.Sequential)] struct SIZE { public int cx, cy; }
+    [StructLayout(LayoutKind.Sequential)] struct BITMAP { public int bmType, bmWidth, bmHeight, bmWidthBytes; public ushort bmPlanes, bmBitsPixel; public IntPtr bmBits; }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory item);
+    [DllImport("gdi32.dll")] static extern int GetObject(IntPtr h, int size, ref BITMAP bmp);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr h);
+    // PNG (base64) 64×64 с прозрачностью или пустая строка
+    public static string Png(string appId, int size) {
+      IShellItemImageFactory f;
+      try { SHCreateItemFromParsingName("shell:AppsFolder\\" + appId, IntPtr.Zero, typeof(IShellItemImageFactory).GUID, out f); } catch { return ""; }
+      IntPtr hbm; var sz = new SIZE(); sz.cx = size; sz.cy = size;
+      if (f.GetImage(sz, 0x4 /* SIIGBF_ICONONLY */, out hbm) != 0 || hbm == IntPtr.Zero) return "";
+      try {
+        var bm = new BITMAP(); GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), ref bm);
+        if (bm.bmBits == IntPtr.Zero || bm.bmBitsPixel != 32) return "";
+        int w = bm.bmWidth, h = Math.Abs(bm.bmHeight), stride = bm.bmWidthBytes;
+        var px = new byte[stride * h]; Marshal.Copy(bm.bmBits, px, 0, px.Length);
+        using (var img = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+          var data = img.LockBits(new System.Drawing.Rectangle(0, 0, w, h), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+          // DIB снизу вверх (bmHeight > 0) — переворачиваем строки; альфа уже предумножена — снимаем предумножение
+          for (int y = 0; y < h; y++) {
+            int src = (bm.bmHeight > 0 ? h - 1 - y : y) * stride;
+            var row = new byte[w * 4];
+            for (int x = 0; x < w; x++) {
+              byte b = px[src + x * 4], g = px[src + x * 4 + 1], r = px[src + x * 4 + 2], a = px[src + x * 4 + 3];
+              if (a > 0 && a < 255) { b = (byte)Math.Min(255, b * 255 / a); g = (byte)Math.Min(255, g * 255 / a); r = (byte)Math.Min(255, r * 255 / a); }
+              row[x * 4] = b; row[x * 4 + 1] = g; row[x * 4 + 2] = r; row[x * 4 + 3] = a;
+            }
+            Marshal.Copy(row, 0, new IntPtr(data.Scan0.ToInt64() + (long)y * data.Stride), w * 4);
+          }
+          img.UnlockBits(data);
+          using (var ms = new System.IO.MemoryStream()) { img.Save(ms, System.Drawing.Imaging.ImageFormat.Png); return Convert.ToBase64String(ms.ToArray()); }
+        }
+      } finally { DeleteObject(hbm); }
+    }
+  }
+
   // ---------- панель задач: автоскрытие ----------
   public static class Taskbar {
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int l, t, r, b; }
@@ -378,7 +465,7 @@ namespace Bar {
     }
   }
 }
-'@
+'@ -ReferencedAssemblies System.Drawing
 
 # ---------- WinRT: текущий трек ----------
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -517,6 +604,9 @@ while ($true) {
       'layout'   { [Bar.Win]::Layout() }
       'layouts'  { @([Bar.Win]::Layouts()) }
       'fg'       { [Bar.Win]::Foreground() }
+      'gamestate' { [Bar.Win]::GameState() }
+      'gpu'      { [Bar.Gpu]::Usage() }
+      'appicon'  { [Bar.ShellIcon]::Png($arg, 64) }
       'winicon'  {
         # PNG (base64) иконки окна запущенной программы с этим exe; иначе пусто
         $want = $arg.ToLower(); $png = $null
