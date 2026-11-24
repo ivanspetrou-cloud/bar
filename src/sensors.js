@@ -120,6 +120,21 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     return !!ok;
   });
 
+  // ---------- веб-камера: поворот, наклон, зум, фокус, приватность (UVC) ----------
+  ipcMain.handle('cam-list', async () => Agent.list(await safe(fast.call('camlist', '', 8000))).map((r) => {
+    const [i, name, props, ctl] = String(r).split('|');
+    const p = {};
+    for (const x of (props || '').split(',').filter(Boolean)) {
+      const [id, min, max, step, def, cur, auto, canAuto] = x.split(':').map(Number);
+      p[id] = { min, max, step: step || 1, def, cur, auto: !!auto, canAuto: !!canAuto };
+    }
+    return { i: +i, name, props: p, ctl: ctl === '1' };
+  }));
+  ipcMain.handle('cam-set', async (_e, dev, prop, val, auto) => {
+    if (![dev, prop, val].every(Number.isFinite)) return null;
+    return safe(fast.call('camset', [dev | 0, prop | 0, Math.round(val), auto ? 1 : 0].join(' '), 4000));
+  });
+
   // ---------- приложения ----------
   let appsCache = null, appsAt = 0;
   function scanLnk() {

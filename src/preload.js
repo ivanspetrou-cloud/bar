@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('bar', {
   winTheme: (light) => ipcRenderer.invoke('win-theme', light),
   onSensors: on('sensors'),
   onTuck: on('tuck'),
+  camList: () => ipcRenderer.invoke('cam-list'),
+  camSet: (dev, prop, val, auto) => ipcRenderer.invoke('cam-set', dev, prop, val, auto),
   onNotchHop: on('notch-hop'),
   taskbarGet: () => ipcRenderer.invoke('taskbar-get'),
   taskbarSet: (p) => ipcRenderer.invoke('taskbar-set', p),
