@@ -15,10 +15,41 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
   let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
   const thumbs = new Map(); // окно → последний снимок (для свёрнутых: снят в момент сворачивания)
-  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, ...(settings.taskbar || {}) });
+  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, same: true, ...(settings.taskbar || {}) });
   // размер — свой у каждого монитора (по умолчанию общий)
   const sizeOf = (display) => (cfg().sizes || {})[display.id] || cfg().size;
-  const cfgFor = (d) => ({ ...cfg(), size: sizeOf(d.display) });
+  const cfgFor = (d) => ({ ...cfg(), size: sizeOf(d.display), zoom: d.zoom || 1 });
+
+  // ---------- одинаковый размер в сантиметрах на всех мониторах ----------
+  // Эталон — монитор с самым мелким пикселем (у вас 27" 2K): на нём таскбар как есть, на остальных док
+  // берёт размер с поправкой, чтобы иконки были того же физического размера. Размеры экранов — из EDID.
+  let monMm = null; // имя монитора → ширина изображения, мм
+  async function loadMonSizes() {
+    const rows = await call('monsizes', '', 15000);
+    monMm = new Map();
+    for (const r of Array.isArray(rows) ? rows : rows ? [rows] : []) {
+      const [n, w] = String(r).split('|');
+      if (n && +w > 0) monMm.set(n.trim().toLowerCase(), +w * 10);
+    }
+    for (const d of docks.values()) applyZoom(d);
+  }
+  // мм на один пиксель страницы (CSS px) при масштабе 1
+  const mmPerCss = (x) => { const w = monMm && monMm.get(String(x.label || '').trim().toLowerCase()); return w ? (w / (x.size.width * x.scaleFactor)) * x.scaleFactor : null; };
+  function zoomOf(display) {
+    if (!cfg().same || !monMm) return 1;
+    const all = screen.getAllDisplays().filter(mmPerCss);
+    const mine = mmPerCss(display);
+    if (!mine || all.length < 2) return 1;
+    const ref = all.reduce((a, b) => (mmPerCss(a) <= mmPerCss(b) ? a : b)); // самый мелкий пиксель
+    return Math.max(0.5, Math.min(2, mmPerCss(ref) / mine));
+  }
+  function applyZoom(d) {
+    if (d.win.isDestroyed()) return;
+    const k = zoomOf(d.display);
+    d.zoom = k;
+    place(d);
+    d.win.webContents.send('tb-cfg', cfgFor(d)); // док сам берёт размер с поправкой
+  }
   const call = (cmd, arg = '', ms = 4000) => sensors.call(cmd, arg, ms).catch(() => undefined);
   const own = process.execPath.toLowerCase();
   const hwndOf = (win) => { const b = win.getNativeWindowHandle(); return b.length >= 8 ? Number(b.readBigUInt64LE(0)) : b.readUInt32LE(0); };
@@ -105,7 +136,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   async function reserve(d) {
     const sf = d.display.scaleFactor;
     const p = screen.dipToScreenRect(null, d.display.bounds);
-    const h = Math.round((SIZES[sizeOf(d.display)] + EDGE * 2) * sf);
+    const h = Math.round((SIZES[sizeOf(d.display)] + EDGE * 2) * (d.zoom || 1) * sf);
     await call('appbar', [hwndOf(d.win), p.x, p.y + p.height - h, p.x + p.width, p.y + p.height, CB_MSG].join(' '));
     d.reserved = true;
   }
@@ -113,7 +144,8 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
 
   function place(d) {
     const b = d.display.bounds;
-    d.win.setBounds({ x: b.x, y: b.y + b.height - WIN_H, width: b.width, height: WIN_H });
+    const wh = WIN_H;
+    d.win.setBounds({ x: b.x, y: b.y + b.height - wh, width: b.width, height: wh });
     // место у края — только если попросили: иначе док висит поверх окон, а они идут до самого низа экрана
     if (cfg().mode === 'always' && cfg().reserve) reserve(d); else unreserve(d);
   }
@@ -137,7 +169,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     win.setIgnoreMouseEvents(true, { forward: true });
     if (process.env.BAR_SNAP) win.webContents.on('console-message', (e) => console.log('[tb-ui]', e.level, e.message));
     win.loadFile(path.join(__dirname, 'ui', 'taskbar.html'), { query: { d: String(display.id) } });
-    win.once('ready-to-show', () => { place(d); visibleSync(d); win.webContents.send('tb-wins', lastList); refreshSoon(); });
+    win.once('ready-to-show', () => { applyZoom(d); visibleSync(d); win.webContents.send('tb-wins', lastList); refreshSoon(); });
     // Windows сообщает таскбару о полноэкранных программах на ЕГО мониторе и о смене места
     win.hookWindowMessage(CB_MSG, (wParam, lParam) => {
       const w = wParam.length >= 8 ? Number(wParam.readBigUInt64LE(0)) : wParam.readUInt32LE(0);
@@ -156,7 +188,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     for (const display of now) {
       const d = docks.get(display.id);
       if (!d) create(display);
-      else { d.display = display; place(d); }
+      else { d.display = display; applyZoom(d); }
     }
   }
 
@@ -181,6 +213,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
 
   async function enable() {
     syncDisplays();
+    if (!monMm) loadMonSizes();
     startEvents();
     await hideWinTaskbar();
     clearInterval(keepT); keepT = setInterval(() => call('hidetaskbar', '1'), 10000); // Проводник перезапустился — снова прячем
@@ -204,7 +237,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     saveSettings();
     const now = cfg();
     if (now.on !== before.on) await apply();
-    else for (const d of docks.values()) { place(d); visibleSync(d); if (!d.win.isDestroyed()) d.win.webContents.send('tb-cfg', cfgFor(d)); }
+    else for (const d of docks.values()) { applyZoom(d); visibleSync(d); if (!d.win.isDestroyed()) d.win.webContents.send('tb-cfg', cfgFor(d)); }
     return { ...now, displays: displays() };
   });
   ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); });

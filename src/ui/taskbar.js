@@ -246,7 +246,7 @@ function prevPlace(jump) {
   if (!prevFor || prev.hidden) return;
   const r = prevFor.getBoundingClientRect(), sh = shell.getBoundingClientRect();
   const x = Math.max(8, Math.min(window.innerWidth - prev.offsetWidth - 8, Math.round(r.left + r.width / 2 - prev.offsetWidth / 2)));
-  const y = Math.round(sh.top - sizePx() * 0.45 - prev.offsetHeight - 10);
+  const y = Math.round(sh.top - prev.offsetHeight - 10); // сразу над доком: увеличенная иконка уходит под превью
   if (jump) { prev.style.transition = 'none'; prev.style.translate = `${x}px ${y}px`; void prev.offsetWidth; prev.style.transition = ''; }
   else prev.style.translate = `${x}px ${y}px`;
 }
@@ -308,7 +308,7 @@ function hideTip() { clearTimeout(tipT); tipFor = null; tipLive = false; tip.cla
 // Раскладка дока при наведении НЕ меняется: иконки только масштабируются и раздвигаются трансформацией,
 // а фон дока растягивается отдельным слоем. Расстояния считаются от неподвижных позиций (offsetLeft) —
 // поэтому нет обратной связи «иконка выросла → док сдвинулся → иконка уехала из-под курсора».
-const sizePx = () => SIZES[cfg.size] || 52;
+const sizePx = () => Math.round((SIZES[cfg.size] || 52) * (cfg.zoom || 1)); // zoom — поправка на физический размер пикселя монитора
 let lastX = null, magRaf = 0;
 const shell = $('#tb-shell'), bgEl = $('#tb-bg');
 function magnify(x) {

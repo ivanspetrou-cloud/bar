@@ -776,6 +776,16 @@ while ($true) {
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
       'taskwins' { @([Bar.Win]::TaskWindows()) }
       'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 720, 450) }) }
+      'monsizes' {
+        # физические размеры экранов из EDID: «имя|ширина см|высота см» — чтобы таскбар был одного размера в сантиметрах
+        $ids = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue)
+        $sz = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction SilentlyContinue)
+        @($ids | ForEach-Object {
+          $inst = $_.InstanceName; $name = (($_.UserFriendlyName | Where-Object { $_ } | ForEach-Object { [char]$_ }) -join '').Trim()
+          $p = $sz | Where-Object { $_.InstanceName -eq $inst } | Select-Object -First 1
+          if ($p -and $name) { $name + '|' + $p.MaxHorizontalImageSize + '|' + $p.MaxVerticalImageSize }
+        })
+      }
       'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
       'startmenu' { [Bar.Win]::StartMenu(); $true }
       'showdesktop' { [Bar.Win]::ShowDesktop(); $true }

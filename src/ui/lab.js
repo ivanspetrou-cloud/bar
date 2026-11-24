@@ -567,6 +567,7 @@ function labSettings(toggle) {
       rows.replaceChildren(
         h('div', { class: 'sw' }, h('span', {}, 'Поведение'), seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
         c.mode === 'always' && h('div', { class: 'sw' }, h('span', {}, 'Резервировать место', h('span', { class: 'muted' }, ' · окна заканчиваются над таскбаром')), toggle(c.reserve, (v) => set({ reserve: v }))),
+        h('div', { class: 'sw' }, h('span', {}, 'Одинаковый размер на всех мониторах', h('span', { class: 'muted' }, ' · по сантиметрам, как на основном')), toggle(c.same !== false, (v) => set({ same: v }))),
         // размер — отдельно для каждого монитора
         ...(c.displays || []).map((m) => h('div', { class: 'sw' },
           h('span', {}, `Размер на мониторе ${m.n}`, h('span', { class: 'muted' }, ` · ${m.w}×${m.h}${m.primary ? ', основной' : ''}`)),
