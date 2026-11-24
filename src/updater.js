@@ -9,7 +9,8 @@ module.exports = function setupUpdater({ send }) {
   const set = (p) => { st = { ...st, ...p }; send('update', st); };
 
   // в разработке (не установленная сборка) обновляться нечему
-  if (!app.isPackaged) {
+  // Bar Lab не обновляется из релизов основного Bar
+  if (!app.isPackaged || /-lab/.test(app.getVersion())) {
     st.state = 'dev';
     ipcMain.handle('update-get', () => st);
     ipcMain.handle('update-check', () => st);
