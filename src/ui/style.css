@@ -806,7 +806,9 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 @keyframes ring-bell { 0%, 70%, 100% { transform: rotate(0); } 75% { transform: rotate(14deg); } 82% { transform: rotate(-12deg); } 89% { transform: rotate(8deg); } 95% { transform: rotate(-4deg); } }
 
 /* цвет обложки: мягкое свечение под свёрнутым нотчем, пока играет музыка */
-#island.tinted:not(.open) { box-shadow: 0 6px 20px -10px color-mix(in srgb, var(--tint) 70%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--tint) 40%, transparent); }
+/* окно свёрнутого нотча всего на 12px выше таблетки: свечение компактное, чтобы его не обрезал край окна
+   и оно шло точно по контуру нотча вместе со скруглениями */
+#island.tinted:not(.open) { box-shadow: 0 1px 7px -1px color-mix(in srgb, var(--tint) 75%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--tint) 55%, transparent); }
 #island.tinted.open .card.np { background: linear-gradient(135deg, color-mix(in srgb, var(--tint) 22%, var(--card)), var(--card) 70%); transition: background .6s; }
 
 /* клик по дате в шапке открывает календарь */
@@ -874,3 +876,12 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 /* активность в шапке — кнопка к своему инструменту */
 .bar .act.link { cursor: pointer; border-radius: var(--r-sm); padding: 2px 8px; margin: 0 -2px; transition: background .15s; }
 .bar .act.link:hover { background: var(--ctl); }
+/* окончание таймера: тонкое аккуратное кольцо вместо толстой обводки */
+@keyframes alert {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  40% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--hi-g) 70%, transparent), 0 1px 7px -1px color-mix(in srgb, var(--hi-g) 40%, transparent); }
+}
+#island.alert { animation: alert 1.2s var(--soft) 4; }
+.chime-row .slider { flex: 1; min-width: 110px; margin-left: 8px; }
+.chime-row > span:first-child { white-space: nowrap; }
+.chime-v { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }

@@ -517,6 +517,28 @@ barEl.addEventListener('click', (e) => {
   if (t && current !== t) openTool(t);
 });
 
+// ============ 13. Громкость сигнала таймера и напоминаний ============
+// Тот же сигнал из трёх нот, но громкость настраивается (Настройки → Lab); 0 — без звука.
+const chimeVol = () => store.get('chimeVol', 60);
+// eslint-disable-next-line no-func-assign
+chime = function () {
+  const vol = chimeVol() / 100;
+  if (vol <= 0) return;
+  try {
+    const ac = new AudioContext();
+    const peak = 0.42 * vol * vol; // квадрат — ползунок звучит равномерно на слух
+    [0, 0.18, 0.36].forEach((t, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = [880, 1108.7, 1318.5][i];
+      g.gain.setValueAtTime(0.0001, ac.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), ac.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + t + 0.6);
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.65);
+    });
+    setTimeout(() => ac.close(), 1500);
+  } catch {}
+};
+
 // ============ 10. Настройки Lab ============
 // Отдельный раздел в Настройках → «Основное»: переключатели новых функций.
 const LAB_OPTS = [
@@ -524,10 +546,18 @@ const LAB_OPTS = [
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
   ['tint', 'Цвет обложки', 'свечение под нотчем в цвет трека', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
 ];
+function chimeRow() {
+  const sl = makeSlider({ min: 0, max: 100, step: 5, value: chimeVol(), label: 'Громкость сигнала' });
+  const val = h('b', { class: 'chime-v' }, chimeVol() ? chimeVol() + '%' : 'без звука');
+  sl.addEventListener('input', () => { store.set('chimeVol', +sl.value); val.textContent = +sl.value ? sl.value + '%' : 'без звука'; });
+  sl.addEventListener('change', () => chime()); // отпустили ползунок — слышно, как будет звучать
+  return h('div', { class: 'sw chime-row' }, h('span', { title: 'Таймер и напоминания' }, 'Громкость сигнала'), sl, val,
+    h('button', { class: 'ib', title: 'Прослушать', onclick: () => chime() }, I('volup')));
+}
 function labSettings(toggle) {
   const row = ([, name, desc, get, set]) => h('div', { class: 'sw' }, h('span', {}, name, h('span', { class: 'muted' }, ' · ' + desc)), toggle(get(), set));
   return h('div', { class: 'split' },
-    h('div', { class: 'col' }, ...LAB_OPTS.map(row)),
+    h('div', { class: 'col' }, ...LAB_OPTS.map(row), chimeRow()),
     h('div', { class: 'col' },
       h('div', { class: 'card lab-help' },
         h('h4', {}, 'Что нового в Lab'),
