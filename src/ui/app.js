@@ -1870,7 +1870,7 @@ function updateRow() {
     };
     row.dataset.state = s.state;
     switch (s.state) {
-      case 'dev': set('code', `Bar ${v}`, 'Режим разработки — обновления приходят только в установленную версию', ''); break;
+      case 'dev': set('code', `Bar Lab ${v}`, 'Тестовая сборка: обновляется вручную, отдельно от основного Bar', ''); break;
       case 'checking': set('redo', 'Проверяю обновления…', `Сейчас у вас ${v}`, '', null, 'spin'); break;
       case 'available': set('download', `Доступна версия ${s.next}`, `Сейчас у вас ${v}`, 'Скачать', () => bar.updateDownload(), 'go'); break;
       case 'downloading': {

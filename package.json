@@ -1,7 +1,7 @@
 {
-  "name": "bar-notch",
-  "productName": "Bar",
-  "version": "0.1.4",
+  "name": "bar-lab",
+  "productName": "Bar Lab",
+  "version": "0.2.0-lab.3",
   "description": "Нотч для Windows: плеер YouTube Music, показатели, 16 инструментов сверху экрана",
   "main": "src/main.js",
   "author": "ivanspetrou-cloud",
@@ -31,10 +31,10 @@
     "ws": "^8.23.0"
   },
   "build": {
-    "appId": "app.bar.notch",
-    "productName": "Bar",
+    "appId": "app.bar.lab",
+    "productName": "Bar Lab",
     "directories": {
-      "output": "dist",
+      "output": "dist-lab",
       "buildResources": "build"
     },
     "files": [
@@ -43,14 +43,7 @@
       "package.json",
       "!src/**/*.map"
     ],
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "ivanspetrou-cloud",
-        "repo": "bar",
-        "releaseType": "release"
-      }
-    ],
+    "publish": null,
     "asar": true,
     "asarUnpack": [
       "src/agent.ps1",
@@ -86,8 +79,8 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "Bar-Setup-${version}.${ext}",
-      "shortcutName": "Bar",
+      "artifactName": "Bar-Lab-Setup-${version}.${ext}",
+      "shortcutName": "Bar Lab",
       "deleteAppDataOnUninstall": false
     },
     "electronFuses": {

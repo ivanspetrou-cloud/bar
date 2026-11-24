@@ -18,3 +18,4 @@ extension/page.js
 .idea/
 Thumbs.db
 desktop.ini
+dist-lab/

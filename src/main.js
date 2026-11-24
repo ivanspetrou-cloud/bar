@@ -57,7 +57,8 @@ startLog(`start pid=${process.pid} cwd=${process.cwd()} argv=${JSON.stringify(pr
 process.on('uncaughtException', (e) => startLog('uncaught ' + (e && e.stack || e)));
 app.on('will-quit', () => startLog('quit'));
 if (!app.requestSingleInstanceLock()) { startLog('second instance — exit'); app.quit(); }
-app.setAppUserModelId('app.bar.notch');
+// Bar Lab — тестовая сборка: свой идентификатор, своя папка настроек и своя запись автозапуска
+app.setAppUserModelId('app.bar.lab');
 
 // ---------- настройки ----------
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -70,7 +71,7 @@ function saveSettings() {
 }
 
 const dataDir = (...p) => {
-  const dir = path.join(app.getPath('documents'), 'Bar', ...p);
+  const dir = path.join(app.getPath('documents'), 'Bar Lab', ...p);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 };
