@@ -17,13 +17,14 @@ const NOT_GAMES = /\\(msedge|chrome|firefox|opera|brave|vivaldi|yandex|browser|v
 
 module.exports = function setupGame({ getWin, send, settings, saveSettings, sensors, win: winCtl, getStats }) {
   const G = settings.game = Object.assign({
-    auto: true, corner: 'tr', fade: 0, // corner: tl / tr / bl / br или tc — «на месте», сверху по центру; fade — прозрачность плашки, %
+    auto: true, corner: 'tr', fade: 0, hold: 1000, // hold — сколько держать курсор на плашке, чтобы открыть панель (0 — выкл) // corner: tl / tr / bl / br или tc — «на месте», сверху по центру; fade — прозрачность плашки, %
     show: { fps: true, cpu: true, gpu: true, ram: true, ping: true, clock: true },
     ignore: [], seen: [],
   }, settings.game || {});
   G.show = Object.assign({ fps: true, cpu: true, gpu: true, ram: true, ping: true, clock: true }, G.show || {});
 
   let active = null;          // { pid, exe, name, mon, manual }
+  let panelOpen = false;     // панель открыта поверх игры — плашку не возвращаем, пока её не закроют
   let suspendedExe = '';      // пользователь вышел из режима вручную — не включаем снова для этой игры, пока она на экране
   let seenCount = 0, missCount = 0, candidate = null;
   let timer = 0, statT = 0;
@@ -48,6 +49,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       if (missCount >= 3) exit();             // ~6 с без игры на экране — выходим
       return;
     }
+    if (panelOpen) { seenCount = 0; return; }
     if (suspendedExe && exe && exe.toLowerCase() !== suspendedExe.toLowerCase()) suspendedExe = '';
     if (!isGame || (suspendedExe && exe.toLowerCase() === suspendedExe.toLowerCase())) { seenCount = 0; candidate = null; return; }
     if (candidate !== exe) { candidate = exe; seenCount = 0; }
@@ -68,7 +70,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       saveSettings();
     }
     winCtl.stage(g.mon);
-    send('game', { phase: 'enter', corner: G.corner, fade: G.fade, show: G.show, name: g.name, w: g.mon.width, h: g.mon.height });
+    send('game', { phase: 'enter', corner: G.corner, fade: G.fade, hold: G.hold, show: G.show, name: g.name, w: g.mon.width, h: g.mon.height });
     startStats(g);
   }
   function exit(after) {
@@ -159,18 +161,28 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   function stopStats() { clearInterval(statT); clearInterval(pingT); stopFps(); gpuAgent.stop(); stats.gpu = null; stats.ping = null; }
 
   // ---------- IPC ----------
-  ipcMain.handle('game-dock', (_e, r) => { if (active) winCtl.hud(active.mon, r); return !!active; });
+  ipcMain.handle('game-dock', (_e, r) => { if (active) winCtl.hud(active.mon, r, G.hold > 0); return !!active; });
+  // открыть панель поверх игры (удержание курсора на плашке или Win+Shift+B); после закрытия — снова плашка
+  function openPanel() {
+    if (!active) return;
+    panelOpen = true;
+    exit(() => { send('toggle'); const w = getWin(); if (w) w.focus(); });
+  }
+  ipcMain.on('game-open-panel', openPanel);
+  // панель свернули — через пару секунд, если игра всё ещё на экране, нотч вернётся в плашку
+  ipcMain.on('panel-state', (_e, open) => { if (open) return; if (panelOpen) { panelOpen = false; seenCount = 1; } });
   ipcMain.handle('game-stage', () => { const m = active ? active.mon : lastMon; if (m) winCtl.stage(m); return !!m; });
   ipcMain.on('game-exit-done', () => { winCtl.pill(); const f = exitDone; exitDone = null; if (f) f(); });
   ipcMain.handle('game-get', async () => ({ ...G, active: active ? { name: active.name, manual: !!active.manual } : null, presentmon: !!presentMonPath(), perm: await fpsPermission() }));
   ipcMain.handle('game-set', (_e, patch) => {
-    for (const k of ['auto', 'corner', 'fade']) if (k in patch) G[k] = patch[k];
+    for (const k of ['auto', 'corner', 'fade', 'hold']) if (k in patch) G[k] = patch[k];
+    G.hold = [0, 500, 1000, 2000].includes(+G.hold) ? +G.hold : 1000;
     if (!['tl', 'tr', 'bl', 'br', 'tc'].includes(G.corner)) G.corner = 'tr';
     G.fade = [0, 40, 60].includes(+G.fade) ? +G.fade : 0;
     if (patch.show) G.show = Object.assign(G.show, patch.show);
     if (Array.isArray(patch.ignore)) G.ignore = patch.ignore.filter((x) => typeof x === 'string').slice(0, 50);
     saveSettings();
-    if (active) { send('game', { phase: 'update', corner: G.corner, fade: G.fade, show: G.show, w: active.mon.width, h: active.mon.height }); }
+    if (active) { send('game', { phase: 'update', corner: G.corner, fade: G.fade, hold: G.hold, show: G.show, w: active.mon.width, h: active.mon.height }); }
     return true;
   });
   ipcMain.handle('game-preview', () => {
@@ -212,6 +224,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       }).catch(() => {});
     },
     // открыть обычную панель поверх игры: сначала вернуться наверх
+    openPanel,
     leave(after) { if (active) { suspendedExe = active.manual ? '' : active.exe; exit(after); } else if (after) after(); },
     stop() { clearInterval(timer); stopStats(); },
   };

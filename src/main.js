@@ -97,7 +97,7 @@ ipcMain.handle('win-size', (_e, mode) => {
 // В обоих случаях окно полностью прозрачно для мыши: в игре оно ничего не перехватывает.
 const gameWin = {
   stage(mon) { if (!win) return; winMode = 'stage'; win.setIgnoreMouseEvents(true); win.setBounds({ x: mon.x, y: mon.y, width: mon.width, height: mon.height }); },
-  hud(mon, r) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); },
+  hud(mon, r, hover) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true, hover ? { forward: true } : undefined); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); },
   pill() { if (!win) return; winMode = 'pill'; placeWindow(); win.setIgnoreMouseEvents(true, { forward: true }); },
 };
 
@@ -551,7 +551,7 @@ function openSearch() {
 function toggle() {
   if (!win) return;
   // во время игры: сначала нотч возвращается наверх, потом открывается панель
-  if (game && game.isActive()) { game.leave(() => { send('toggle'); win.focus(); }); return; }
+  if (game && game.isActive()) { game.openPanel(); return; }
   if (settings.hidden) { settings.hidden = false; saveSettings(); win.showInactive(); buildTrayMenu(); }
   send('toggle');
   win.focus();

@@ -752,3 +752,10 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .g-place-side .seg { align-self: stretch; display: flex; }
 .g-place-side .seg button { flex: 1; padding: 0 6px; height: 28px; font-size: var(--fs-cap); }
 .g-place-side .btn { align-self: stretch; justify-content: center; }
+
+/* удержание курсора на игровой плашке: полоска прогресса по нижнему краю */
+.hud-hold { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--acc-g); transform: scaleX(0); transform-origin: 0 50%;
+  opacity: 0; pointer-events: none; display: none; }
+#island.game .hud-hold { display: block; }
+.g-hold { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.g-hold .seg button { padding: 0 8px; height: 28px; font-size: var(--fs-cap); }

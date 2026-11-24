@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('bar', {
   gameDock: (r) => ipcRenderer.invoke('game-dock', r),
   gameExitDone: () => ipcRenderer.send('game-exit-done'),
   gameStage: () => ipcRenderer.invoke('game-stage'),
+  gameOpenPanel: () => ipcRenderer.send('game-open-panel'),
+  panelState: (open) => ipcRenderer.send('panel-state', !!open),
   gameGet: () => ipcRenderer.invoke('game-get'),
   gameSet: (p) => ipcRenderer.invoke('game-set', p),
   gamePreview: () => ipcRenderer.invoke('game-preview'),

@@ -202,6 +202,7 @@ function expand(opts = {}) {
   if (!current) renderHome();
   renderBar();
   schedTick();
+  bar.panelState(true);
   openHooks.forEach((f) => f(true));
 }
 
@@ -221,6 +222,7 @@ function collapse(force) {
   wakeLive();
   schedTick();
   shrinkWinSoon(650); // после анимации сворачивания
+  bar.panelState(false);
 }
 
 // смена содержимого шапки (таблетка ↔ раскрытая) — плавным проявлением, без мгновенной подмены
@@ -1541,6 +1543,8 @@ tool({
                 segOf([[0, 'Нет'], [40, '40%'], [60, '60%']], g.fade || 0, async (v) => { await bar.gameSet({ fade: v }); show('game'); }),
                 h('button', { class: 'btn sm', onclick: () => bar.gamePreview() }, I('play'), 'Показать')))),
             h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips,
+              h('div', { class: 'g-hold' }, h('span', { class: 'small' }, 'Открыть панель, держа курсор на плашке'),
+                segOf([[0, 'Выкл'], [500, '0,5 с'], [1000, '1 с'], [2000, '2 с']], g.hold ?? 1000, async (v) => { await bar.gameSet({ hold: v }); show('game'); })),
               hk('game') && h('span', { class: 'muted small' }, `${hk('game')} — включить или выйти вручную`))),
           h('div', { class: 'col' },
             h('div', { class: 'card col g-card' }, h('h4', {}, 'FPS'), h('div', { class: 'small ' + PERM[0] }, PERM[1]), permBtn,
@@ -2733,7 +2737,7 @@ function fly(from, to, fromC, toC) {
 }
 async function gameEnter(m) {
   if (Game.on) return;
-  Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
+  Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.hold = m.hold ?? 1000; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
   if (state === 'open') { pinned = false; collapse(true); }
   clearTimeout(shrinkT); winFull = true;
   await nextFrame(); // окно уже растянуто на монитор — начинаем только после этого
@@ -2806,10 +2810,29 @@ function drawHud() {
   hudEl.innerHTML = hudEl._h = html;
   // плашка подстраивается под содержимое (например, появилось предупреждение о батарее)
   const w = Math.ceil(hudEl.offsetWidth);
-  if (Game.rect && Math.abs(w - Game.rect.w) > 1) {
-    const r = cornerRect(w, HUD_H, Game.corner);
-    Game.rect = r; setIslandRect({ x: 0, y: 0, w: r.w, h: r.h }); bar.gameDock(r);
-  }
+  if (Game.rect && Math.abs(w - Game.rect.w) > 1) resizeHud(w);
+}
+// Плавная смена ширины плашки: окно на время анимации — общий прямоугольник старого и нового размера,
+// край, к которому прилегает плашка, остаётся на месте; потом окно ужимается ровно до плашки.
+async function resizeHud(w) {
+  if (Game.busy) return;
+  Game.busy = true;
+  const old = Game.rect, nw = cornerRect(w, HUD_H, Game.corner);
+  const big = { x: Math.min(old.x, nw.x), y: old.y, w: Math.max(old.x + old.w, nw.x + nw.w) - Math.min(old.x, nw.x), h: old.h };
+  setIslandRect({ x: old.x - big.x, y: 0, w: old.w, h: old.h });
+  await bar.gameDock(big); await nextFrame();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const a = island.animate([
+    { transform: `translate(${old.x - big.x}px, 0px)`, width: old.w + 'px' },
+    { transform: `translate(${nw.x - big.x}px, 0px)`, width: nw.w + 'px' },
+  ], { duration: reduce ? 1 : 260, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+  await a.finished.catch(() => {});
+  setIslandRect({ x: nw.x - big.x, y: 0, w: nw.w, h: nw.h }); a.cancel();
+  Game.rect = nw;
+  await bar.gameDock(nw); await nextFrame();
+  setIslandRect({ x: 0, y: 0, w: nw.w, h: nw.h });
+  Game.busy = false;
+  drawHud(); // пока шла анимация, могли прийти новые данные
 }
 bar.onGame((m) => {
   Game.chain = Game.chain.then(async () => {
@@ -2820,7 +2843,7 @@ bar.onGame((m) => {
         Game.show = m.show || Game.show; Game.W = m.w || Game.W; Game.H = m.h || Game.H;
         hudEl.innerHTML = hudEl._h = hudHtml();
         const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, m.corner);
-        Game.fade = m.fade || 0;
+        Game.fade = m.fade || 0; Game.hold = m.hold ?? Game.hold;
         if (m.corner !== Game.corner) { const old = Game.corner; Game.corner = m.corner; await gameMove(to, old); }
         else { Game.rect = to; setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }); bar.gameDock(to); applyFade(true); }
       }
@@ -2828,6 +2851,27 @@ bar.onGame((m) => {
   });
 });
 bar.onGameStats((s) => { Game.st = s; drawHud(); });
+// Удержание курсора на плашке открывает панель (время — Настройки → Игры). По плашке бежит полоска прогресса.
+const holdBar = h('i', { class: 'hud-hold' });
+island.append(holdBar);
+let holdT = 0, holdAnim = null;
+function holdCancel(animated) {
+  clearTimeout(holdT);
+  if (!holdAnim) return;
+  const a = holdAnim; holdAnim = null;
+  if (!animated) { a.cancel(); return; }
+  // увели курсор раньше — полоска плавно уезжает назад
+  const cur = getComputedStyle(holdBar).transform;
+  a.cancel();
+  holdBar.animate([{ transform: cur, opacity: 1 }, { transform: 'scaleX(0)', opacity: 0 }], { duration: 180, easing: 'ease-out', fill: 'forwards' });
+}
+island.addEventListener('mouseenter', () => {
+  if (!Game.on || Game.busy || !(Game.hold > 0)) return;
+  holdCancel();
+  holdAnim = holdBar.animate([{ transform: 'scaleX(0)', opacity: 1 }, { transform: 'scaleX(1)', opacity: 1 }], { duration: Game.hold, easing: 'linear', fill: 'forwards' });
+  holdT = setTimeout(() => { holdCancel(); bar.gameOpenPanel(); }, Game.hold);
+});
+island.addEventListener('mouseleave', () => { if (Game.on) holdCancel(true); });
 
 function renderHome() {
   homeEl.innerHTML = '';
