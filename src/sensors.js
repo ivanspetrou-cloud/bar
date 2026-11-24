@@ -420,6 +420,7 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
       const k = exe.toLowerCase();
       if (!groups.has(k)) groups.set(k, { exe, name: path.basename(exe, '.exe'), windows: [] });
       groups.get(k).windows.push({ hwnd: Number(hwnd), pid: Number(pid) });
+      noteExe(exe); // программа с окном — запомнить для поиска и «+» (и без таскбара Bar)
     }
     return [...groups.values()];
   });
