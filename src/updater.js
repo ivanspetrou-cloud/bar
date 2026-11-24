@@ -34,6 +34,19 @@ module.exports = function setupUpdater({ send, beforeInstall }) {
   const log = (lvl) => (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${lvl} ${String(m).slice(0, 500)}\n`); } catch {} };
   autoUpdater.logger = { info: log('info'), warn: log('warn'), error: log('error'), debug: () => {} };
 
+  // Загрузка частями (~1 МБ вместо всего установщика) сравнивает копию прошлого установщика в кеше с картой блоков.
+  // Если они остались от разных версий (прерванное обновление, ручная переустановка), обновление молча качается целиком.
+  // Поэтому перед каждой загрузкой убираем из кеша карту, не совпадающую с копией установщика, — тогда берётся верная с GitHub.
+  function healCache() {
+    try {
+      const dir = path.join(process.env.LOCALAPPDATA || '', 'bar-notch-updater');
+      const inst = path.join(dir, 'installer.exe'), bmf = path.join(dir, 'current.blockmap');
+      if (!fs.existsSync(bmf)) return;
+      const bm = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(bmf)).toString());
+      const size = (bm.files || []).reduce((n, f) => n + (f.sizes || []).reduce((a, b) => a + b, 0), 0);
+      if (!fs.existsSync(inst) || fs.statSync(inst).size !== size) { fs.unlinkSync(bmf); log('warn')('stale current.blockmap removed (installer ' + (fs.existsSync(inst) ? fs.statSync(inst).size : 'missing') + ' vs blockmap ' + size + ')'); }
+    } catch (e) { log('warn')('healCache: ' + e.message); }
+  }
   autoUpdater.on('checking-for-update', () => set({ state: 'checking', error: '' }));
   autoUpdater.on('update-available', (i) => set({ state: 'available', next: i.version }));
   autoUpdater.on('update-not-available', () => set({ state: 'latest', checkedAt: Date.now() }));
@@ -52,6 +65,7 @@ module.exports = function setupUpdater({ send, beforeInstall }) {
   ipcMain.handle('update-download', () => {
     if (st.state !== 'available' && st.state !== 'error') return false;
     set({ state: 'downloading', percent: 0, speed: 0 });
+    healCache();
     autoUpdater.downloadUpdate().catch(() => {});
     return true;
   });
