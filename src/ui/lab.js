@@ -651,9 +651,17 @@ tool({
         if (!found.length) list.append(h('div', { class: 'muted small tbs-empty' }, 'Ничего не нашлось'));
       };
       inp.addEventListener('input', () => { q = inp.value; fill(); });
+      // портативная программа, которой нет в «Пуске», — выбрать .exe вручную
+      const file = h('button', { class: 'btn sm', onclick: async () => {
+        const pth = await bar.pickExe(); if (!pth) return;
+        const l = pins(); if (l.length >= 14) { flash('В доке до 14 программ'); return; }
+        const name = pth.split(/[\\/]/).pop().replace(/\.(exe|lnk|bat|cmd)$/i, '').replace(/[-_]+/g, ' ').trim();
+        if (!l.some((x) => x.exe && x.exe.toLowerCase() === pth.toLowerCase())) { l.push({ id: 'exe:' + pth, name, exe: /\.exe$/i.test(pth) ? pth : '', lnk: /\.lnk$/i.test(pth) ? pth : '', uwp: '' }); savePins(l); flash(`${name} — в таскбаре`); }
+        fill();
+      } }, I('folder'), 'Выбрать файл…');
       setTimeout(() => inp.focus(), 50);
       fill();
-      return h('div', { class: 'col', style: { flex: '1', minHeight: '0' } }, inp, list);
+      return h('div', { class: 'col', style: { flex: '1', minHeight: '0' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, inp, file), list);
     }
 
     // ---- справа: кнопки, ярлыки, поведение ----

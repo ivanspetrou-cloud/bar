@@ -80,6 +80,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       // окна самого Bar (и Bar Lab, и запущенного из исходников) — не программы пользователя
       && !(/\\(bar|bar lab|electron)\.exe$/i.test(w.exe) && /^Bar( Lab)?( — таскбар)?$/.test(w.title)));
     sendAll('tb-wins', lastList);
+    if (sensors.noteExe) for (const w of lastList) sensors.noteExe(w.exe);
     const fg = lastList.find((w) => w.active && !w.min);
     if (fg && fg.hwnd !== lastFg) { lastFg = fg.hwnd; clearTimeout(fgSnapT); fgSnapT = setTimeout(snapFg, 700); } // новое активное — снимок, когда дорисуется
   }
@@ -265,6 +266,11 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       if (x && x.place && PLACES[x.place]) return PLACES[x.place]();
       if (x && x.path && fs.statSync(String(x.path)).isDirectory()) shell.openPath(String(x.path));
     } catch {}
+  });
+  ipcMain.handle('pick-exe', async (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(w, { title: 'Программа для таскбара', properties: ['openFile'], filters: [{ name: 'Программы', extensions: ['exe', 'lnk', 'bat', 'cmd'] }] });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
   });
   ipcMain.handle('pick-folder', async (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);

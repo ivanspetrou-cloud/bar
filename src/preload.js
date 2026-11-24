@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('bar', {
   tbTool: (id) => ipcRenderer.send('tb-tool', id),
   tbOpen: (x) => ipcRenderer.send('tb-open', x),
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  pickExe: () => ipcRenderer.invoke('pick-exe'),
   tbThumbs: (hwnds) => ipcRenderer.invoke('tb-thumbs', hwnds),
   tbCloseWin: (hwnd) => ipcRenderer.send('tb-closewin', hwnd),
   onOpenTool: on('open-tool'),
