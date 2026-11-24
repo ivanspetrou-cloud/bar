@@ -139,6 +139,14 @@ namespace Bar {
     [StructLayout(LayoutKind.Sequential)] struct GMONINFO { public int cbSize; public GRECT mon; public GRECT work; public uint flags; }
     // "полноэкранное(1/0)|состояние уведомлений|exe|pid|монитор x,y,w,h (физические пиксели)"
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+    // активное окно развёрнуто на весь экран (кнопкой «развернуть»)? → монитор «l,t,r,b» в физических пикселях
+    public static string FgMaximized() {
+      IntPtr h = Target();
+      if (h == IntPtr.Zero || !IsZoomed(h)) return "";
+      var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO));
+      if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return "";
+      return mi.mon.l + "," + mi.mon.t + "," + mi.mon.r + "," + mi.mon.b;
+    }
     public static string GameState() {
       IntPtr h = Target();
       if (h == IntPtr.Zero) return "";
@@ -393,6 +401,37 @@ namespace Bar {
       return null;
     }
 
+    // SteelSeries Arctis Nova (1038): запрос статуса 0xB0 на интерфейс 3 (как драйвер Linux hid-steelseries и HeadsetControl).
+    // Ответ: [B0, 03 = на связи, заряд, 01 = заряжается]. У Nova 7 первого поколения заряд 0..4, у Gen 2 — проценты.
+    // Gen 2 может прислать ответ на интерфейс 5 — слушаем оба. Команда только читает состояние.
+    static byte[] Arctis(string pw, List<string> readers, int outLen) {
+      var hs = new List<System.IO.FileStream>();
+      try {
+        foreach (var rp in readers) { var rh = Open(rp, 0xC0000000u, 0x40000000u); if (!rh.IsInvalid) hs.Add(new System.IO.FileStream(rh, System.IO.FileAccess.ReadWrite, 64, true)); }
+        var wh = Open(pw, 0xC0000000u, 0x40000000u);
+        if (wh.IsInvalid) return null;
+        using (var w = new System.IO.FileStream(wh, System.IO.FileAccess.ReadWrite, 64, true)) {
+          var buf = new byte[Math.Max(2, outLen)]; buf[0] = 0x00; buf[1] = 0xB0;
+          w.Write(buf, 0, buf.Length);
+          var until = DateTime.Now.AddMilliseconds(700);
+          var all = new List<System.IO.FileStream>(hs); all.Add(w);
+          var bufs = new Dictionary<System.Threading.Tasks.Task<int>, byte[]>();
+          foreach (var f in all) { var r = new byte[64]; bufs[f.ReadAsync(r, 0, 64)] = r; }
+          while (DateTime.Now < until && bufs.Count > 0) {
+            int left = (int)(until - DateTime.Now).TotalMilliseconds; if (left <= 0) break;
+            var arr = new System.Threading.Tasks.Task[bufs.Count]; int k = 0; foreach (var t in bufs.Keys) arr[k++] = t;
+            int i = System.Threading.Tasks.Task.WaitAny(arr, left); if (i < 0) break;
+            var done = (System.Threading.Tasks.Task<int>)arr[i]; var data = bufs[done]; bufs.Remove(done);
+            if (done.Status != System.Threading.Tasks.TaskStatus.RanToCompletion) continue;
+            // в Windows первый байт — номер отчёта (0); данные с data[1]
+            if (data[1] == 0xB0) return data;
+          }
+        }
+      } catch { }
+      finally { foreach (var f in hs) try { f.Dispose(); } catch { } }
+      return null;
+    }
+
     static string lastKb = null;
     static string Pretty(string n) {
       n = n.Replace("Gaming Receiver", "").Replace("Receiver", "").Replace("Wireless", "").Replace("Gaming", "").Replace("RGB", "");
@@ -442,6 +481,28 @@ namespace Bar {
         // статус батареи Bragi: 1 — заряжается, 2 — разряжается (обычная работа), 3 — заряжена
         bool charging = st != null && st[3] == 0x00 && st[4] == 0x01;
         outp.Add(Pretty(name) + "|" + level + "|1|" + (charging ? "1" : "0") + "|" + kind);
+      }
+      {
+        var ss = Paths("1038");
+        string w3 = null; var rd = new List<string>(); int outLen = 64; string ssName = "";
+        foreach (var p in ss) {
+          string lp = p.ToLower();
+          HIDP_CAPS c; string name;
+          if (!Caps(p, out c, out name)) continue;
+          if (lp.Contains("&mi_03") && c.OutputReportByteLength > 0 && w3 == null) { w3 = p; outLen = c.OutputReportByteLength; ssName = name; }
+          else if (lp.Contains("&mi_05") && c.InputReportByteLength > 0) rd.Add(p);
+        }
+        if (w3 != null && !seen.Contains("ss" + ssName)) {
+          seen.Add("ss" + ssName);
+          var r = Arctis(w3, rd, outLen);
+          string nm = Pretty(string.IsNullOrEmpty(ssName) ? "Arctis Nova" : ssName);
+          if (r == null || r[2] != 0x03) outp.Add(nm + "|-1|0|0|headphones");          // наушники выключены или вне связи
+          else {
+            int raw = r[3];
+            int lvl = raw <= 4 ? raw * 25 : Math.Min(raw, 100);                        // Gen 1: 0..4, Gen 2: проценты
+            outp.Add(nm + "|" + lvl + "|1|" + (r[4] == 0x01 ? "1" : "0") + "|headphones");
+          }
+        }
       }
       foreach (var p in Paths("0c45")) {
         HIDP_CAPS c; string name;
@@ -746,6 +807,7 @@ while ($true) {
       'layouts'  { @([Bar.Win]::Layouts()) }
       'fg'       { [Bar.Win]::Foreground() }
       'gamestate' { [Bar.Win]::GameState() }
+      'fgmax'    { [Bar.Win]::FgMaximized() }
       'gpu'      { [Bar.Gpu]::Usage() }
       'appicon'  { [Bar.ShellIcon]::Png($arg, 64) }
       'winicon'  {

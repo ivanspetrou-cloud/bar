@@ -28,6 +28,7 @@ const createBridge = require('./bridge');
 const setupSensors = require('./sensors');
 const setupUpdater = require('./updater');
 const setupTaskbar = require('./taskbar');
+const winwatch = require('./winwatch');
 const setupGame = require('./game');
 const setupMusic = require('./music'); // регистрирует схему barimg:// — до готовности приложения
 
@@ -611,6 +612,22 @@ app.whenReady().then(() => {
   game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats });
   taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: (id = 'apps') => { if (!win) return; send('open-tool', id); win.focus(); } });
   ipcMain.on('tb-search', () => openSearch());
+  // Развёрнутое окно на мониторе нотча (браузер на весь экран) — нотч уезжает вверх тонкой полоской,
+  // чтобы не закрывать вкладки. Проверка — только по событиям окон, без постоянного опроса.
+  let tuckT = 0, tucked = null;
+  const tuckCheck = async () => {
+    let r = '';
+    try { r = String((await sensors.call('fgmax', '', 2000)) || ''); } catch {}
+    let on = false;
+    if (r) {
+      const [l, t, rr, b] = r.split(',').map(Number);
+      const d = screen.getDisplayMatching(screen.screenToDipRect(null, { x: l, y: t, width: rr - l, height: b - t }));
+      on = d.id === screen.getPrimaryDisplay().id;
+    }
+    if (on !== tucked) { tucked = on; send('tuck', on); }
+  };
+  winwatch.on('EL', () => { clearTimeout(tuckT); tuckT = setTimeout(tuckCheck, 200); });
+  setTimeout(tuckCheck, 1500);
   // то, что уже лежит в буфере при запуске, тоже попадает в историю
   loadClips().then(async () => {
     const t = await readClip();
@@ -663,6 +680,7 @@ app.on('will-quit', () => {
   if (sensors) sensors.stop();
   if (music) music.stop();
   if (game) game.stop();
+  winwatch.stop();
   if (ps) try { ps.kill(); } catch {}
 });
 app.on('window-all-closed', () => app.quit());

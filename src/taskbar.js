@@ -6,6 +6,7 @@ const { BrowserWindow, screen, ipcMain, shell, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const winwatch = require('./winwatch');
 
 const SIZES = { s: 44, m: 52, l: 62 };   // высота дока (без отступа от края)
 const EDGE = 8;                          // отступ дока от нижнего края
@@ -14,7 +15,7 @@ const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windo
 
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
   const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
-  let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
+  let debT = 0, keepT = 0, gameT = 0, lastList = [];
   const thumbs = new Map(); // окно → последний снимок (для свёрнутых: снят в момент сворачивания)
   // btn — какие кнопки показывать; running — открытые незакреплённые программы; extras — ярлыки (папки, места Windows, инструменты Bar)
   const cfg = () => {
@@ -99,28 +100,9 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     }
   }
   const refreshSoon = () => { clearTimeout(debT); debT = setTimeout(refresh, 120); };
-  function startEvents() {
-    if (ev) return;
-    const script = path.join(__dirname, 'winevents.ps1').replace('app.asar', 'app.asar.unpacked');
-    ev = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
-    ev.stdout.setEncoding('utf8');
-    ev.stdout.on('data', (d) => {
-      evBuf += d;
-      let i;
-      while ((i = evBuf.indexOf('\n')) >= 0) {
-        const line = evBuf.slice(0, i).trim(); evBuf = evBuf.slice(i + 1);
-        if (line === 'E') refreshSoon();
-        else if (line.startsWith('T ')) { // снимок окна в момент сворачивания — для превью свёрнутых
-          const k = line.indexOf(' ', 2);
-          thumbs.set(Number(line.slice(2, k)), 'data:image/jpeg;base64,' + line.slice(k + 1));
-          if (thumbs.size > 60) thumbs.delete(thumbs.keys().next().value);
-        }
-      }
-    });
-    ev.on('exit', () => { ev = null; if (cfg().on) setTimeout(startEvents, 3000); }); // упал — перезапуск
-    ev.on('error', () => { ev = null; });
-  }
-  function stopEvents() { if (ev) { const p = ev; ev = null; p.removeAllListeners('exit'); try { p.kill(); } catch {} } }
+  let unwatch = null;
+  function startEvents() { if (!unwatch) unwatch = winwatch.on('E', refreshSoon); }
+  function stopEvents() { if (unwatch) { unwatch(); unwatch = null; } }
 
   // ---------- панель Windows ----------
   async function hideWinTaskbar() {

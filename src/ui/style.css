@@ -930,3 +930,7 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .tbi.power.arm { color: var(--red-text); }
 .tbi.power.arm .tb-ic { animation: pw-arm 0.9s ease-in-out infinite; }
 @keyframes pw-arm { 50% { transform: scale(1.12); } }
+
+/* нотч над развёрнутым окном: уезжает вверх, остаётся полоска 3 px; при наведении и всплывашках — выглядывает */
+#island.tucked:not(.open):not(.peek):not(.act-pop) { transform: translate(calc(-50% + var(--oled-dx, 0px)), calc(-100% + 3px)); }
+#island.tucked.peek:not(.open) { transition-delay: .18s; }

@@ -280,7 +280,8 @@ function hoverIn() {
   if (state !== 'open') {
     island.classList.add('peek');
     clearTimeout(enterT);
-    enterT = setTimeout(expand, 120);
+    // спрятанный над развёрнутым окном — открывается, только если мышь задержалась у края (клик по вкладке не откроет)
+    enterT = setTimeout(expand, island.classList.contains('tucked') ? 380 : 120);
   }
 }
 function hoverOut(e) {

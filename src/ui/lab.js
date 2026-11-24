@@ -508,6 +508,8 @@ renderBar = function () {
     for (const el of [barL, barR]) el.animate([{ opacity: 0, transform: 'translateY(7px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
   }
   barKind = kind;
+  // спрятанный нотч на время всплывашки, вспышки или события устройства выглядывает
+  island.classList.toggle('act-pop', ['osd', 'flash', 'dev'].includes(kind));
 };
 
 // клик по активности в шапке — к её инструменту: таймер, секундомер, напоминание, запись, телефон
@@ -542,9 +544,17 @@ chime = function () {
 
 // ============ 10. Настройки → Дополнительно ============
 // Отдельный раздел в Настройках → «Основное»: переключатели новых функций.
+// ============ 15. Нотч над развёрнутыми окнами ============
+// Активное окно развёрнуто на мониторе нотча (браузер на весь экран) — нотч уезжает вверх тонкой полоской 3 px,
+// вкладки под ним свободны. Открыть: задержать мышь у самого верхнего края. Всплывашки и вспышки всё равно выглядывают.
+const Tuck = { on: false };
+function tuckApply() { island.classList.toggle('tucked', Tuck.on && store.get('tuck', true) && !Game.on); }
+bar.onTuck((v) => { Tuck.on = !!v; tuckApply(); });
+
 const LAB_OPTS = [
   ['osd', 'Всплывашка громкости', 'нотч показывает громкость и микрофон, когда вы их меняете', () => Osd.on, setOsd],
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
+  ['tuck', 'Прятать над развёрнутыми окнами', 'не закрывает вкладки браузера; открыть — задержать мышь у верхнего края', () => store.get('tuck', true), (v) => { store.set('tuck', !!v); tuckApply(); }],
   ['tint', 'Цвет обложки', 'фон карточки трека в цвет обложки', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
 ];
 function chimeRow() {
