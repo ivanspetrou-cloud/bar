@@ -482,9 +482,21 @@ island.addEventListener('drop', (e) => {
 const renderBarBase = renderBar;
 let barKind = null;
 // eslint-disable-next-line no-func-assign
+let headKind = null;
 renderBar = function () {
   renderBarBase();
-  if (state === 'open') { barKind = null; return; }
+  if (state === 'open') {
+    // в раскрытой шапке активность (таймер, напоминание…) появляется и меняется тоже плавно
+    barKind = null;
+    let hk2 = null;
+    for (const id of ACT_ORDER) if (id !== 'media' && acts.has(id)) { hk2 = id; break; }
+    const el = barR.querySelector('.act');
+    if (el) { el.dataset.act = hk2 || ''; el.title = ACT_TOOL[hk2] ? 'Открыть' : ''; el.classList.toggle('link', !!ACT_TOOL[hk2]); }
+    if (hk2 !== headKind && el && headKind !== undefined) el.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.9)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 380, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+    headKind = hk2;
+    return;
+  }
+  headKind = undefined; // при раскрытии панели активность уже на месте — без повторной анимации
   let kind = 'clock';
   for (const id of ACT_ORDER) if (acts.has(id)) { kind = id; break; }
   if (barKind !== null && kind !== barKind && !Game.on) {
@@ -492,6 +504,14 @@ renderBar = function () {
   }
   barKind = kind;
 };
+
+// клик по активности в шапке — к её инструменту: таймер, секундомер, напоминание, запись, телефон
+const ACT_TOOL = { timer: 'timer', stopwatch: 'stopwatch', remind: 'calendar', rec: 'voice', bridge: 'phone' };
+barEl.addEventListener('click', (e) => {
+  const a = state === 'open' && e.target.closest('.act');
+  const t = a && ACT_TOOL[a.dataset.act];
+  if (t && current !== t) openTool(t);
+});
 
 // ============ 10. Настройки Lab ============
 // Отдельный раздел в Настройках → «Основное»: переключатели новых функций.
