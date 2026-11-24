@@ -14,10 +14,14 @@ const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windo
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
   const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
   let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
-  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, ...(settings.taskbar || {}) });
+  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, ...(settings.taskbar || {}) });
+  // размер — свой у каждого монитора (по умолчанию общий)
+  const sizeOf = (display) => (cfg().sizes || {})[display.id] || cfg().size;
+  const cfgFor = (d) => ({ ...cfg(), size: sizeOf(d.display) });
   const call = (cmd, arg = '', ms = 4000) => sensors.call(cmd, arg, ms).catch(() => undefined);
   const own = process.execPath.toLowerCase();
   const hwndOf = (win) => { const b = win.getNativeWindowHandle(); return b.length >= 8 ? Number(b.readBigUInt64LE(0)) : b.readUInt32LE(0); };
+  const dockOf = (e) => [...docks.values()].find((d) => !d.win.isDestroyed() && d.win.webContents === e.sender);
   const sendAll = (ch, v) => { for (const d of docks.values()) if (!d.win.isDestroyed()) d.win.webContents.send(ch, v); };
 
   // ---------- окна ----------
@@ -72,7 +76,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   async function reserve(d) {
     const sf = d.display.scaleFactor;
     const p = screen.dipToScreenRect(null, d.display.bounds);
-    const h = Math.round((SIZES[cfg().size] + EDGE * 2) * sf);
+    const h = Math.round((SIZES[sizeOf(d.display)] + EDGE * 2) * sf);
     await call('appbar', [hwndOf(d.win), p.x, p.y + p.height - h, p.x + p.width, p.y + p.height, CB_MSG].join(' '));
     d.reserved = true;
   }
@@ -161,17 +165,18 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   }
   const apply = () => (cfg().on ? enable() : disable());
 
-  ipcMain.handle('taskbar-get', () => cfg());
+  // мониторы для настроек: «Монитор 1 · 2560×1440 · основной»
+  const displays = () => { const pid = screen.getPrimaryDisplay().id; return screen.getAllDisplays().map((x, i) => ({ id: x.id, n: i + 1, w: Math.round(x.size.width * x.scaleFactor), h: Math.round(x.size.height * x.scaleFactor), primary: x.id === pid, size: sizeOf(x) })); };
+  ipcMain.handle('taskbar-get', (e) => { const d = dockOf(e); return d ? cfgFor(d) : { ...cfg(), displays: displays() }; });
   ipcMain.handle('taskbar-set', async (_e, patch) => {
     const before = cfg();
     settings.taskbar = { ...before, ...(patch || {}) };
     saveSettings();
     const now = cfg();
     if (now.on !== before.on) await apply();
-    else { for (const d of docks.values()) { place(d); visibleSync(d); } sendAll('tb-cfg', now); }
-    return now;
+    else for (const d of docks.values()) { place(d); visibleSync(d); if (!d.win.isDestroyed()) d.win.webContents.send('tb-cfg', cfgFor(d)); }
+    return { ...now, displays: displays() };
   });
-  const dockOf = (e) => [...docks.values()].find((d) => !d.win.isDestroyed() && d.win.webContents === e.sender);
   ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); });
   ipcMain.on('tb-refresh', () => refreshSoon());
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику

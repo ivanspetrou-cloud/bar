@@ -567,7 +567,10 @@ function labSettings(toggle) {
       rows.replaceChildren(
         h('div', { class: 'sw' }, h('span', {}, 'Поведение'), seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
         c.mode === 'always' && h('div', { class: 'sw' }, h('span', {}, 'Резервировать место', h('span', { class: 'muted' }, ' · окна заканчиваются над таскбаром')), toggle(c.reserve, (v) => set({ reserve: v }))),
-        h('div', { class: 'sw' }, h('span', {}, 'Размер'), seg([['s', 'S'], ['m', 'M'], ['l', 'L']], c.size, (v) => set({ size: v }))),
+        // размер — отдельно для каждого монитора
+        ...(c.displays || []).map((m) => h('div', { class: 'sw' },
+          h('span', {}, `Размер на мониторе ${m.n}`, h('span', { class: 'muted' }, ` · ${m.w}×${m.h}${m.primary ? ', основной' : ''}`)),
+          seg([['s', 'S'], ['m', 'M'], ['l', 'L']], m.size, (v) => set({ sizes: { ...(c.sizes || {}), [m.id]: v } })))),
         h('div', { class: 'sw' }, h('span', {}, 'Увеличение при наведении'), toggle(c.magnify, (v) => set({ magnify: v }))),
         h('div', { class: 'muted small tb-note' }, c.mode === 'hide'
           ? 'Подведите мышь к нижнему краю экрана — таскбар выедет. Панель Windows спрятана, пока он включён.'
