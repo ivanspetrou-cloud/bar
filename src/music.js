@@ -33,9 +33,48 @@ function findEdge() {
   return fs.existsSync(p) ? p : null;
 }
 
+// Где браузеры загрузили расширение Bar (распакованное, по его постоянному идентификатору) — Edge, Chrome, Brave и др.
+// Читается только путь к папке нашего расширения из настроек браузера на этом компьютере.
+function browserExtDirs() {
+  const L = process.env.LOCALAPPDATA || '', A = process.env.APPDATA || '';
+  const roots = [
+    [L, 'Microsoft', 'Edge', 'User Data'], [L, 'Google', 'Chrome', 'User Data'], [L, 'BraveSoftware', 'Brave-Browser', 'User Data'],
+    [L, 'Vivaldi', 'User Data'], [L, 'Yandex', 'YandexBrowser', 'User Data'], [A, 'Opera Software', 'Opera Stable'], [A, 'Opera Software', 'Opera GX Stable'],
+  ].map((p) => path.join(...p));
+  const found = new Set();
+  for (const root of roots) {
+    let profs = [];
+    try { profs = fs.readdirSync(root).filter((n) => n === 'Default' || /^Profile \d+$/.test(n)).map((n) => path.join(root, n)); } catch { continue; }
+    profs.push(root); // у Opera настройки лежат прямо в корне
+    for (const prof of profs) for (const f of ['Secure Preferences', 'Preferences']) {
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(prof, f), 'utf8'));
+        const e = j && j.extensions && j.extensions.settings && j.extensions.settings[EXT_ID];
+        if (e && e.path && path.isAbsolute(e.path)) found.add(path.normalize(e.path));
+      } catch {}
+    }
+  }
+  return [...found];
+}
+// Ключ пары берём у той копии расширения, которую реально загрузил браузер: если её загрузили не из папки Bar
+// (перенесли, распаковали заново, переустановили Bar с удалением данных) — иначе подписи не сойдутся и связи не будет.
+function adoptBrowserKey(dir) {
+  for (const d of browserExtDirs()) {
+    if (path.normalize(d).toLowerCase() === path.normalize(dir).toLowerCase()) return null; // браузер смотрит в папку Bar — всё сходится
+  }
+  for (const d of browserExtDirs()) {
+    try {
+      const k = JSON.parse(fs.readFileSync(path.join(d, 'pair.json'), 'utf8')).key;
+      if (k && k.length >= 40) { fs.writeFileSync(path.join(dir, 'pair.json'), JSON.stringify({ key: k })); return d; }
+    } catch {}
+  }
+  return null;
+}
+
 module.exports = function setupMusic({ send }) {
   // секретный ключ пары Bar ↔ расширение (extension/pair.json); по сети не передаётся
   let pairKey = Buffer.from(buildExt(EXT_DIR, EXT_TEMPLATE).key, 'base64');
+  try { if (adoptBrowserKey(EXT_DIR)) pairKey = Buffer.from(buildExt(EXT_DIR, EXT_TEMPLATE).key, 'base64'); } catch {}
   const sign = (text) => crypto.createHmac('sha256', pairKey).update(text).digest('base64');
   let sock = null;
   let ext = null;       // { version, tab }
