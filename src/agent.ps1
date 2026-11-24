@@ -82,6 +82,7 @@ namespace Bar {
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int val, int size);
@@ -196,6 +197,25 @@ namespace Bar {
       }, IntPtr.Zero);
       return list.ToArray();
     }
+
+    // Для таскбара Bar: окно|процесс|exe|свёрнуто|активно|заголовок (заголовок — последним: в нём может быть «|»)
+    public static string[] TaskWindows() {
+      var list = new List<string>();
+      IntPtr fg = GetForegroundWindow();
+      EnumWindows((h, p) => {
+        if (!IsWindowVisible(h) || GetWindowTextLength(h) == 0) return true;
+        if (GetWindow(h, 4) != IntPtr.Zero) return true;
+        if ((GetWindowLong(h, -20) & 0x80) != 0) return true;
+        int cloaked; if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        var sb = new StringBuilder(256); GetWindowText(h, sb, 256);
+        list.Add(h.ToInt64() + "|" + pid + "|" + ExePath(pid) + "|" + (IsIconic(h) ? 1 : 0) + "|" + (h == fg ? 1 : 0) + "|" + sb.ToString().Replace((char)13, ' ').Replace((char)10, ' '));
+        return true;
+      }, IntPtr.Zero);
+      return list.ToArray();
+    }
+    public static void StartMenu() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
+    public static void ShowDesktop() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 2, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
 
     public static bool Focus(long hwnd) {
       var h = new IntPtr(hwnd);
@@ -483,6 +503,29 @@ namespace Bar {
       d.lParam = new IntPtr(on ? 1 : 2);
       SHAppBarMessage(10, ref d);
     }
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    // Панель задач Windows целиком: прятать, пока работает таскбар Bar (основная и панели на других мониторах)
+    public static int Hide(bool hide) {
+      int n = 0; int cmd = hide ? 0 : 5;
+      var t = FindWindow("Shell_TrayWnd", null); if (t != IntPtr.Zero) { ShowWindow(t, cmd); n++; }
+      IntPtr s2 = IntPtr.Zero;
+      while ((s2 = FindWindowEx(IntPtr.Zero, s2, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) { ShowWindow(s2, cmd); n++; }
+      return n;
+    }
+    // Резерв места у нижнего края (как у обычной панели): развёрнутые окна заканчиваются над таскбаром Bar.
+    // Координаты — физические пиксели экрана. Возвращает итоговый прямоугольник «l t r b».
+    public static string AppBarSet(long hwnd, int l, int t, int r, int b, int cbMsg) {
+      var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); d.msg = (uint)cbMsg; d.edge = 3;
+      SHAppBarMessage(0, ref d); // ABM_NEW (повторный вызов безвреден)
+      int h = b - t;
+      d.rc.l = l; d.rc.r = r; d.rc.b = b; d.rc.t = b - h;
+      SHAppBarMessage(2, ref d); // ABM_QUERYPOS
+      d.rc.t = d.rc.b - h;
+      SHAppBarMessage(3, ref d); // ABM_SETPOS
+      return d.rc.l + " " + d.rc.t + " " + d.rc.r + " " + d.rc.b;
+    }
+    public static void AppBarRemove(long hwnd) { var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); SHAppBarMessage(1, ref d); }
   }
 }
 '@ -ReferencedAssemblies System.Drawing
@@ -694,6 +737,12 @@ while ($true) {
       'net'      { Get-NetState }
       'hidbat'   { @([Bar.HidBattery]::Read()) }
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
+      'taskwins' { @([Bar.Win]::TaskWindows()) }
+      'startmenu' { [Bar.Win]::StartMenu(); $true }
+      'showdesktop' { [Bar.Win]::ShowDesktop(); $true }
+      'hidetaskbar' { [Bar.Taskbar]::Hide($arg -eq '1') }
+      'appbar'   { $w = $arg.Split(' '); [Bar.Taskbar]::AppBarSet([long]$w[0], [int]$w[1], [int]$w[2], [int]$w[3], [int]$w[4], [int]$w[5]) }
+      'appbaroff' { [Bar.Taskbar]::AppBarRemove([long]$arg); $true }
       'settaskbar' { [Bar.Taskbar]::SetAutoHide($arg -eq '1'); [Bar.Taskbar]::AutoHide() }
       'appxlogo' {
         $fam = $arg; $i = $fam.LastIndexOf('_'); $name = if ($i -gt 0) { $fam.Substring(0, $i) } else { $fam }

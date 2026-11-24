@@ -557,17 +557,31 @@ function chimeRow() {
 }
 function labSettings(toggle) {
   const row = ([, name, desc, get, set]) => h('div', { class: 'sw' }, h('span', {}, name, h('span', { class: 'muted' }, ' · ' + desc)), toggle(get(), set));
+  const tbBox = h('div', { class: 'col' });
+  const seg = (opts, val, fn) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', { class: v === val ? 'on' : '', onclick: (e) => { e.currentTarget.parentNode.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); fn(v); } }, label)));
+  bar.taskbarGet().then((t) => {
+    const set = (p) => bar.taskbarSet(p).then(draw);
+    const rows = h('div', { class: 'col tb-rows' });
+    function draw(c) {
+      rows.hidden = !c.on;
+      rows.replaceChildren(
+        h('div', { class: 'sw' }, h('span', {}, 'Поведение'), seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
+        h('div', { class: 'sw' }, h('span', {}, 'Размер'), seg([['s', 'S'], ['m', 'M'], ['l', 'L']], c.size, (v) => set({ size: v }))),
+        h('div', { class: 'sw' }, h('span', {}, 'Увеличение при наведении'), toggle(c.magnify, (v) => set({ magnify: v }))),
+        h('div', { class: 'muted small tb-note' }, c.mode === 'hide'
+          ? 'Подведите мышь к нижнему краю экрана — таскбар выедет. Панель Windows спрятана, пока он включён.'
+          : 'Развёрнутые окна заканчиваются над таскбаром. В полноэкранных видео и играх он прячется сам.'));
+    }
+    tbBox.replaceChildren(
+      h('div', { class: 'sw' }, h('span', {}, h('b', {}, 'Таскбар Bar'), h('span', { class: 'muted' }, ' · вместо панели задач Windows')), toggle(t.on, (v) => set({ on: v }))),
+      rows);
+    draw(t);
+  });
   return h('div', { class: 'split' },
     h('div', { class: 'col' }, ...LAB_OPTS.map(row), chimeRow()),
-    h('div', { class: 'col' },
-      h('div', { class: 'card lab-help' },
-        h('h4', {}, 'Подсказки'),
-        h('div', { class: 'lab-tips' },
-          h('div', {}, I('swipe'), h('span', {}, 'Свайп по нотчу тачпадом (или Shift + колесо) — следующий / предыдущий трек')),
-          h('div', {}, I('calendar'), h('span', {}, 'Клик по дате в шапке — календарь и напоминания')),
-          h('div', {}, I('search'), h('span', {}, 'В поиске: «таймер 10», «напомни в 18:30 позвонить», «10 km в милях»')),
-          h('div', {}, I('mirror'), h('span', {}, 'Зеркало — камера перед созвоном, с подсветкой')),
-          h('div', {}, I('bluetooth'), h('span', {}, 'Нотч сообщает о подключении, зарядке и низком заряде устройств')))))); 
+    tbBox);
 }
+// таскбар просит открыть инструмент (кнопка «Пуск» → все приложения)
+bar.onOpenTool((id) => { if (!TOOLS_BY_ID[id]) return; expand({ auto: true }); openTool(id); });
 openHooks.add(() => pushNeed());
 pushNeed();

@@ -1,6 +1,6 @@
 // Показатели (раскладка, звук, трек, сеть, Bluetooth, нагрузка) и управление приложениями.
 // Опрос идёт ТОЛЬКО того, что включено в настройках, и реже, когда нотч свёрнут.
-const { ipcMain, app, shell, Menu, powerSaveBlocker, powerMonitor, nativeImage } = require('electron');
+const { ipcMain, app, shell, Menu, BrowserWindow, powerSaveBlocker, powerMonitor, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
@@ -400,13 +400,13 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.handle('win-min', (_e, hwnd) => safe(fast.call('minimize', hwnd)));
   ipcMain.handle('win-close', (_e, pid) => safe(fast.call('close', pid)));
 
-  ipcMain.handle('popup-menu', (_e, items) => new Promise((resolve) => {
+  ipcMain.handle('popup-menu', (e, items) => new Promise((resolve) => {
     let picked = null;
     const menu = Menu.buildFromTemplate(items.map((it) => it.sep ? { type: 'separator' } : {
       label: it.label, enabled: it.enabled !== false, click: () => { picked = it.id; },
       ...(it.checked !== undefined ? { type: 'radio', checked: !!it.checked } : {}),
     }));
-    menu.popup({ window: getWin(), callback: () => setTimeout(() => resolve(picked), 0) });
+    menu.popup({ window: BrowserWindow.fromWebContents(e.sender) || getWin(), callback: () => setTimeout(() => resolve(picked), 0) }); // у окна, которое спросило (нотч или таскбар)
   }));
 
   // ---------- быстрые переключатели ----------

@@ -217,6 +217,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   schedule();
   return {
     isActive: () => !!active,
+    activeMon: () => (active ? active.mon : null), // монитор игры (в DIP) — таскбар прячется только на нём
     // горячая клавиша игрового режима: включить вручную / выйти
     hotkey() {
       if (active) { suspendedExe = active.manual ? '' : active.exe; exit(); return; }

@@ -885,3 +885,5 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .chime-row .slider { flex: 1; min-width: 110px; margin-left: 8px; }
 .chime-row > span:first-child { white-space: nowrap; }
 .chime-v { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.tb-rows { animation: slide .3s var(--soft); }
+.tb-note { padding: 2px var(--in); }

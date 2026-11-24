@@ -47,7 +47,8 @@
     "asar": true,
     "asarUnpack": [
       "src/agent.ps1",
-      "src/meter.ps1"
+      "src/meter.ps1",
+      "src/winevents.ps1"
     ],
     "extraResources": [
       {
