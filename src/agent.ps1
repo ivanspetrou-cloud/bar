@@ -767,7 +767,7 @@ namespace Bar {
     // PNG (base64) 64×64 с прозрачностью или пустая строка
     public static string Png(string appId, int size) {
       IShellItemImageFactory f;
-      try { SHCreateItemFromParsingName("shell:AppsFolder\\" + appId, IntPtr.Zero, typeof(IShellItemImageFactory).GUID, out f); } catch { return ""; }
+      try { SHCreateItemFromParsingName(appId.Contains(":\\") ? appId : "shell:AppsFolder\\" + appId, IntPtr.Zero, typeof(IShellItemImageFactory).GUID, out f); } catch { return ""; }
       IntPtr hbm; var sz = new SIZE(); sz.cx = size; sz.cy = size;
       if (f.GetImage(sz, 0x4 /* SIIGBF_ICONONLY */, out hbm) != 0 || hbm == IntPtr.Zero) return "";
       try {
@@ -1043,6 +1043,7 @@ while ($true) {
       'fgmax'    { [Bar.Win]::FgMaximized() }
       'gpu'      { [Bar.Gpu]::Usage() }
       'appicon'  { [Bar.ShellIcon]::Png($arg, 64) }
+      'fileicon' { [Bar.ShellIcon]::Png($arg, 96) }   # иконка файла в высоком разрешении (как в Проводнике)
       'winicon'  {
         # PNG (base64) иконки окна запущенной программы с этим exe; иначе пусто
         $want = $arg.ToLower(); $png = $null
