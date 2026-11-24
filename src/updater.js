@@ -42,6 +42,12 @@ module.exports = function setupUpdater({ send, beforeInstall }) {
     try {
       const dir = path.join(process.env.LOCALAPPDATA || '', 'bar-notch-updater');
       const inst = path.join(dir, 'installer.exe'), bmf = path.join(dir, 'current.blockmap');
+      // копии прошлого установщика нет на месте, а установщик текущей версии лежит в pending — переносим его туда, где его ищет загрузка частями
+      if (!fs.existsSync(inst)) {
+        for (const c of [path.join(dir, 'pending', `Bar-Setup-${app.getVersion()}.exe`), path.join(dir, `Bar-Setup-${app.getVersion()}.exe`)]) {
+          if (fs.existsSync(c)) { fs.copyFileSync(c, inst); log('info')('installer.exe restored from ' + c); break; }
+        }
+      }
       if (!fs.existsSync(bmf)) return;
       const bm = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(bmf)).toString());
       const size = (bm.files || []).reduce((n, f) => n + (f.sizes || []).reduce((a, b) => a + b, 0), 0);
