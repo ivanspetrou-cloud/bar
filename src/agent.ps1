@@ -506,10 +506,17 @@ function Get-NowPlaying {
     }
   }
   $app = $s.SourceAppUserModelId
+  $playing = ($info.PlaybackStatus.ToString() -eq 'Playing')
+  # browsers report the position only on play/pause/seek: add the time elapsed since that report
+  $pos = $tl.Position.TotalSeconds; $dur = $tl.EndTime.TotalSeconds
+  if ($playing -and $tl.LastUpdatedTime.Year -gt 2000) {
+    $pos += ([DateTimeOffset]::Now - $tl.LastUpdatedTime).TotalSeconds
+    if ($dur -gt 0 -and $pos -gt $dur) { $pos = $dur }
+  }
   [ordered]@{
     title = $p.Title; artist = $p.Artist; album = $p.AlbumTitle; app = $app
-    playing = ($info.PlaybackStatus.ToString() -eq 'Playing')
-    position = [int]$tl.Position.TotalSeconds; duration = [int]$tl.EndTime.TotalSeconds
+    playing = $playing
+    position = [int]$pos; duration = [int]$dur
     art = $script:artData
   }
 }

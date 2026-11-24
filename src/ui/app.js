@@ -411,7 +411,7 @@ bar.onSensors((p) => {
   Object.assign(S, p);
   if ('bt' in p || 'hid' in p) S.btLoaded = true;
   if (p.stats) lastStats = p.stats;
-  if ('media' in p) syncMedia();
+  if ('media' in p) { if (S.media) S.media._at = performance.now(); syncMedia(); }
   renderBar();
   liveHooks.forEach((f) => f(p));
 });
@@ -2393,7 +2393,7 @@ function nowPlayingCard() {
     const m = S.media || {};
     const viaExt = MU.ext && MU.tab && MU.st && MU.st.title && m.title && m.title === MU.st.title; // и для YouTube Music, и для сайта
     if (viaExt) mcmd('seek', Math.round(sec)); else bar.mediaCtl('seek:' + Math.round(sec));
-    if (S.media) S.media.position = sec;
+    if (S.media) { S.media.position = sec; S.media._at = performance.now(); }
   };
   seek.addEventListener('pointerdown', (e) => { if (!dur()) return; e.stopPropagation(); seek.setPointerCapture(e.pointerId); seek.classList.add('drag'); drag = frac(e); showDrag(); });
   seek.addEventListener('pointermove', (e) => { if (drag !== null) { drag = frac(e); showDrag(); } });
@@ -2413,9 +2413,11 @@ function nowPlayingCard() {
     const d = has ? m.duration || 0 : 0;
     prog.hidden = !(d > 0);
     if (d > 0 && drag === null) {
-      const pct = Math.min(100, (m.position || 0) / d * 100);
+      // между опросами время идёт само: позиция + сколько прошло с последнего ответа
+      const pos = Math.min(d, (m.position || 0) + (m.playing && m._at ? (performance.now() - m._at) / 1000 : 0));
+      const pct = Math.min(100, pos / d * 100);
       fill.style.width = knob.style.left = pct + '%';
-      t1.textContent = fmtT(m.position); t2.textContent = fmtT(d);
+      t1.textContent = fmtT(pos); t2.textContent = fmtT(d);
     }
     const pi = has && m.playing ? 'pause' : 'play';
     if (pi !== playIcon) { playIcon = pi; play.classList.toggle('is-playing', pi === 'pause'); play.title = pi === 'pause' ? 'Пауза' : 'Играть'; }
@@ -2427,6 +2429,10 @@ function nowPlayingCard() {
   }
   draw();
   card._draw = draw;
+  const tick = setInterval(() => {
+    if (!card.isConnected) return clearInterval(tick);
+    if (state === 'open' && S.media && S.media.playing && S.media.duration && drag === null) draw();
+  }, 1000);
   return card;
 }
 const appName = (aumid) => {
