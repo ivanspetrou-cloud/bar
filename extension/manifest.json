@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Bar — YouTube Music",
-  "version": "0.3.0",
-  "description": "Связывает вкладку YouTube Music с нотчем Bar на этом компьютере. Работает только на music.youtube.com; подключаться может только к Bar на 127.0.0.1 — в интернет ничего не отправляет.",
+  "name": "Bar — музыка в браузере",
+  "version": "0.4.0",
+  "description": "Связывает музыкальные вкладки с нотчем Bar на этом компьютере: YouTube Music полностью, остальные сайты (Яндекс Музыка, SoundCloud, Spotify и др.) — плеер. Подключается только к Bar на 127.0.0.1 — в интернет ничего не отправляет.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1BtbR+l96VXmKKZK04DUGdPxiEm6y1PiIIsv/wyTxV1gXam3GFUyTh7/ODYpjEDve8lgs/GlhzR8k2aUGFT774XDW+CKIrZviFaQGFgI4SGVQIguYXnEJ5nkisfhNN4JeucEh/SbxdtvF5CIVO44dN9+9GcpJPycaqvGr7/5DIWlZogfvzkGb7I9pRe6NKHS0/C0oIIkhbxOyU3SmOjzklRvxY3x58xt+6Xi6KSmUbeRkN/y/VFbw1jniBHHsJw19MnufJdiaqb8FvQ/tF/76FdycKejjsUu4D+RgEwa3k6tt+GyhpYuULTEN7FDDADm2ecenu1r6KWgGimBGAb6ZQIDAQAB",
   "background": {
     "service_worker": "sw.js"
@@ -12,7 +12,23 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://music.youtube.com/*"
+    "https://music.youtube.com/*",
+    "https://music.yandex.ru/*",
+    "https://music.yandex.com/*",
+    "https://music.yandex.by/*",
+    "https://music.yandex.kz/*",
+    "https://soundcloud.com/*",
+    "https://open.spotify.com/*",
+    "https://vk.com/*",
+    "https://vk.ru/*",
+    "https://music.apple.com/*",
+    "https://www.deezer.com/*",
+    "https://listen.tidal.com/*",
+    "https://*.bandcamp.com/*",
+    "https://zvuk.com/*",
+    "https://music.amazon.com/*",
+    "https://music.amazon.de/*",
+    "https://www.mixcloud.com/*"
   ],
   "content_scripts": [
     {
@@ -28,6 +44,55 @@
     {
       "matches": [
         "https://music.youtube.com/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://music.yandex.ru/*",
+        "https://music.yandex.com/*",
+        "https://music.yandex.by/*",
+        "https://music.yandex.kz/*",
+        "https://soundcloud.com/*",
+        "https://open.spotify.com/*",
+        "https://vk.com/*",
+        "https://vk.ru/*",
+        "https://music.apple.com/*",
+        "https://www.deezer.com/*",
+        "https://listen.tidal.com/*",
+        "https://*.bandcamp.com/*",
+        "https://zvuk.com/*",
+        "https://music.amazon.com/*",
+        "https://music.amazon.de/*",
+        "https://www.mixcloud.com/*"
+      ],
+      "js": [
+        "web.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://music.yandex.ru/*",
+        "https://music.yandex.com/*",
+        "https://music.yandex.by/*",
+        "https://music.yandex.kz/*",
+        "https://soundcloud.com/*",
+        "https://open.spotify.com/*",
+        "https://vk.com/*",
+        "https://vk.ru/*",
+        "https://music.apple.com/*",
+        "https://www.deezer.com/*",
+        "https://listen.tidal.com/*",
+        "https://*.bandcamp.com/*",
+        "https://zvuk.com/*",
+        "https://music.amazon.com/*",
+        "https://music.amazon.de/*",
+        "https://www.mixcloud.com/*"
       ],
       "js": [
         "bridge.js"

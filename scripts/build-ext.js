@@ -9,7 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const root = path.join(__dirname, '..');
-const TEMPLATE = ['manifest.json', 'sw.js', 'bridge.js'];
+const TEMPLATE = ['manifest.json', 'sw.js', 'bridge.js', 'web.js'];
 
 function build(outDir, templateDir) {
   outDir = outDir || path.join(root, 'extension');

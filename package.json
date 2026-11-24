@@ -67,7 +67,8 @@
         "filter": [
           "manifest.json",
           "sw.js",
-          "bridge.js"
+          "bridge.js",
+          "web.js"
         ]
       }
     ],

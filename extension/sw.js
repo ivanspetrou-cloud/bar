@@ -8,6 +8,10 @@
 // их общим секретным ключом (HMAC-SHA256, ключ — в pair.json, по сети не передаётся).
 // Пока Bar не докажет, что он настоящий, расширение не выполняет ни одного запроса.
 const PORTS = [47823, 47824, 47825];
+// музыкальные сайты (плеер через Media Session): список — как в manifest.json
+const WEB_SITES = ["https://music.yandex.ru/*", "https://music.yandex.com/*", "https://music.yandex.by/*", "https://music.yandex.kz/*", "https://soundcloud.com/*", "https://open.spotify.com/*", "https://vk.com/*", "https://vk.ru/*", "https://music.apple.com/*", "https://www.deezer.com/*", "https://listen.tidal.com/*", "https://*.bandcamp.com/*", "https://zvuk.com/*", "https://music.amazon.com/*", "https://music.amazon.de/*", "https://www.mixcloud.com/*"];
+const WEB_FNS = ['wtoggle', 'wnext', 'wprev', 'wseek', 'wvolume'];
+const WEB_HOST = /^https:\/\/(music\.yandex\.(ru|com|by|kz)|soundcloud\.com|open\.spotify\.com|vk\.(com|ru)|music\.apple\.com|www\.deezer\.com|listen\.tidal\.com|[a-z0-9-]+\.bandcamp\.com|zvuk\.com|music\.amazon\.(com|de)|www\.mixcloud\.com)\//;
 const ALLOWED = ['state', 'queue', 'toggle', 'next', 'prev', 'seek', 'volume', 'like', 'dislike', 'shuffle', 'repeat', 'playQueue', 'play', 'browse', 'search', 'lyrics'];
 let ws = null;
 let connecting = false;
@@ -46,6 +50,31 @@ async function handle(msg) {
   if (msg.fn === 'hello') {
     const tab = await musicTab();
     return { result: { version: chrome.runtime.getManifest().version, tab: !!tab } };
+  }
+  // состояние всех вкладок музыкальных сайтов, где что-то есть в плеере
+  if (msg.fn === 'webTabs') {
+    const tabs = await chrome.tabs.query({ url: WEB_SITES }).catch(() => []);
+    const out = [];
+    await Promise.all(tabs.map(async (t) => {
+      try {
+        const r = await Promise.race([chrome.tabs.sendMessage(t.id, { type: 'bar', fn: 'wstate', args: [] }), new Promise((res) => setTimeout(() => res(null), 1500))]);
+        if (r && r.result && (r.result.title || r.result.playing)) out.push({ tabId: t.id, audible: !!t.audible, ...r.result });
+      } catch {}
+    }));
+    return { result: out };
+  }
+  // команда конкретной вкладке сайта: args = [tabId, ...]
+  if (WEB_FNS.includes(msg.fn)) {
+    const [tabId, ...rest] = msg.args || [];
+    const t = await chrome.tabs.get(+tabId).catch(() => null);
+    if (!t || !WEB_HOST.test(t.url || '')) return { error: 'no-tab' };
+    try { return await chrome.tabs.sendMessage(t.id, { type: 'bar', fn: msg.fn, args: rest }); } catch { return { error: 'tab-not-ready' }; }
+  }
+  if (msg.fn === 'webOpen') {
+    const t = await chrome.tabs.get(+(msg.args || [])[0]).catch(() => null);
+    if (!t) return { error: 'no-tab' };
+    await chrome.tabs.update(t.id, { active: true }); await chrome.windows.update(t.windowId, { focused: true });
+    return { result: true };
   }
   if (!ALLOWED.includes(msg.fn)) return { error: 'not allowed' };
   const tab = await musicTab();
@@ -100,6 +129,14 @@ chrome.runtime.onInstalled.addListener(async () => {
   for (const t of tabs) {
     try {
       await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['page.js'], world: 'MAIN' });
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['bridge.js'] });
+    } catch {}
+  }
+  // уже открытые музыкальные сайты: кнопки сайта перехватятся после перезагрузки вкладки, но пауза,
+  // позиция и громкость через аудиоэлемент заработают сразу
+  for (const t of await chrome.tabs.query({ url: WEB_SITES }).catch(() => [])) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['web.js'], world: 'MAIN' });
       await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['bridge.js'] });
     } catch {}
   }

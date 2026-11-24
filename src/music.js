@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const buildExt = require('../scripts/build-ext.js');
 
 const PORTS = [47823, 47824, 47825];
-const IMG_HOSTS = /^(lh\d\.googleusercontent\.com|yt\d\.ggpht\.com|i\d?\.ytimg\.com|yt\d\.googleusercontent\.com)$/;
+const IMG_HOSTS = /^(lh\d\.googleusercontent\.com|yt\d\.ggpht\.com|i\d?\.ytimg\.com|yt\d\.googleusercontent\.com|avatars\.yandex\.net|avatars\.mds\.yandex\.net|i\d\.sndcdn\.com|i\.scdn\.co|[a-z0-9-]+\.userapi\.com|[a-z0-9-]+\.vkuserphoto\.ru|is\d-ssl\.mzstatic\.com|e-cdns-images\.dzcdn\.net|cdn-images\.dzcdn\.net|resources\.tidal\.com|f\d\.bcbits\.com|cdn-image\.zvuk\.com|m\.media-amazon\.com|thumbnailer\.mixcloud\.com)$/;
 // Расширение: в разработке — папка extension/ проекта; в установленном Bar — копия в папке данных пользователя
 // (туда можно записать свой ключ пары; сам установщик ключа не содержит).
 const EXT_TEMPLATE = app.isPackaged ? path.join(process.resourcesPath, 'extension') : path.join(__dirname, '..', 'extension');
@@ -40,6 +40,7 @@ module.exports = function setupMusic({ send }) {
   let sock = null;
   let ext = null;       // { version, tab }
   let last = null;      // состояние плеера
+  let web = null;       // играющая вкладка музыкального сайта (Media Session): { tabId, host, title, … }
   let tab = false;
   let watching = false;
   let pollT = null;
@@ -48,7 +49,7 @@ module.exports = function setupMusic({ send }) {
   let port = null;
 
   function push(extra) {
-    send('music-state', Object.assign({ ext: !!sock, extVersion: ext && ext.version, tab, port }, last || {}, extra || {}));
+    send('music-state', Object.assign({ ext: !!sock, extVersion: ext && ext.version, tab, port }, last || {}, { web }, extra || {}));
   }
 
   // ---------- картинки: barimg://img/<url> → только серверы Google ----------
@@ -134,6 +135,12 @@ module.exports = function setupMusic({ send }) {
       } catch (e) {
         if (/no-tab/.test(e.message)) { tab = false; last = null; }
       }
+      // музыкальные сайты: играющая вкладка, иначе та, что играла последней
+      try {
+        const list = await call('webTabs', [], 4000);
+        const pick = (list || []).find((t) => t.playing) || (web && (list || []).find((t) => t.tabId === web.tabId)) || (list || [])[0] || null;
+        web = pick || null;
+      } catch { web = null; }
       push();
     }, watching ? 600 : 3000);
   }
@@ -164,6 +171,14 @@ module.exports = function setupMusic({ send }) {
     if (!ok.includes(cmd)) return false;
     const r = await safe(call(cmd, arg === undefined ? [] : [arg]), false);
     setTimeout(async () => { const st = await safe(call('state', [], 3000)); if (st) { last = st; tab = true; push(); } }, 300);
+    return r;
+  });
+  // команды вкладке музыкального сайта (плеер через Media Session)
+  ipcMain.handle('music-web', async (_e, cmd, arg, tabId) => {
+    const fn = { toggle: 'wtoggle', next: 'wnext', prev: 'wprev', seek: 'wseek', volume: 'wvolume', open: 'webOpen' }[cmd];
+    if (!fn || !Number.isInteger(+tabId)) return false;
+    const r = await safe(call(fn, arg === undefined ? [+tabId] : [+tabId, arg]), false);
+    setTimeout(async () => { const list = await safe(call('webTabs', [], 3000)); const t = (list || []).find((x) => x.tabId === +tabId); if (t) { web = t; push(); } }, 300);
     return r;
   });
   ipcMain.handle('music-queue', () => safe(call('queue'), []));

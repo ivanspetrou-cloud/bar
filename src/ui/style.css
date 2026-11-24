@@ -759,3 +759,7 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 #island.game .hud-hold { display: block; }
 .g-hold { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .g-hold .seg button { padding: 0 8px; height: 28px; font-size: var(--fs-cap); }
+
+/* режим музыки для сайтов: только плеер — без оценок, повтора и перемешивания */
+.mu.web .mu-meta-row > .ib, .mu.web .mu-ctl .ib[title="Перемешать"], .mu.web .mu-ctl .ib[aria-label="Перемешать"] { visibility: hidden; }
+.mu.web .mu-ctl .ib[aria-label^="Повтор"] { visibility: hidden; }
