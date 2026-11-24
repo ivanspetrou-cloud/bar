@@ -1882,7 +1882,10 @@ function updateRow() {
       }
       case 'ready': set('redo', `Версия ${s.next} готова`, 'Bar перезапустится за пару секунд', 'Перезапустить', () => { btn.disabled = true; bar.updateInstall(); }, 'go'); fill.style.width = '100%'; break;
       case 'latest': set('check', `Bar ${v} — последняя версия`, s.checkedAt ? `Проверено в ${new Date(s.checkedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '', 'Проверить', () => bar.updateCheck(), 'ok'); break;
-      case 'error': set('x', 'Не удалось проверить обновления', s.error || 'Нет связи с GitHub', 'Ещё раз', () => bar.updateCheck(), 'err'); break;
+      case 'installing': set('redo', `Устанавливаю ${s.next || ''}`.trim(), 'Bar закроется и откроется уже новой версией', '', null, 'go'); fill.style.width = '100%'; break;
+      case 'error': s.manual
+        ? set('x', 'Не удалось установить обновление', s.error, 'Скачать', () => bar.updateManual(), 'err')
+        : set('x', 'Не удалось проверить обновления', s.error || 'Нет связи с GitHub', 'Ещё раз', () => bar.updateCheck(), 'err'); break;
       default: set('redo', `Bar ${v}`, 'Обновления из GitHub', 'Проверить', () => bar.updateCheck());
     }
     barEl2.classList.toggle('on', s.state === 'downloading' || s.state === 'ready');
