@@ -64,34 +64,7 @@ namespace Bar {
       }
     }
 
-    // Уровень звука на выходе для «живого» эквалайзера: бесконечный поток строк "M <пик>" раз в stepMs.
-    // Весь цикл — в C#, без PowerShell на каждом шаге; останавливается вместе с процессом агента.
-    public static void MeterStream(int stepMs) {
-      IAudioMeterInformation meter = null; long at = 0;
-      var inv = System.Globalization.CultureInfo.InvariantCulture;
-      var sw = Stopwatch.StartNew();
-      while (true) {
-        float p = 0;
-        try {
-          if (meter == null || sw.ElapsedMilliseconds - at > 3000) { // устройство вывода могли сменить
-            var en = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
-            IMMDevice dev; Marshal.ThrowExceptionForHR(en.GetDefaultAudioEndpoint(0, 1, out dev));
-            Guid iid = typeof(IAudioMeterInformation).GUID; object o;
-            Marshal.ThrowExceptionForHR(dev.Activate(ref iid, 23, IntPtr.Zero, out o));
-            meter = (IAudioMeterInformation)o; at = sw.ElapsedMilliseconds;
-          }
-          meter.GetPeakValue(out p);
-        } catch { meter = null; }
-        Console.Out.WriteLine("M " + Math.Round(p, 3).ToString(inv));
-        Console.Out.Flush();
-        Thread.Sleep(stepMs);
-      }
-    }
-
   }
-
-  [Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IAudioMeterInformation { int GetPeakValue(out float pfPeak); }
 
   public static class Win {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -686,7 +659,6 @@ while ($true) {
     $data = switch ($cmd) {
       'audio'    { [ordered]@{ volume = [Math]::Round([Bar.Audio]::GetVolume() * 100); muted = [Bar.Audio]::GetMute(0); mic = [Bar.Audio]::HasMic(); micMuted = $(if ([Bar.Audio]::HasMic()) { [Bar.Audio]::GetMute(1) } else { $false }) } }
       'waitaudio' { $w = $arg.Split(' '); [Bar.Audio]::WaitChange([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
-      'meter'    { [Bar.Audio]::MeterStream([int]$arg) }
       'setvol'   { [Bar.Audio]::SetVolume([float]$arg / 100); $true }
       'mute'     { [Bar.Audio]::SetMute(0, $arg -eq '1'); $true }
       'micmute'  { [Bar.Audio]::SetMute(1, $arg -eq '1'); $true }

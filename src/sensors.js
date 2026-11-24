@@ -81,15 +81,23 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     aw.on = false; aw.v = -1; watcher.stop();
   }
 
-  // ---------- «живой» эквалайзер: поток уровня звука, только пока его просят ----------
-  const meter = new Agent('meter');
-  let meterBuf = [], meterT = 0;
-  meter.onMeter = (v) => { meterBuf.push(v); };
+  // ---------- «живой» эквалайзер: отдельный маленький процесс (meter.ps1) печатает уровень звука ----------
+  let meterPs = null, meterBuf = [], meterT = 0;
+  function meterStop() { clearInterval(meterT); meterBuf = []; if (meterPs) { try { meterPs.kill(); } catch {} meterPs = null; } }
   ipcMain.on('meter', (_e, on) => {
-    clearInterval(meterT);
-    if (!on) { meter.stop(); meterBuf = []; return; }
-    if (!meter.ps) { meter.start(); if (meter.ps) meter.ps.stdin.write('1 meter 45\n'); }
-    // в окно — пачками по 2 значения ~11 раз в секунду
+    if (!on) return meterStop();
+    if (meterPs) return;
+    const script = path.join(__dirname, 'meter.ps1').replace('app.asar', 'app.asar.unpacked');
+    meterPs = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    let buf = '';
+    meterPs.stdout.setEncoding('utf8');
+    meterPs.stdout.on('data', (d) => {
+      buf += d; let i;
+      while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (l.startsWith('M ')) meterBuf.push(parseFloat(l.slice(2)) || 0); }
+    });
+    meterPs.on('exit', () => { meterPs = null; });
+    meterPs.on('error', () => { meterPs = null; });
+    // в окно — пачками ~11 раз в секунду
     meterT = setInterval(() => { if (meterBuf.length) { send('meter', meterBuf); meterBuf = []; } }, 90);
   });
 
@@ -426,6 +434,6 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   return {
     call: (cmd, arg, ms) => fast.call(cmd, arg, ms),
     listApps,
-    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); watchSet(false); meter.stop(); clearInterval(meterT); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
+    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); watchSet(false); meterStop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
   };
 };
