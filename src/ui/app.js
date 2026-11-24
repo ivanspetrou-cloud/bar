@@ -1421,7 +1421,7 @@ tool({
     const reset = h('button', { class: 'btn sm', onclick: () => { BarTheme.save({ ...BarTheme.DEFAULTS }); BarTheme.apply(); show('look'); } }, I('reset'), 'Сбросить оформление');
     const body = h('div', { class: 'settings col', style: { flex: '1', minHeight: '0' } });
     el.append(h('div', { class: 'row' }, tabs, h('span', { class: 'grow' }), reset), body);
-    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры'], ['lab', 'Lab']];
+    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры'], ['lab', 'Дополнительно']];
     function show(t) {
       store.set('settingsTab', t);
       tabs.replaceChildren(...TABS.map(([k, n]) => h('button', { class: k === t ? 'on' : '', onclick: () => show(k) }, n)));
