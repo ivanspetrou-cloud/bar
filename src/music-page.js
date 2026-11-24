@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.2.0';
+  const BAR_PAGE_V = '0.2.1';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -155,11 +155,23 @@
       shuffle: !!(b && b.querySelector('.shuffle.style-default-active, .shuffle[aria-pressed="true"]')),
     };
   }
+  // Обложка строки очереди. Картинки в очереди страница грузит лениво — только у видимых строк есть src,
+  // поэтому берём ссылку из данных самого элемента, а если их нет — превью по ID видео.
+  function qThumb(el) {
+    const d = el.data || (el.__data && el.__data.data) || {};
+    const r = d.playlistPanelVideoRenderer || (d.primaryRenderer && d.primaryRenderer.playlistPanelVideoRenderer) || d;
+    const fromData = thumb(r.thumbnail);
+    if (fromData) return fromData;
+    const img = el.querySelector('img');
+    if (img && img.src && !img.src.startsWith('data:')) return img.src;
+    const id = r.videoId || (r.navigationEndpoint && r.navigationEndpoint.watchEndpoint && r.navigationEndpoint.watchEndpoint.videoId);
+    return id ? 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg' : '';
+  }
   function queue() {
     return [...document.querySelectorAll('ytmusic-player-queue #contents > ytmusic-player-queue-item, ytmusic-player-queue #contents ytmusic-player-queue-item')]
       .slice(0, 80).map((el, i) => ({
         i, title: (el.querySelector('.song-title') || {}).textContent || '', subtitle: ((el.querySelector('.byline') || {}).textContent || '').trim(),
-        duration: ((el.querySelector('.duration') || {}).textContent || '').trim(), thumb: ((el.querySelector('img') || {}).src || ''),
+        duration: ((el.querySelector('.duration') || {}).textContent || '').trim(), thumb: qThumb(el),
         current: el.hasAttribute('selected') || el.getAttribute('play-button-state') === 'playing' || el.getAttribute('play-button-state') === 'paused',
       }));
   }

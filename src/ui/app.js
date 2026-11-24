@@ -442,6 +442,19 @@ const srchKbd = h('kbd', { class: 'srch-k' });
 const srchBox = h('label', { class: 'srch', title: 'Приложения, файлы, инструменты Bar, расчёты' }, I('search'), srchInput, srchKbd);
 barEl.append(barL, srchBox, barR);
 const clockStr = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+// Дата в раскрытой шапке: «вторник, 24 ноября», а если справа много показателей и поиску не хватает места — «вт, 24 нояб.»
+const textW = (() => { const c = document.createElement('canvas').getContext('2d'); const cache = new Map();
+  return (t, font) => { const k = font + t; if (!cache.has(k)) { c.font = font; cache.set(k, c.measureText(t).width); } return cache.get(k); }; })();
+function homeDate() {
+  const d = new Date();
+  const long = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const cs = getComputedStyle(barEl);
+  const font = `400 ${cs.fontSize} ${cs.fontFamily}`;
+  // ширина панели − поля − часы − показатели справа − промежутки − минимальная ширина поиска
+  const free = barEl.clientWidth - 32 - 60 - barR.scrollWidth - 3 * 8 - 200;
+  return textW(long, font) <= free ? long : d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 function renderBar() {
   // в раскрытой панели трек и так виден в карточке «Сейчас играет» — в шапке его не дублируем
   const a = topAct(state === 'open' ? 'media' : null);
@@ -450,7 +463,7 @@ function renderBar() {
     const tool = current && TOOLS_BY_ID[current];
     L = tool
       ? `<button class="ib" data-do="back" title="Назад (Esc)">${icon('back')}</button><span class="title">${esc(tool.name)}</span>`
-      : `<span class="title">${clockStr()}</span><span class="sub">${new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</span>`;
+      : `<span class="title">${clockStr()}</span><span class="sub">${homeDate()}</span>`;
     const muBtns = current === 'music' && MU.ext && MU.tab
       ? `<button class="ib" data-do="mu-tab" title="Открыть вкладку YouTube Music">${icon('link')}</button><button class="ib ${MUctl.editing ? 'on' : ''}" data-do="mu-layout" title="${MUctl.editing ? 'Готово' : 'Раскладка: размеры и расположение блоков'}">${icon('layout')}</button>`
       : '';
