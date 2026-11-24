@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('bar', {
   capture: (mode) => ipcRenderer.invoke('capture', mode),
   media: (k) => ipcRenderer.send('media', k),
   stats: () => ipcRenderer.invoke('stats'),
+  hwInfo: () => ipcRenderer.invoke('hw-info'),
+  gpuLoad: () => ipcRenderer.invoke('gpu-load'),
   qr: (text) => ipcRenderer.invoke('qr', text),
   clipRead: () => ipcRenderer.invoke('clip-read'),
   clipWrite: (t) => ipcRenderer.send('clip-write', t),

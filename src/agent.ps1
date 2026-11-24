@@ -583,6 +583,39 @@ function Get-AppUsage {
   return @($out)
 }
 
+# Hardware summary for the System tool (read-only WMI / registry)
+function Get-HwInfo {
+  $os = Get-CimInstance Win32_OperatingSystem
+  $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
+  $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+  $board = Get-CimInstance Win32_BaseBoard | Select-Object -First 1
+  # VRAM: WMI AdapterRAM is capped at 4 GB; the exact value is in the driver registry key (qwMemorySize)
+  $vram = @{}
+  Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object {
+    $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+    if ($p -and $p.DriverDesc -and $p.'HardwareInformation.qwMemorySize') { $vram[$p.DriverDesc] = [int64]$p.'HardwareInformation.qwMemorySize' }
+  }
+  $gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Microsoft Basic|Remote|Virtual|Parsec|Meta' } | ForEach-Object {
+    $mem = if ($vram.ContainsKey($_.Name)) { $vram[$_.Name] } else { [int64]$_.AdapterRAM }
+    [ordered]@{ name = $_.Name; vram = $mem; driver = $_.DriverVersion; w = $_.CurrentHorizontalResolution; h = $_.CurrentVerticalResolution; hz = $_.CurrentRefreshRate }
+  })
+  $types = @{ 20 = 'DDR'; 21 = 'DDR2'; 24 = 'DDR3'; 26 = 'DDR4'; 34 = 'DDR5'; 35 = 'LPDDR5' }
+  $sticks = @(Get-CimInstance Win32_PhysicalMemory | ForEach-Object {
+    $t = [int]$_.SMBIOSMemoryType
+    [ordered]@{ size = [int64]$_.Capacity; speed = $(if ($_.ConfiguredClockSpeed) { $_.ConfiguredClockSpeed } else { $_.Speed }); type = $(if ($types.ContainsKey($t)) { $types[$t] } else { '' }); maker = ([string]$_.Manufacturer).Trim(); part = ([string]$_.PartNumber).Trim(); slot = $_.DeviceLocator }
+  })
+  $slots = (Get-CimInstance Win32_PhysicalMemoryArray | Measure-Object -Property MemoryDevices -Sum).Sum
+  $disks = @(Get-CimInstance Win32_DiskDrive | ForEach-Object { [ordered]@{ model = ([string]$_.Model).Trim(); size = [int64]$_.Size; bus = $_.InterfaceType } })
+  $vols = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { [ordered]@{ id = $_.DeviceID; label = $_.VolumeName; size = [int64]$_.Size; free = [int64]$_.FreeSpace } })
+  $sysdisk = @(Get-PhysicalDisk -ErrorAction SilentlyContinue | ForEach-Object { [ordered]@{ model = ([string]$_.FriendlyName).Trim(); media = [string]$_.MediaType; bus = [string]$_.BusType } })
+  [ordered]@{
+    os = [ordered]@{ name = $os.Caption; ver = $cv.DisplayVersion; build = $os.BuildNumber + '.' + $cv.UBR; arch = $os.OSArchitecture }
+    cpu = [ordered]@{ name = ([string]$cpu.Name).Trim(); cores = $cpu.NumberOfCores; threads = $cpu.NumberOfLogicalProcessors; mhz = $cpu.MaxClockSpeed }
+    board = [ordered]@{ maker = ([string]$board.Manufacturer).Trim(); model = ([string]$board.Product).Trim() }
+    gpus = $gpus; ram = $sticks; slots = $slots; disks = $disks; pdisks = $sysdisk; vols = $vols
+  }
+}
+
 function Reply($id, $ok, $data) {
   $o = [ordered]@{ id = $id; ok = $ok; data = $data }
   [Console]::Out.WriteLine(($o | ConvertTo-Json -Compress -Depth 5))
@@ -653,6 +686,7 @@ while ($true) {
         }
       }
       'usage'    { @(Get-AppUsage) }
+      'hwinfo'   { Get-HwInfo }
       # освободить память после тяжёлых запросов (списки приложений, Bluetooth): сборка мусора + сброс рабочего набора
       'trim'     { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect(); $pr = [Diagnostics.Process]::GetCurrentProcess(); $pr.MinWorkingSet = $pr.MinWorkingSet; [Math]::Round($pr.PrivateMemorySize64 / 1MB) }
       'startapps' { @(Get-StartApps | ForEach-Object { $_.Name + '|' + $_.AppID }) }

@@ -763,3 +763,20 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 /* режим музыки для сайтов: только плеер — без оценок, повтора и перемешивания */
 .mu.web .mu-meta-row > .ib, .mu.web .mu-ctl .ib[title="Перемешать"], .mu.web .mu-ctl .ib[aria-label="Перемешать"] { visibility: hidden; }
 .mu.web .mu-ctl .ib[aria-label^="Повтор"] { visibility: hidden; }
+
+/* ---------- «Система»: характеристики ---------- */
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); flex: none; }
+.grid4 .metric .big { font-size: 26px; }
+.grid4 .metric .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sys-details { display: block; flex: 1; min-height: 0; overflow-y: auto; }
+.sys-details::-webkit-scrollbar { width: 6px; }
+.sys-details::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
+.sys-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px var(--pad); }
+.sys-cols > .col { gap: 10px; min-width: 0; }
+.sys-sec { display: flex; flex-direction: column; min-width: 0; }
+.sys-sec .cap { margin-bottom: 2px; }
+.sys-sec .kv { gap: 10px; }
+.sys-sec .kv b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; text-align: right; }
+.sys-sec .kv b .muted { font-weight: 400; }
+.sys-vol { display: flex; flex-direction: column; gap: 3px; padding: 4px 0 6px; }
+.sys-vol .kv { border: 0; padding: 0; }

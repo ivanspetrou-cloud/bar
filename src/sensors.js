@@ -122,6 +122,21 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   }
   ipcMain.handle('apps-list', (_e, force) => listApps(force).catch(() => []));
 
+  // «Система»: сведения о железе (≈4 с, кеш на минуту) и загрузка видеокарты (свой процесс, пока вкладка открыта)
+  let hwCache = null, hwAt = 0, hwBusy = null;
+  ipcMain.handle('hw-info', () => {
+    if (hwCache && Date.now() - hwAt < 60e3) return hwCache;
+    if (!hwBusy) hwBusy = safe(slow.call('hwinfo', '', 30000)).then((v) => { if (v) { hwCache = v; hwAt = Date.now(); } hwBusy = null; return hwCache; });
+    return hwBusy;
+  });
+  const gpuAgent = new Agent('gpu');
+  let gpuIdle = 0;
+  ipcMain.handle('gpu-load', async () => {
+    clearTimeout(gpuIdle); gpuIdle = setTimeout(() => gpuAgent.stop(), 20e3);
+    const v = await safe(gpuAgent.call('gpu', '', 12000));
+    return typeof v === 'number' ? v : null;
+  });
+
   // Подсказки для дока: что вы реально часто запускаете (счётчики Windows), сопоставленное со списком «Пуска».
   // Данные читаются локально и никуда не отправляются.
   const KNOWN = {
@@ -374,6 +389,6 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   return {
     call: (cmd, arg, ms) => fast.call(cmd, arg, ms),
     listApps,
-    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
+    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
   };
 };

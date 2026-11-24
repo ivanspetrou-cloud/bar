@@ -1328,7 +1328,7 @@ tool({
 let lastStats = null;
 const pollStats = async () => { try { lastStats = await bar.stats(); } catch {} return lastStats; };
 tool({
-  id: 'system', name: 'Система', icon: 'system',
+  id: 'system', name: 'Система', icon: 'system', height: () => 540, // характеристики помещаются без прокрутки
   view(el) {
     const box = h('div', { class: 'col', style: { flex: '1' } });
     el.append(box);
@@ -1337,22 +1337,73 @@ tool({
       h('span', { class: 'cap' }, label), h('div', { class: 'big' }, big), h('span', { class: 'muted small' }, sub),
       pct != null && h('div', { class: 'meter' }, h('b', { style: { width: pct + '%', background: color || '' } })));
     const kv = (a, b) => h('div', { class: 'kv' }, a, h('b', { title: b }, b));
+    // характеристики железа — один раз при открытии (около 3 с), живые показатели — раз в 1,5 с
+    const MAKER = [[/micro-?star/i, 'MSI'], [/asustek|^asus/i, 'ASUS'], [/gigabyte/i, 'Gigabyte'], [/asrock/i, 'ASRock'], [/micron/i, 'Micron'], [/kingston/i, 'Kingston'], [/samsung/i, 'Samsung'], [/sk ?hynix|hynix/i, 'SK hynix'], [/corsair/i, 'Corsair'], [/g\.?skill/i, 'G.Skill']];
+    const maker = (m) => { for (const [re, n] of MAKER) if (re.test(m || '')) return n; return String(m || '').replace(/,?\s*(Co\.|Ltd\.?|Inc\.?|Corporation|Technology).*$/i, '').trim(); };
+    const gb = (b) => { const g = b / 1073741824; return (g >= 10 || Math.abs(g - Math.round(g)) < 0.05 ? Math.round(g) : g.toFixed(1).replace('.', ',')) + ' ГБ'; };
+    const disk = (b) => (b >= 1e12 ? (b / 1e12).toFixed(b % 1e12 < 5e10 ? 0 : 1).replace('.', ',') + ' ТБ' : Math.round(b / 1e9) + ' ГБ'); // как на коробке диска
+    const metrics = h('div', { class: 'grid4' });
+    const details = h('div', { class: 'card sys-details' }, h('div', { class: 'muted small' }, 'Собираю сведения о компьютере…'));
+    box.append(metrics, details);
+    let hw = null, gpuLoad = null;
+    const sec = (title, ...rows) => h('div', { class: 'sys-sec' }, h('div', { class: 'cap' }, title), ...rows.filter(Boolean));
+    const kv2 = (a, b, sub) => h('div', { class: 'kv' }, a, h('b', { title: b + (sub ? ' · ' + sub : '') }, b, sub ? h('span', { class: 'muted' }, ' · ' + sub) : null));
+    const mainGpu = () => hw && (hw.gpus || []).slice().sort((a, b) => (b.vram || 0) - (a.vram || 0))[0];
+    function drawDetails(s) {
+      if (!hw) return;
+      const gpus = hw.gpus || [];
+      const main = mainGpu();
+      const shown = gpus.find((g) => g.w) || main;
+      const sticks = hw.ram || [];
+      const total = sticks.reduce((a, r) => a + (r.size || 0), 0) || (s && s.memTotal) || 0;
+      const r0 = sticks[0] || {};
+      const vols = hw.vols || [];
+      const pd = hw.pdisks && hw.pdisks.length ? hw.pdisks : (hw.disks || []).map((d) => ({ model: d.model }));
+      // слева — процессор с платой, память, Windows; справа — видеокарта с монитором и диски
+      details.replaceChildren(h('div', { class: 'sys-cols' },
+        h('div', { class: 'col' },
+          sec('Процессор и плата',
+            kv2('Процессор', hw.cpu.name),
+            kv2('Ядра', `${hw.cpu.cores} ядер · ${hw.cpu.threads} потоков`, hw.cpu.mhz ? (hw.cpu.mhz / 1000).toFixed(1).replace('.', ',') + ' ГГц' : ''),
+            hw.board && hw.board.model && kv2('Плата', `${maker(hw.board.maker)} ${hw.board.model}`)),
+          sec('Память',
+            kv2('Объём', gb(total), [r0.type, r0.speed ? r0.speed + ' МТ/с' : ''].filter(Boolean).join(' ')),
+            sticks.length && kv2('Планки', `${sticks.length} × ${gb(r0.size)}`, `${sticks.length} из ${hw.slots || sticks.length} слотов`),
+            r0.maker && kv2('Производитель', maker(r0.maker), r0.part)),
+          sec('Система',
+            kv2('Windows', String(hw.os.name || '').replace(/^Майкрософт\s+|^Microsoft\s+/i, ''), [hw.os.ver, 'сборка ' + hw.os.build].filter(Boolean).join(', ')),
+            s && kv2('Компьютер', s.host, s.ip))),
+        h('div', { class: 'col' },
+          sec('Видеокарта',
+            main && kv2('Модель', main.name),
+            main && main.vram && kv2('Видеопамять', gb(main.vram)),
+            main && kv2('Драйвер', main.driver),
+            gpus.length > 1 && kv2('Ещё', gpus.filter((g) => g !== main).map((g) => g.name).join(', ')),
+            shown && shown.w && kv2('Монитор', `${shown.w}×${shown.h}`, shown.hz ? `${shown.hz} Гц` : '')),
+          sec('Диски',
+            ...pd.map((d) => kv2(d.model, [d.bus === 'NVMe' ? 'NVMe' : '', d.media && d.media !== 'Unspecified' ? d.media : ''].filter(Boolean).join(' ') || '—')),
+            ...vols.map((v) => { const used = v.size ? Math.round((1 - v.free / v.size) * 100) : 0;
+              return h('div', { class: 'sys-vol' }, h('div', { class: 'kv' }, `${v.id} ${v.label || ''}`.trim(), h('b', {}, `${disk(v.free)} свободно из ${disk(v.size)}`)),
+                h('div', { class: 'meter' }, h('b', { style: { width: used + '%', background: used > 90 ? 'var(--red-g)' : '' } }))); })))));
+    }
     const draw = async () => {
       const s = await pollStats(); if (!s) return;
       const memP = Math.round(s.memUsed / s.memTotal * 100);
-      box.replaceChildren(
-        h('div', { class: 'grid3' },
-          metric('Процессор', s.cpu + '%', `${s.cores} потоков`, s.cpu),
-          metric('Память', memP + '%', `${fmtSize(s.memUsed)} из ${fmtSize(s.memTotal)}`, memP, 'var(--hi-g)'),
-          batt ? metric('Батарея', batt.level + '%', batt.charging ? 'заряжается' : 'от батареи', batt.level, batt.level <= 15 ? 'var(--red-g)' : 'var(--hi-g)')
-            : metric('Без перезагрузки', up(s.uptime), 'с последнего включения')),
-        h('div', { class: 'card', style: { flex: '1' } },
-          kv('Имя компьютера', s.host), kv('IP в локальной сети', s.ip), kv('Процессор', s.cpuName.trim()),
-          batt && kv('Без перезагрузки', up(s.uptime))));
+      const g = mainGpu();
+      metrics.replaceChildren(
+        metric('Процессор', s.cpu + '%', `${s.cores} потоков`, s.cpu),
+        metric('Память', memP + '%', `${fmtSize(s.memUsed)} из ${fmtSize(s.memTotal)}`, memP, 'var(--hi-g)'),
+        metric('Видеокарта', gpuLoad == null ? '…' : gpuLoad + '%', g ? g.name.replace(/^(NVIDIA|AMD|Intel\(R\))\s+/i, '') : 'загрузка', gpuLoad, 'var(--acc-g)'),
+        batt ? metric('Батарея', batt.level + '%', batt.charging ? 'заряжается' : 'от батареи', batt.level, batt.level <= 15 ? 'var(--red-g)' : 'var(--hi-g)')
+          : metric('Без перезагрузки', up(s.uptime), 'с последнего включения'));
     };
+    bar.hwInfo().then((v) => { if (!v) { details.replaceChildren(h('div', { class: 'muted small' }, 'Не удалось получить сведения о компьютере')); return; } hw = v; drawDetails(lastStats); draw(); });
+    const pollGpu = async () => { gpuLoad = await bar.gpuLoad(); };
+    pollGpu();
+    const gv = setInterval(pollGpu, 2000);
     draw();
     const iv = setInterval(draw, 1500);
-    return () => clearInterval(iv);
+    return () => { clearInterval(iv); clearInterval(gv); };
   },
 });
 
