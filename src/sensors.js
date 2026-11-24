@@ -205,10 +205,23 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     const extra = new Map();
     for (const [k, e] of Object.entries(fg)) extra.set(((e && e.exe) || k).toLowerCase(), (e && e.exe) || k);
     for (const exe of Object.keys(seenApps)) extra.set(exe, seenApps[exe].p);
-    for (const [k, exe] of extra) {
-      if (have.has(k) || !/^[a-z]:\\.+\.exe$/i.test(exe) || SYS_EXE.test(exe)) continue;
-      if (!fs.existsSync(exe)) continue;
-      const name = path.basename(exe, path.extname(exe)).replace(/[-_]+/g, ' ').trim();
+    // названия программ из свойств файлов (один запрос на все новые, ответ запоминается в seen-apps.json)
+    const ask = [...extra.entries()].filter(([k, exe]) => !have.has(k) && !(seenApps[k] && seenApps[k].n !== undefined) && /^[a-z]:\\.+\.exe$/i.test(exe) && !SYS_EXE.test(exe) && fs.existsSync(exe)).map(([, exe]) => exe).slice(0, 40);
+    if (ask.length) {
+      const rows = Agent.list(await safe(slow.call('exeinfo', Buffer.from(ask.join('|'), 'utf8').toString('base64'), 20000)));
+      for (const r of rows) {
+        const [p, n, l] = String(r).split('|'); const k = String(p || '').toLowerCase(); if (!k) continue;
+        seenApps[k] = { ...(seenApps[k] || { p, t: Date.now() }), n: n || '', l: l || '' };
+      }
+      try { fs.writeFileSync(SEEN_FILE, JSON.stringify(seenApps)); } catch {}
+    }
+    for (const [k, exe0] of extra) {
+      if (have.has(k) || !/^[a-z]:\\.+\.exe$/i.test(exe0) || SYS_EXE.test(exe0)) continue;
+      if (!fs.existsSync(exe0)) continue;
+      const info = seenApps[k] || {};
+      const exe = info.l && fs.existsSync(info.l) ? info.l : exe0;       // основной запускающий файл, если нашёлся
+      if (have.has(exe.toLowerCase())) continue;
+      const name = info.n || path.basename(exe, path.extname(exe)).replace(/[-_]+/g, ' ').trim();
       if (!name || seen.has(name.toLowerCase())) continue;
       seen.add(name.toLowerCase()); have.add(k);
       apps.push({ id: 'exe:' + exe, name, lnk: '', exe, uwp: '' });

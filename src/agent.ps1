@@ -1000,6 +1000,28 @@ while ($true) {
         })
       }
       'hiddiag'  { @([Bar.HidBattery]::Diag()) }
+      'exeinfo'  {
+        # «путь|название|запускающий файл»: название — из свойств файла (ProductName / FileDescription);
+        # если exe лежит в подпапке версии (…\versions\2.2.0\app.exe), ищем на 1–3 уровня выше exe с тем же названием продукта
+        $paths = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($arg)).Split('|') | Where-Object { $_ }
+        @($paths | ForEach-Object {
+          $p = $_; $name = ''; $launcher = ''
+          try {
+            $vi = (Get-Item -LiteralPath $p -ErrorAction Stop).VersionInfo
+            $prod = [string]$vi.ProductName; $desc = [string]$vi.FileDescription
+            $name = if ($prod -and $prod.Length -le 40) { $prod.Trim() } elseif ($desc) { $desc.Trim() } else { '' }
+            if ($prod) {
+              $dir = Split-Path $p
+              for ($k = 0; $k -lt 3 -and $dir; $k++) {
+                $dir = Split-Path $dir; if (-not $dir) { break }
+                $cand = Get-ChildItem -LiteralPath $dir -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'unins|update|setup|crash|helper' -and $_.VersionInfo.ProductName -eq $prod } | Select-Object -First 1
+                if ($cand) { $launcher = $cand.FullName; break }
+              }
+            }
+          } catch {}
+          $p + '|' + $name + '|' + $launcher
+        })
+      }
       'camlist'  { @([Bar.Cam]::List()) }
       'camset'   { $w = $arg.Split(' '); [Bar.Cam]::Set([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
       'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
