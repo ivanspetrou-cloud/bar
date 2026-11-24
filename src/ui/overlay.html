@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Bar overlay</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; cursor: crosshair; user-select: none; }
+  #cv { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #dim { position: fixed; inset: 0; background: rgba(6, 6, 10, .42); }
+  #sel { position: fixed; display: none; outline: 1.5px solid var(--hi); box-shadow: 0 0 0 100vmax rgba(6, 6, 10, .42); border-radius: 3px; }
+  #size { position: fixed; display: none; font: 600 11px "Segoe UI", sans-serif; color: var(--on-hi); background: var(--hi); padding: 2px 6px; border-radius: 6px; }
+  #hint {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    font: 600 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; color: #f4f4f6;
+    background: rgba(10, 10, 12, .92); padding: 9px 16px; border-radius: 999px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.4); white-space: nowrap;
+  }
+  #hint kbd { font: inherit; color: var(--hi-dk); }
+  #mag { position: fixed; display: none; width: 132px; height: 132px; border-radius: 50%; border: 2px solid #fff;
+         box-shadow: 0 6px 24px rgba(0,0,0,.5); image-rendering: pixelated; pointer-events: none; }
+  #lab { position: fixed; display: none; font: 600 12px "Segoe UI Variable Text", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; color: #fff;
+         background: rgba(10,10,12,.92); padding: 4px 8px; border-radius: 8px; pointer-events: none; white-space: nowrap; }
+  #lab i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.4); }
+  body.color #dim { background: transparent; }
+  body.color { cursor: none; }
+</style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+  <div id="dim"></div>
+  <div id="sel"></div>
+  <div id="size"></div>
+  <canvas id="mag" width="132" height="132"></canvas>
+  <div id="lab"></div>
+  <div id="hint"></div>
+  <script src="theme.js"></script>
+  <script src="../../node_modules/jsqr/dist/jsQR.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>

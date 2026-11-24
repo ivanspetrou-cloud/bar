@@ -1,0 +1,90 @@
+{
+  "name": "bar-notch",
+  "productName": "Bar",
+  "version": "0.1.0",
+  "description": "Нотч для Windows: плеер YouTube Music, показатели, 16 инструментов сверху экрана",
+  "main": "src/main.js",
+  "author": "ivanspetrou-cloud",
+  "homepage": "https://github.com/ivanspetrou-cloud/bar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ivanspetrou-cloud/bar.git"
+  },
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/fuses.js",
+    "fuses": "node scripts/fuses.js",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^2.1.3",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "jsqr": "^1.4.0",
+    "lucide": "^1.78.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.23.0"
+  },
+  "build": {
+    "appId": "app.bar.notch",
+    "productName": "Bar",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "scripts/build-ext.js",
+      "package.json",
+      "!src/**/*.map"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ivanspetrou-cloud",
+        "repo": "bar",
+        "releaseType": "release"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "src/agent.ps1"
+    ],
+    "extraResources": [
+      {
+        "from": "extension",
+        "to": "extension",
+        "filter": [
+          "manifest.json",
+          "sw.js",
+          "bridge.js"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Bar-Setup-${version}.${ext}",
+      "shortcutName": "Bar",
+      "deleteAppDataOnUninstall": false
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
+  }
+}

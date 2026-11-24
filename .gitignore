@@ -1,0 +1,20 @@
+# зависимости и сборки
+node_modules/
+dist/
+out/
+
+# расширение: секретный ключ пары создаётся на каждом компьютере, page.js собирается из src/music-page.js
+extension/pair.json
+extension/page.js
+
+# локальное
+*.log
+.env
+.env.*
+*.pem
+*.pfx
+.claude/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
