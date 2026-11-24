@@ -107,7 +107,9 @@ island.addEventListener('wheel', (e) => {
 // передаёт его ~20 раз в секунду. Три столбика — три «характера» одного уровня: быстрый, средний и плавный.
 // Поток идёт, только пока что-то играет и столбики видны; через 30 с паузы — останавливается.
 const LiveEq = { on: store.get('liveEq', true), st: 'off', lvl: [0, 0, 0], idleT: 0, q: [], iv: 0, last: 0 };
-const liveEqActive = () => LiveEq.st === 'on' && performance.now() - LiveEq.last < 1500;
+// живые столбики — только пока уровень действительно приходит и не нулевой; иначе (звук идёт мимо замера,
+// нет устройств) — обычная анимация, а не лежащие точки
+const liveEqActive = () => LiveEq.st === 'on' && performance.now() - LiveEq.last < 1500 && performance.now() - (LiveEq.loud || 0) < 2500;
 function liveEqStart() {
   if (LiveEq.st === 'on') return;
   LiveEq.st = 'on'; bar.meter(true); island.classList.add('live-eq');
@@ -117,10 +119,12 @@ function liveEqStop() {
   if (LiveEq.st !== 'on') return;
   LiveEq.st = 'off'; bar.meter(false); clearInterval(LiveEq.iv); LiveEq.q = []; island.classList.remove('live-eq');
 }
-bar.onMeter((vals) => { LiveEq.q.push(...vals); if (LiveEq.q.length > 6) LiveEq.q.splice(0, LiveEq.q.length - 6); LiveEq.last = performance.now(); });
+bar.onMeter((vals) => { if (vals.some((v) => v > 0.002)) LiveEq.loud = performance.now(); LiveEq.q.push(...vals); if (LiveEq.q.length > 6) LiveEq.q.splice(0, LiveEq.q.length - 6); LiveEq.last = performance.now(); });
 function liveEqTick() {
   const bars = document.querySelectorAll('span.eq');
   if (!bars.length || document.hidden || !LiveEq.q.length) return;
+  if (!liveEqActive()) { LiveEq.q.length = 0; island.classList.remove('live-eq'); return; } // тишина в замере — двигает обычная анимация
+  island.classList.add('live-eq');
   // автоусиление: уровень делится на недавний максимум (он медленно спадает), поэтому столбики одинаково
   // живые и на полной громкости, и когда музыку в плеере сделали тише; настоящая тишина остаётся тишиной
   const r = LiveEq.q.shift();
@@ -741,3 +745,137 @@ SRCH_KW.tbset = 'таскбар панель задач док закрепит�
 bar.onOpenTool((id) => { if (!TOOLS_BY_ID[id]) return; expand({ auto: true }); openTool(id); });
 openHooks.add(() => pushNeed());
 pushNeed();
+
+// ============ 17. Камера: поворот, наклон, зум, фокус, приватность (EMEET PIXY и другие PTZ-камеры) ============
+Object.assign(LUCIDE, { cam: 'Video', camoff: 'VideoOff', up2: 'ChevronUp', down2: 'ChevronDown', left2: 'ChevronLeft', right2: 'ChevronRight', center: 'Crosshair', zoomin: 'ZoomIn', focus: 'Focus', bookmark: 'Bookmark', toL: 'ChevronsLeft', toR: 'ChevronsRight' });
+const CAM = { PAN: 0, TILT: 1, ROLL: 2, ZOOM: 3, EXPO: 4, FOCUS: 6, PRIV: 15 };
+tool({
+  id: 'cam', name: 'Камера', icon: 'cam',
+  height: () => 470,
+  view(el) {
+    let cams = [], cur = null, stream = null, alive = true, busy = Promise.resolve();
+    const api = window.__camApi || { list: () => bar.camList(), set: (...a) => bar.camSet(...a) }; // __camApi — подмена для самопроверки
+    const left = h('div', { class: 'col cam-left' }), right = h('div', { class: 'col cam-right' });
+    el.append(h('div', { class: 'split cam' }, left, right));
+    const key = () => 'cam:' + (cur ? cur.name : '');
+    // команды по очереди: зажатая кнопка не заваливает камеру запросами
+    const send = (prop, val, auto) => (busy = busy.then(async () => {
+      if (!cur) return;
+      const r = String((await api.set(cur.i, prop, val, auto)) || '');
+      const m = r.match(/^ok:(-?\d+)/); if (m && cur.props[prop]) { cur.props[prop].cur = +m[1]; cur.props[prop].auto = !!auto; }
+      return r;
+    }));
+    const P = (id) => cur && cur.props[id];
+
+    // ---- превью (по желанию: камера включается только пока оно открыто) ----
+    const video = h('video', { class: 'cam-v', autoplay: true, muted: true, playsinline: true });
+    const ph = h('div', { class: 'cam-ph muted small' }, 'Превью выключено — камера не снимает');
+    const prevBtn = h('button', { class: 'btn sm' }, I('eye'), 'Показать картинку');
+    async function preview(on) {
+      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
+      ph.hidden = on; prevBtn.classList.toggle('on', on);
+      prevBtn.replaceChildren(I(on ? 'x' : 'eye'), on ? 'Скрыть картинку' : 'Показать картинку');
+      if (!on || !cur) return;
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+      const want = devs.find((d) => d.label && cur.name && (d.label.includes(cur.name) || cur.name.includes(d.label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, ''))));
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: want ? { deviceId: { exact: want.deviceId } } : true, audio: false });
+        if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
+        video.srcObject = stream;
+      } catch { ph.hidden = false; ph.textContent = 'Картинку не получить: камера занята или запрещена в параметрах Windows'; }
+    }
+    prevBtn.onclick = () => preview(!stream);
+    left.append(h('div', { class: 'cam-frame' }, video, ph), prevBtn);
+
+    // ---- управление ----
+    function draw() {
+      const sel = h('select', { class: 'field', 'aria-label': 'Камера' }, cams.map((c) => h('option', { value: String(c.i) }, c.name + (Object.keys(c.props).length ? '' : ' — без управления'))));
+      sel.value = cur ? String(cur.i) : '';
+      sel.onchange = () => { cur = cams.find((c) => String(c.i) === sel.value); store.set('camName', cur.name); draw(); if (stream) preview(true); };
+      sel.style.flex = '1'; sel.style.minWidth = '0';
+      const rows = [h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, sel)];
+      if (!cur || !Object.keys(cur.props).length) {
+        rows.push(h('div', { class: 'muted small cam-none' }, cur && cur.ctl
+          ? 'Эта камера не даёт управлять поворотом, зумом и фокусом — у неё нет моторчика или она их не объявляет.'
+          : 'Камера не найдена или занята. Подключите PTZ-камеру (например, EMEET PIXY) и откройте экран заново.'));
+        right.replaceChildren(...rows);
+        return;
+      }
+      // приватность: своя команда камеры, а если её нет — объектив вниз до упора (так прячется EMEET PIXY)
+      const priv = P(CAM.PRIV), tilt = P(CAM.TILT), pan = P(CAM.PAN);
+      const hiddenNow = priv ? priv.cur === priv.max : !!store.get(key() + ':hid', null);
+      const privBtn = h('button', { class: 'btn cam-priv' + (hiddenNow ? ' red' : ' pri') }, I(hiddenNow ? 'cam' : 'camoff'), hiddenNow ? 'Включить камеру' : 'Выключить камеру');
+      privBtn.onclick = async () => {
+        privBtn.animate([{ transform: 'scale(.96)' }, { transform: 'none' }], { duration: 220 });
+        if (priv) await send(CAM.PRIV, hiddenNow ? priv.min : priv.max);
+        else if (tilt) {
+          if (!hiddenNow) { store.set(key() + ':hid', { tilt: tilt.cur, pan: pan ? pan.cur : null }); await send(CAM.TILT, tilt.min); }
+          else { const s = store.get(key() + ':hid', {}); store.set(key() + ':hid', null); await send(CAM.TILT, s.tilt ?? tilt.def); }
+        }
+        flash(hiddenNow ? 'Камера включена' : 'Камера выключена — объектив спрятан');
+        draw();
+      };
+      if (priv || tilt) rows.push(privBtn);
+
+      // поворот и наклон: стрелки (зажать — двигается), до упора, центр
+      if (pan || tilt) {
+        const step = (p) => Math.max(p.step, Math.round((p.max - p.min) / 14));
+        const nudge = (id, dir) => { const p = P(id); if (p) send(id, p.cur + dir * step(p)); };
+        const hold = (id, dir) => {
+          const b = h('button', { class: 'ib cam-arrow', disabled: P(id) ? null : '' }, I({ '0,-1': 'left2', '0,1': 'right2', '1,1': 'up2', '1,-1': 'down2' }[id + ',' + dir]));
+          let t = 0;
+          const stop = () => { clearInterval(t); t = 0; };
+          b.addEventListener('pointerdown', () => { nudge(id, dir); t = setInterval(() => nudge(id, dir), 180); });
+          ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
+          return b;
+        };
+        const center = h('button', { class: 'ib cam-center', title: 'По центру' }, I('center'));
+        center.onclick = () => { if (pan) send(CAM.PAN, pan.def); if (tilt) send(CAM.TILT, tilt.def); };
+        const pad = h('div', { class: 'cam-pad' },
+          h('span'), hold(CAM.TILT, 1), h('span'),
+          hold(CAM.PAN, -1), center, hold(CAM.PAN, 1),
+          h('span'), hold(CAM.TILT, -1), h('span'));
+        const ends = h('div', { class: 'col cam-ends' },
+          pan && h('button', { class: 'btn sm', onclick: () => send(CAM.PAN, pan.min) }, I('toL'), 'Влево до упора'),
+          pan && h('button', { class: 'btn sm', onclick: () => send(CAM.PAN, pan.max) }, I('toR'), 'Вправо до упора'),
+          tilt && h('button', { class: 'btn sm', onclick: () => send(CAM.TILT, tilt.max) }, I('up2'), 'Вверх до упора'),
+          tilt && h('button', { class: 'btn sm', onclick: () => send(CAM.TILT, tilt.min) }, I('down2'), 'Вниз до упора'));
+        rows.push(h('div', { class: 'row cam-move', style: { flexWrap: 'nowrap', alignItems: 'center' } }, pad, ends));
+      }
+      // зум и фокус
+      const slider = (id, label, ic) => {
+        const p = P(id); if (!p) return null;
+        const s = makeSlider({ min: p.min, max: p.max, step: p.step, value: p.cur, label });
+        s.addEventListener('change', () => send(id, +s.value));
+        const autoT = p.canAuto ? h('button', { class: 'chip tbs-chip' + (p.auto ? ' on' : ''), onclick: async () => { await send(id, p.cur, !p.auto); draw(); } }, 'Авто') : null;
+        return h('div', { class: 'sw cam-sl' }, h('span', { class: 'cam-lbl' }, I(ic), label), s, autoT);
+      };
+      rows.push(slider(CAM.ZOOM, 'Зум', 'zoomin'), slider(CAM.FOCUS, 'Фокус', 'focus'));
+      // позиции: клик — поехать, правый клик — запомнить текущую
+      if (pan || tilt || P(CAM.ZOOM)) {
+        const slots = store.get(key() + ':presets', [null, null, null]);
+        rows.push(h('div', { class: 'row cam-presets' }, h('span', { class: 'muted small' }, 'Позиции'),
+          ...slots.map((sl, n) => {
+            const b = h('button', { class: 'chip tbs-chip' + (sl ? ' on' : ''), title: sl ? 'Клик — поехать · правый клик — перезаписать' : 'Правый клик — запомнить текущую' }, I('bookmark'), String(n + 1));
+            b.onclick = () => { if (!sl) { flash('Правый клик — запомнить позицию'); return; } for (const [id, v] of Object.entries(sl)) send(+id, v); };
+            b.oncontextmenu = (e) => { e.preventDefault(); const v = {}; for (const id of [CAM.PAN, CAM.TILT, CAM.ZOOM]) if (P(id)) v[id] = P(id).cur; slots[n] = v; store.set(key() + ':presets', slots); flash(`Позиция ${n + 1} запомнена`); draw(); };
+            return b;
+          })));
+      }
+      right.replaceChildren(...rows.filter(Boolean));
+    }
+
+    right.append(h('div', { class: 'muted small' }, 'Ищу камеры…'));
+    api.list().then((list) => {
+      if (!alive) return;
+      cams = list || [];
+      // сначала — камеры с управлением; запомненная — первой
+      const saved = store.get('camName', '');
+      cur = cams.find((c) => c.name === saved && Object.keys(c.props).length) || cams.find((c) => Object.keys(c.props).length) || cams[0] || null;
+      draw();
+    });
+    return () => { alive = false; if (stream) stream.getTracks().forEach((t) => t.stop()); };
+  },
+});
+SRCH_KW.cam = 'камера вебкамера pixy emeet поворот зум приватность выключить камеру ptz webcam';
+(() => { const i = TOOLS.findIndex((t) => t.id === 'cam'); const [t] = TOOLS.splice(i, 1); t.hidden = true; TOOLS.push(t); })();

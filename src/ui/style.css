@@ -937,3 +937,25 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 
 /* переезд нотча на другой монитор: уезжает вверх, выезжает уже на новом */
 #island.hop { transform: translate(calc(-50% + var(--oled-dx, 0px)), -120%) !important; opacity: 0; transition: transform .22s cubic-bezier(.5, 0, .75, 0), opacity .2s; }
+
+/* камера */
+.cam { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.cam-frame { position: relative; flex: 1; min-height: 0; border-radius: var(--r-card); background: #000; overflow: hidden; display: grid; place-items: center; }
+.cam-v { width: 100%; height: 100%; object-fit: cover; }
+.cam-ph { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; }
+.cam-right { gap: 10px; overflow-y: auto; }
+.cam-none { padding: 8px 2px; }
+.cam-priv { justify-content: center; height: 44px; font-size: var(--fs-title); }
+.cam-pad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 4px; flex: none; }
+.cam-pad .ib { width: 44px; height: 44px; border-radius: var(--r-sm); background: var(--card); color: var(--fg); }
+.cam-pad .ib:hover { background: var(--card-hi); }
+.cam-pad .ib:active { transform: scale(.92); background: var(--acc); color: var(--on-acc); }
+.cam-pad .ib:disabled { opacity: .25; }
+.cam-pad .cam-center { color: var(--acc-text); }
+.cam-ends { flex: 1; gap: 4px; }
+.cam-ends .btn { justify-content: flex-start; }
+.cam-sl { gap: 10px; }
+.cam-sl .slider { flex: 1; }
+.cam-lbl { display: inline-flex; align-items: center; gap: 6px; min-width: 76px; }
+.cam-lbl svg.i { width: 15px; height: 15px; }
+.cam-presets { gap: 6px; }

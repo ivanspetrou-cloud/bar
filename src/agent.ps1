@@ -524,6 +524,71 @@ namespace Bar {
   }
 
 
+  // ---------- управление веб-камерой (UVC через DirectShow IAMCameraControl) ----------
+  // Поворот, наклон, зум, фокус и приватность — стандартные свойства камер; EMEET PIXY и другие PTZ-камеры
+  // отдают их без своих программ. Только то, что камера сама объявляет (GetRange), — остальное не трогаем.
+  [ComImport, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface ICreateDevEnum { [PreserveSig] int CreateClassEnumerator([In] ref Guid type, out System.Runtime.InteropServices.ComTypes.IEnumMoniker e, int flags); }
+  [ComImport, Guid("55272A00-42CB-11CE-8135-00AA004BB851"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropertyBag { [PreserveSig] int Read([MarshalAs(UnmanagedType.LPWStr)] string name, out object val, IntPtr log); [PreserveSig] int Write(string name, ref object val); }
+  [ComImport, Guid("C6E13370-30AC-11d0-A18C-00A0C9118956"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAMCameraControl {
+    [PreserveSig] int GetRange(int prop, out int min, out int max, out int step, out int def, out int caps);
+    [PreserveSig] int Set(int prop, int val, int flags);
+    [PreserveSig] int Get(int prop, out int val, out int flags);
+  }
+  public static class Cam {
+    // 0 Pan, 1 Tilt, 2 Roll, 3 Zoom, 4 Exposure, 5 Iris, 6 Focus, 15 Privacy (KSPROPERTY_CAMERACONTROL_PRIVACY)
+    static readonly int[] PROPS = { 0, 1, 2, 3, 4, 6, 15 };
+    static List<KeyValuePair<string, IAMCameraControl>> Devices() {
+      var res = new List<KeyValuePair<string, IAMCameraControl>>();
+      var t = Type.GetTypeFromCLSID(new Guid("62BE5D10-60EB-11d0-BD3B-00A0C911CE86"));
+      var de = (ICreateDevEnum)Activator.CreateInstance(t);
+      Guid cat = new Guid("860BB310-5D01-11d0-BD3B-00A0C911CE86");
+      System.Runtime.InteropServices.ComTypes.IEnumMoniker em;
+      if (de.CreateClassEnumerator(ref cat, out em, 0) != 0 || em == null) return res;
+      var arr = new System.Runtime.InteropServices.ComTypes.IMoniker[1];
+      while (em.Next(1, arr, IntPtr.Zero) == 0) {
+        var m = arr[0]; string name = "";
+        try {
+          object bag; Guid ib = typeof(IPropertyBag).GUID; m.BindToStorage(null, null, ref ib, out bag);
+          object v; if (((IPropertyBag)bag).Read("FriendlyName", out v, IntPtr.Zero) == 0) name = (string)v;
+        } catch { }
+        IAMCameraControl cc = null;
+        try { object f; Guid bf = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770"); m.BindToObject(null, null, ref bf, out f); cc = f as IAMCameraControl; } catch { }
+        res.Add(new KeyValuePair<string, IAMCameraControl>(name, cc));
+      }
+      return res;
+    }
+    // "номер|имя|свойство:мин:макс:шаг:по умолч.:сейчас:авто,..."  (авто: 1 — свойство в авторежиме)
+    public static string[] List() {
+      var outp = new List<string>(); int i = 0;
+      foreach (var d in Devices()) {
+        var props = new List<string>();
+        if (d.Value != null) foreach (int pr in PROPS) {
+          int mn, mx, st, df, cp, cur, fl;
+          if (d.Value.GetRange(pr, out mn, out mx, out st, out df, out cp) != 0 || mx <= mn) continue;
+          if (d.Value.Get(pr, out cur, out fl) != 0) cur = df;
+          props.Add(pr + ":" + mn + ":" + mx + ":" + st + ":" + df + ":" + cur + ":" + ((fl & 1) != 0 ? 1 : 0) + ":" + ((cp & 1) != 0 ? 1 : 0));
+        }
+        outp.Add(i + "|" + d.Key + "|" + string.Join(",", props) + "|" + (d.Value != null ? 1 : 0)); // последнее поле: есть ли у камеры управление вообще
+        i++;
+      }
+      return outp.ToArray();
+    }
+    // установить свойство; auto=1 — вернуть камере автоматический режим (фокус, экспозиция)
+    public static string Set(int dev, int prop, int val, int auto) {
+      var ds = Devices();
+      if (dev < 0 || dev >= ds.Count || ds[dev].Value == null) return "nodev";
+      int mn, mx, st, df, cp;
+      if (ds[dev].Value.GetRange(prop, out mn, out mx, out st, out df, out cp) != 0) return "noprop";
+      val = Math.Max(mn, Math.Min(mx, val));
+      int hr = ds[dev].Value.Set(prop, val, auto == 1 ? 1 : 2);
+      int cur, fl; ds[dev].Value.Get(prop, out cur, out fl);
+      return hr == 0 ? "ok:" + cur : "err:" + hr.ToString("X");
+    }
+  }
+
   // ---------- загрузка видеокарты (сумма 3D-движков всех процессов), только в игровом режиме ----------
   public static class Gpu {
     static readonly Dictionary<string, PerformanceCounter> ctr = new Dictionary<string, PerformanceCounter>();
@@ -848,6 +913,8 @@ while ($true) {
           if ($p -and $name) { $name + '|' + $p.MaxHorizontalImageSize + '|' + $p.MaxVerticalImageSize }
         })
       }
+      'camlist'  { @([Bar.Cam]::List()) }
+      'camset'   { $w = $arg.Split(' '); [Bar.Cam]::Set([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
       'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
       'startmenu' { [Bar.Win]::StartMenu(); $true }
       'showdesktop' { [Bar.Win]::ShowDesktop(); $true }
