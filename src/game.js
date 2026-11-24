@@ -69,7 +69,6 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       G.seen = [g.exe, ...G.seen.filter((x) => x.toLowerCase() !== k)].slice(0, 12);
       saveSettings();
     }
-    winCtl.stage(g.mon);
     send('game', { phase: 'enter', corner: G.corner, fade: G.fade, hold: G.hold, show: G.show, name: g.name, w: g.mon.width, h: g.mon.height });
     startStats(g);
   }
@@ -170,9 +169,14 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   }
   ipcMain.on('game-open-panel', openPanel);
   // панель свернули — через пару секунд, если игра всё ещё на экране, нотч вернётся в плашку
-  ipcMain.on('panel-state', (_e, open) => { if (open) return; if (panelOpen) { panelOpen = false; seenCount = 1; } });
+  let panelT = 0;
+  ipcMain.on('panel-state', (_e, open) => {
+    clearTimeout(panelT);
+    if (open || !panelOpen) return;
+    panelT = setTimeout(() => { panelOpen = false; seenCount = 1; }, 900); // после анимации сворачивания
+  });
   ipcMain.handle('game-stage', () => { const m = active ? active.mon : lastMon; if (m) winCtl.stage(m); return !!m; });
-  ipcMain.on('game-exit-done', () => { winCtl.pill(); const f = exitDone; exitDone = null; if (f) f(); });
+  ipcMain.handle('game-exit-done', () => { winCtl.pill(); const f = exitDone; exitDone = null; if (f) setTimeout(f, 30); return true; });
   ipcMain.handle('game-get', async () => ({ ...G, active: active ? { name: active.name, manual: !!active.manual } : null, presentmon: !!presentMonPath(), perm: await fpsPermission() }));
   ipcMain.handle('game-set', (_e, patch) => {
     for (const k of ['auto', 'corner', 'fade', 'hold']) if (k in patch) G[k] = patch[k];

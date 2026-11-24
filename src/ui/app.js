@@ -503,7 +503,8 @@ function renderBar() {
       ? `<button class="ib" data-do="back" title="Назад (Esc)">${icon('back')}</button><span class="title">${esc(tool.name)}</span>`
       : `<span class="title">${clockStr()}</span><span class="sub">${homeDate()}</span>`;
     const muBtns = current === 'music' && MU.ext && MU.tab
-      ? `<button class="ib" data-do="mu-tab" title="Открыть вкладку YouTube Music">${icon('link')}</button><button class="ib ${MUctl.editing ? 'on' : ''}" data-do="mu-layout" title="${MUctl.editing ? 'Готово' : 'Раскладка: размеры и расположение блоков'}">${icon('layout')}</button>`
+      ? `<button class="ib" data-do="mu-tab" title="Открыть вкладку ${MU.src === 'web' && MU.st ? esc(MU.st.site) : 'YouTube Music'}">${icon('link')}</button>` +
+        (MU.src === 'web' ? '' : `<button class="ib ${MUctl.editing ? 'on' : ''}" data-do="mu-layout" title="${MUctl.editing ? 'Готово' : 'Раскладка: размеры и расположение блоков'}">${icon('layout')}</button>`)
       : '';
     R = `${a ? `<span class="act">${a.html()}</span>` : ''}<span class="inds">${indHtml(!tool)}</span>${muBtns}<button class="ib ${pinned ? 'on' : ''}" data-do="pin" title="Закрепить открытым">${icon('pin')}</button>`;
   } else if (a) {
@@ -529,7 +530,7 @@ barEl.addEventListener('click', (e) => {
   if (!b) return;
   if (b.dataset.do === 'back') goHome();
   if (b.dataset.do === 'pin') { pinned = !pinned; renderBar(); }
-  if (b.dataset.do === 'mu-tab') bar.musicOpen();
+  if (b.dataset.do === 'mu-tab') { if (MU.src === 'web' && MU.web) bar.musicWeb('open', undefined, MU.web.tabId); else bar.musicOpen(); }
   if (b.dataset.do === 'layout') pickLayout();
   if (b.dataset.do === 'mu-layout' && MUctl.toggleEdit) MUctl.toggleEdit();
 });
@@ -1841,19 +1842,31 @@ function updateRow() {
 const MU = { st: null, ext: false, tab: false };
 const MUctl = { editing: false, toggleEdit: null };
 const musicHooks = new Set();
+// состояние вкладки сайта в том же виде, что у YouTube Music (плеер один на оба источника)
+const SITE = { 'music.yandex.ru': 'Яндекс Музыка', 'music.yandex.com': 'Яндекс Музыка', 'music.yandex.by': 'Яндекс Музыка', 'music.yandex.kz': 'Яндекс Музыка',
+  'soundcloud.com': 'SoundCloud', 'open.spotify.com': 'Spotify', 'vk.com': 'VK Музыка', 'vk.ru': 'VK Музыка', 'music.apple.com': 'Apple Music',
+  'www.deezer.com': 'Deezer', 'listen.tidal.com': 'Tidal', 'zvuk.com': 'Звук', 'music.amazon.com': 'Amazon Music', 'music.amazon.de': 'Amazon Music', 'www.mixcloud.com': 'Mixcloud' };
+const siteName = (host) => SITE[host] || (/bandcamp\.com$/.test(host || '') ? 'Bandcamp' : host || 'сайт');
+const webSt = (w) => ({ ready: true, web: true, host: w.host, site: siteName(w.host), id: 'web:' + w.tabId + ':' + w.title, title: w.title, artist: w.artist, art: w.art,
+  state: w.playing ? 1 : 2, time: w.time || 0, duration: w.duration || 0, volume: w.volume ?? 100, like: '', repeat: '', shuffle: false, artists: [],
+  canNext: w.canNext, canPrev: w.canPrev });
 function muSet(s) {
   if (!s) return;
-  MU.ext = !!s.ext; MU.tab = !!s.tab;
-  if (s.ready) MU.st = s; else if (!s.tab) MU.st = null;
+  MU.ext = !!s.ext; MU.ytTab = !!s.tab; MU.web = s.web && s.web.title ? s.web : null;
+  // источник: YouTube Music, пока он играет (или сайт молчит), иначе играющая вкладка музыкального сайта
+  const ytOn = !!(s.ready && s.tab), ytPlaying = ytOn && s.state === 1;
+  MU.src = ytOn && (ytPlaying || !(MU.web && MU.web.playing)) ? 'ytm' : MU.web ? 'web' : ytOn ? 'ytm' : null;
+  MU.tab = !!MU.src || !!s.tab;
+  if (MU.src === 'web') MU.st = webSt(MU.web); else if (s.ready) MU.st = s; else if (!s.tab) MU.st = null;
   musicHooks.forEach((f) => { try { f(); } catch {} });
 }
 bar.onMusic(muSet);
 bar.musicStatus().then((s) => muSet(Object.assign({ ext: s.ext, tab: s.tab }, s.state || {}))).catch(() => {});
 
-const GOOGLE_IMG = /^https:\/\/([a-z0-9-]+\.)*(googleusercontent\.com|ggpht\.com|ytimg\.com)\//;
+const GOOGLE_IMG = /^https:\/\/([a-z0-9-]+\.)*(googleusercontent\.com|ggpht\.com|ytimg\.com|yandex\.net|sndcdn\.com|scdn\.co|userapi\.com|vkuserphoto\.ru|mzstatic\.com|dzcdn\.net|tidal\.com|bcbits\.com|zvuk\.com|media-amazon\.com|mixcloud\.com)\//;
 const bimg = (u) => (GOOGLE_IMG.test(u || '') ? 'barimg://img/' + encodeURIComponent(u) : '');
 const fmtT = (s) => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-const mcmd = (c, a) => bar.musicCmd(c, a);
+const mcmd = (c, a) => (MU.src === 'web' && MU.web ? bar.musicWeb(c, a, MU.web.tabId) : bar.musicCmd(c, a));
 
 const MUSIC_SIZES = { compact: 428, standard: 520, large: 620 };
 const MUSIC_SIZE_NAMES = [['compact', 'Компактно'], ['standard', 'Стандарт'], ['large', 'Большой']];
@@ -1965,7 +1978,8 @@ tool({
           title.textContent = st.title || 'Ничего не играет';
           // каждый артист — ссылка: открывает «Поиск» по его имени
           const aText = st.artist || '';
-          if (aText !== artist._t) {
+          if (st.web) { if (artist._t !== 'web:' + aText) { artist._t = 'web:' + aText; artist.textContent = aText ? `${aText} · ${st.site}` : st.site; } }
+          else if (aText !== artist._t) {
             artist._t = aText;
             if (!aText) artist.textContent = st.title ? '' : 'Включите трек в очереди, библиотеке или поиске';
             else artist.replaceChildren(...aText.split(/(\s+и\s+|,\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+)/i).map((part, i) => i % 2
@@ -2228,14 +2242,18 @@ tool({
       MUctl.editing = editing;
       renderBar();
       if (editing) { root.append(editor(), h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: () => MUctl.toggleEdit() }, 'Готово'))); return; }
-      const cols = ML.cols.map((ids, i) => columnEl(ids, i)).filter(Boolean);
+      // сайт (не YouTube Music) — только плеер: очереди, библиотеки и лайков у Media Session нет
+      root.classList.toggle('web', MU.src === 'web'); lastSrc = MU.src;
+      const cols = (MU.src === 'web' ? [['player']] : ML.cols).map((ids, i) => columnEl(ids, i)).filter(Boolean);
       const grid = h('div', { class: 'mu-grid', style: { gridTemplateColumns: cols.length > 1 ? `${ML.split}% minmax(0, 1fr)` : '1fr' } }, cols);
       root.append(grid);
       Object.values(blocks).forEach((b) => b.update && b.update());
     }
 
+    let lastSrc = MU.src;
     const onState = () => {
       const st = MU.st;
+      if (MU.src !== lastSrc && root.querySelector('.mu-grid') && !editing) render(); // сменился источник
       if (!root.querySelector('.mu-grid') && MU.ext && MU.tab && !editing) render();
       if ((!MU.ext || !MU.tab) && root.querySelector('.mu-grid')) render();
       Object.values(blocks).forEach((b) => b.update && b.update());
@@ -2322,7 +2340,7 @@ function nowPlayingCard() {
   const showDrag = () => { fill.style.width = knob.style.left = (drag * 100) + '%'; t1.textContent = fmtT(drag * dur()); };
   const seekTo = (sec) => {
     const m = S.media || {};
-    const viaExt = MU.ext && MU.tab && MU.st && MU.st.title && m.title && m.title === MU.st.title;
+    const viaExt = MU.ext && MU.tab && MU.st && MU.st.title && m.title && m.title === MU.st.title; // и для YouTube Music, и для сайта
     if (viaExt) mcmd('seek', Math.round(sec)); else bar.mediaCtl('seek:' + Math.round(sec));
     if (S.media) S.media.position = sec;
   };
@@ -2352,7 +2370,7 @@ function nowPlayingCard() {
     if (pi !== playIcon) { playIcon = pi; play.classList.toggle('is-playing', pi === 'pause'); play.title = pi === 'pause' ? 'Пауза' : 'Играть'; }
     card.classList.toggle('paused', has && !m.playing);
     const norm = (x) => String(x || '').trim().toLowerCase();
-    const isYTM = has && MU.ext && MU.tab && MU.st && MU.st.title && norm(m.title) === norm(MU.st.title);
+    const isYTM = has && MU.ext && MU.tab && MU.st && MU.st.title && norm(m.title) === norm(MU.st.title); // источник с режимом музыки
     card.classList.toggle('np-link', !!isYTM);
     card.title = isYTM ? 'Открыть режим музыки' : '';
   }
@@ -2700,6 +2718,16 @@ function setIslandRect(r) {
   island.style.width = r.w + 'px'; island.style.height = r.h + 'px';
 }
 const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+// Смена размера/положения окна: в первый кадр Windows показывает старую картинку на новом месте —
+// поэтому на это время нотч невидим и появляется уже на своём месте.
+async function swapWindow(change, place) {
+  island.style.visibility = 'hidden';
+  await change();
+  await nextFrame();
+  place();
+  await nextFrame();
+  island.style.visibility = '';
+}
 // Перелёт: нотч чуть «отрывается» от края, плывёт по дуге и мягко садится; форма — от выреза к плашке.
 // Перелёт «каплей»: нотч сжимается в круглую каплю у края, капля переплывает (чуть вытягиваясь в движении)
 // и в новом месте разворачивается в плашку. Анимируется только transform (сдвиг + масштаб) — считает видеокарта.
@@ -2740,24 +2768,26 @@ async function gameEnter(m) {
   Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.hold = m.hold ?? 1000; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
   if (state === 'open') { pinned = false; collapse(true); }
   clearTimeout(shrinkT); winFull = true;
-  await nextFrame(); // окно уже растянуто на монитор — начинаем только после этого
+  // если панель только что сворачивалась — дождаться, пока нотч станет полоской
+  for (let i = 0; i < 40 && (island.classList.contains('open') || island.getAnimations().length); i++) await new Promise((r) => setTimeout(r, 25));
   island.classList.remove('peek', 'idle', 'dim');
   pushNeed();
-  const fromW = island.offsetWidth || 196;
-  island.classList.add('game');
-  hudEl.innerHTML = hudEl._h = hudHtml();
-  const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
+  const fromW = parseFloat(island.style.getPropertyValue('--pill-w')) || island.offsetWidth || 196;
   const from = { x: (Game.W - fromW) / 2, y: 0, w: fromW, h: 32 };
-  setIslandRect(from);
+  let to;
+  await swapWindow(() => bar.gameStage(), () => {
+    island.classList.add('game');
+    hudEl.innerHTML = hudEl._h = hudHtml();
+    to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
+    setIslandRect(from);
+  });
   barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
   hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
   const a = await fly(from, to, 'pill', Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(to); a.cancel();
   Game.rect = to;
-  await bar.gameDock(to);
-  await nextFrame();
-  setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
   applyFade(true);
   Game.busy = false;
 }
@@ -2766,14 +2796,12 @@ async function gameMove(to, fromCorner) {
   const from = Game.rect;
   island.getAnimations().forEach((x) => x.cancel());
   island.classList.remove('game-tc');
-  setIslandRect(from);
-  await bar.gameStage(); await nextFrame();
+  await swapWindow(() => bar.gameStage(), () => setIslandRect(from));
   const a = await fly(from, to, fromCorner, Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(to); a.cancel();
   Game.rect = to;
-  await bar.gameDock(to); await nextFrame();
-  setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
   applyFade(true);
   Game.busy = false;
 }
@@ -2784,8 +2812,7 @@ async function gameExit(m) {
   const wasTc = Game.corner === 'tc';
   island.getAnimations().forEach((x) => x.cancel()); // снять прозрачность
   island.classList.remove('game-tc');
-  setIslandRect(from);
-  await bar.gameStage(); await nextFrame();
+  await swapWindow(() => bar.gameStage(), () => setIslandRect(from));
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
   const to = { x: (m.w - pillW) / 2, y: 0, w: pillW, h: 32 };
   hudEl.getAnimations().forEach((x) => x.cancel());
@@ -2793,14 +2820,16 @@ async function gameExit(m) {
   barEl.getAnimations().forEach((x) => x.cancel());
   barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
   const a = await fly(from, to, Game.corner, 'pill');
-  Game.on = false; Game.rect = null; Game.busy = false;
-  island.classList.remove('game');
-  island.style.transform = ''; island.style.width = ''; island.style.height = ''; island.style.borderRadius = '';
-  a.cancel();
-  hudEl.getAnimations().forEach((x) => x.cancel()); barEl.getAnimations().forEach((x) => x.cancel());
-  hudEl.innerHTML = hudEl._h = '';
   winFull = false;
-  bar.gameExitDone();
+  await swapWindow(() => bar.gameExitDone(), () => {
+    Game.on = false; Game.rect = null;
+    island.classList.remove('game');
+    island.style.transform = ''; island.style.width = ''; island.style.height = ''; island.style.borderRadius = '';
+    a.cancel();
+    hudEl.getAnimations().forEach((x) => x.cancel()); barEl.getAnimations().forEach((x) => x.cancel());
+    hudEl.innerHTML = hudEl._h = '';
+  });
+  Game.busy = false;
   pushNeed(); renderBar();
 }
 function drawHud() {
@@ -2819,8 +2848,7 @@ async function resizeHud(w) {
   Game.busy = true;
   const old = Game.rect, nw = cornerRect(w, HUD_H, Game.corner);
   const big = { x: Math.min(old.x, nw.x), y: old.y, w: Math.max(old.x + old.w, nw.x + nw.w) - Math.min(old.x, nw.x), h: old.h };
-  setIslandRect({ x: old.x - big.x, y: 0, w: old.w, h: old.h });
-  await bar.gameDock(big); await nextFrame();
+  await swapWindow(() => bar.gameDock(big), () => setIslandRect({ x: old.x - big.x, y: 0, w: old.w, h: old.h }));
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const a = island.animate([
     { transform: `translate(${old.x - big.x}px, 0px)`, width: old.w + 'px' },
@@ -2829,8 +2857,7 @@ async function resizeHud(w) {
   await a.finished.catch(() => {});
   setIslandRect({ x: nw.x - big.x, y: 0, w: nw.w, h: nw.h }); a.cancel();
   Game.rect = nw;
-  await bar.gameDock(nw); await nextFrame();
-  setIslandRect({ x: 0, y: 0, w: nw.w, h: nw.h });
+  await swapWindow(() => bar.gameDock(nw), () => setIslandRect({ x: 0, y: 0, w: nw.w, h: nw.h }));
   Game.busy = false;
   drawHud(); // пока шла анимация, могли прийти новые данные
 }
