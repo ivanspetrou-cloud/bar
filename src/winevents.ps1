@@ -14,6 +14,8 @@ namespace BarWinEvents {
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    static long lastL;
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int l, t, r, b; }
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr h; public uint msg; public IntPtr w; public IntPtr l; public uint time; public int x; public int y; }
     static WinEventProc keep; // не дать сборщику мусора удалить обработчик
@@ -46,6 +48,11 @@ namespace BarWinEvents {
     static void On(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time) {
       if (idObject != 0 || idChild != 0 || hwnd == IntPtr.Zero) return;
       if (ev != 3 && GetAncestor(hwnd, 2) != hwnd) return; // только окна верхнего уровня
+      if (ev == 0x800B) { // размер / место — только у активного окна и не чаще ~3 раз в секунду
+        if (hwnd != GetForegroundWindow()) return;
+        long n = Environment.TickCount; if (n - lastL < 300) return; lastL = n;
+        Console.Out.WriteLine("L"); Console.Out.Flush(); return;
+      }
       if (ev == 0x16) { var t = Thumb(hwnd, 720, 450); if (t.Length > 0) { Console.Out.WriteLine("T " + hwnd.ToInt64() + " " + t); Console.Out.Flush(); } }
       long now = Environment.TickCount;
       if (ev == 0x800C && now - last < 400) return; // заголовки браузеров меняются часто — не чаще 2,5 раза в секунду
@@ -58,6 +65,7 @@ namespace BarWinEvents {
       SetWinEventHook(0x0016, 0x0017, IntPtr.Zero, keep, 0, 0, 2);   // свернуть / развернуть
       SetWinEventHook(0x8001, 0x8003, IntPtr.Zero, keep, 0, 0, 2);   // уничтожено, показано, скрыто
       SetWinEventHook(0x800C, 0x800C, IntPtr.Zero, keep, 0, 0, 2);   // заголовок
+      SetWinEventHook(0x800B, 0x800B, IntPtr.Zero, keep, 0, 0, 2);   // размер / место (развернули окно)
       MSG m; while (GetMessage(out m, IntPtr.Zero, 0, 0) > 0) { }
     }
   }

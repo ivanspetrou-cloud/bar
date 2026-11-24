@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('bar', {
   keepAwake: (on) => ipcRenderer.invoke('keep-awake', on),
   winTheme: (light) => ipcRenderer.invoke('win-theme', light),
   onSensors: on('sensors'),
+  onTuck: on('tuck'),
   taskbarGet: () => ipcRenderer.invoke('taskbar-get'),
   taskbarSet: (p) => ipcRenderer.invoke('taskbar-set', p),
   onTbWins: on('tb-wins'),
