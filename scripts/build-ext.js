@@ -23,15 +23,16 @@ function build(outDir, templateDir) {
   const listener = `
 // ---- приёмник запросов расширения Bar (только фиксированный список действий) ----
 (() => {
+  // список разрешённых действий обновляется при каждом обновлении скрипта, а приёмник ставится один раз
+  window.__barAllowed = ['state', 'queue', 'toggle', 'next', 'prev', 'seek', 'volume', 'like', 'dislike', 'shuffle', 'repeat', 'playQueue', 'play', 'browse', 'search', 'lyrics'];
   if (window.__barListen) return;
   window.__barListen = true;
-  const ALLOWED = ['state', 'queue', 'toggle', 'next', 'prev', 'seek', 'volume', 'like', 'dislike', 'shuffle', 'repeat', 'playQueue', 'play', 'browse', 'search', 'lyrics'];
   window.addEventListener('message', async (e) => {
     if (e.source !== window || !e.data || e.data.__barReq !== true) return;
     const { id, fn, args } = e.data;
     let result, error;
     try {
-      if (!ALLOWED.includes(fn) || !window.__bar || typeof window.__bar[fn] !== 'function') throw new Error('not allowed');
+      if (!(window.__barAllowed || []).includes(fn) || !window.__bar || typeof window.__bar[fn] !== 'function') throw new Error('not allowed');
       result = await window.__bar[fn](...(Array.isArray(args) ? args : []));
     } catch (err) { error = String(err && err.message || err); }
     window.postMessage({ __barRes: true, id, result, error }, location.origin);

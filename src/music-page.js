@@ -3,11 +3,38 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.2.2';
+  const BAR_PAGE_V = '0.2.7';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
-  const BAR = () => document.querySelector('ytmusic-player-bar');
+  // нижний плеер: в новой версии страницы — ytmusic-miniplayer с блоком ytmusic-wiz-player-controls, в старой — ytmusic-player-bar
+  const BAR = () => document.querySelector('ytmusic-miniplayer, ytmusic-player-bar');
+  // кнопка нижнего плеера по подписи (подписи на языке интерфейса YouTube Music)
+  const ctlBtn = (re) => { const b = BAR(); return b ? [...b.querySelectorAll('button, tp-yt-paper-icon-button')].find((x) => re.test((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || ''))) : null; };
+  const RE_REPEAT = /повтор|repeat/i, RE_SHUFFLE = /перемеш|shuffle/i;
+  // отметка «нравится» текущего трека — из данных трека (запрос next), кешируется по ID
+  const likeCache = { id: '', status: '', loading: '' };
+  function findLike(o, id, depth = 0) {
+    if (!o || typeof o !== 'object' || depth > 30) return null;
+    if (o.likeButtonRenderer && o.likeButtonRenderer.likeStatus && (!o.likeButtonRenderer.target || o.likeButtonRenderer.target.videoId === id)) return o.likeButtonRenderer.likeStatus;
+    for (const k in o) { const r = findLike(o[k], id, depth + 1); if (r) return r; }
+    return null;
+  }
+  function loadLike(id) {
+    if (!id || likeCache.loading === id || likeCache.id === id) return;
+    likeCache.loading = id;
+    api('next', { videoId: id }).then((r) => { if (likeCache.loading === id) { likeCache.id = id; likeCache.status = findLike(r, id) || 'INDIFFERENT'; } })
+      .catch(() => {}).finally(() => { if (likeCache.loading === id) likeCache.loading = ''; });
+  }
+  async function rate(kind) {
+    const id = (document.querySelector('#movie_player') || {}).getVideoData ? document.querySelector('#movie_player').getVideoData().video_id : '';
+    if (!id) return false;
+    const cur = likeCache.id === id ? likeCache.status : '';
+    const want = cur === kind ? 'INDIFFERENT' : kind;
+    await api(want === 'LIKE' ? 'like/like' : want === 'DISLIKE' ? 'like/dislike' : 'like/removelike', { target: { videoId: id } });
+    likeCache.id = id; likeCache.status = want;
+    return true;
+  }
   const txt = (r) => (r && (r.runs ? r.runs.map((x) => x.text).join('') : r.simpleText)) || '';
   const big = (u) => (u || '').replace(/=w\d+-h\d+[^&]*$/, '=w544-h544-l90-rj').replace(/=s\d+[^&]*$/, '=s544');
   const thumb = (t) => {
@@ -144,15 +171,27 @@
     const img = b && b.querySelector('img.image, .thumbnail-image-wrapper img, ytmusic-player-bar .image');
     const imgSrc = img && /^https:/.test(img.src) && !/music\.youtube\.com\/?$/.test(img.src) ? img.src : '';
     const art = aw || imgSrc || (vd.video_id ? 'https://i.ytimg.com/vi/' + vd.video_id + '/hqdefault.jpg' : '');
-    const like = b && b.querySelector('ytmusic-like-button-renderer');
+    loadLike(vd.video_id);
+    const likeState = () => (likeCache.id === vd.video_id ? likeCache.status : '');
+    const repeatState = () => {
+      const rb = ctlBtn(RE_REPEAT);
+      if (rb) {
+        const lbl = (rb.getAttribute('aria-label') || rb.getAttribute('title') || '');
+        if (rb.getAttribute('aria-pressed') !== 'true' && /откл|выкл|off/i.test(lbl)) return 'NONE';
+        if (/одн|трек|one|track|song/i.test(lbl)) return 'ONE';
+        if (rb.getAttribute('aria-pressed') === 'true' || /все|плейлист|all|playlist/i.test(lbl)) return 'ALL';
+        return 'NONE';
+      }
+      return b ? (b.getAttribute('repeat-mode') || '') : '';
+    };
     const byline = b && b.querySelector('.byline');
     return {
       ready: true, signedIn: /(?:^|;\s*)SAPISID=/.test(document.cookie),
       id: vd.video_id || '', title: vd.title || '', artist: (byline ? byline.textContent : vd.author || '').trim().replace(/\s+/g, ' '),
       art: big(art), state: p.getPlayerState(), time: p.getCurrentTime() || 0, duration: p.getDuration() || 0,
-      volume: p.getVolume(), muted: p.isMuted(), like: like ? like.getAttribute('like-status') || '' : '',
-      repeat: b ? (b.getAttribute('repeat-mode') || b.getAttribute('repeat-mode_') || '') : '',
-      shuffle: !!(b && b.querySelector('.shuffle.style-default-active, .shuffle[aria-pressed="true"]')),
+      volume: p.getVolume(), muted: p.isMuted(), like: likeState(),
+      repeat: repeatState(),
+      shuffle: (() => { const sb = ctlBtn(RE_SHUFFLE); return sb ? sb.getAttribute('aria-pressed') === 'true' : !!(b && b.querySelector('.shuffle.style-default-active')); })(),
     };
   }
   // Обложка строки очереди. Картинки в очереди страница грузит лениво — только у видимых строк есть src,
@@ -196,10 +235,11 @@
     prev() { const p = P(); if (!p) return false; if (p.getCurrentTime() > 4) p.seekTo(0, true); else p.previousVideo(); return true; },
     seek(s) { const p = P(); p && p.seekTo(Number(s), true); return true; },
     volume(v) { const p = P(); if (!p) return false; p.setVolume(Math.max(0, Math.min(100, Number(v)))); if (p.isMuted()) p.unMute(); return true; },
-    like() { return click('ytmusic-like-button-renderer #button-shape-like button, ytmusic-like-button-renderer .like'); },
-    dislike() { return click('ytmusic-like-button-renderer #button-shape-dislike button, ytmusic-like-button-renderer .dislike'); },
-    shuffle() { return click('.shuffle'); },
-    repeat() { return click('.repeat'); },
+    // оценка — тем же запросом, что и сама страница: работает при любой разметке и сразу сохраняется в YouTube Music
+    like() { return rate('LIKE'); },
+    dislike() { return rate('DISLIKE'); },
+    shuffle() { const x = ctlBtn(RE_SHUFFLE); if (x) { x.click(); return true; } return click('.shuffle'); },
+    repeat() { const x = ctlBtn(RE_REPEAT); if (x) { x.click(); return true; } return click('.repeat'); },
     playQueue(i) {
       const el = qItems()[i];
       if (!el) return false;

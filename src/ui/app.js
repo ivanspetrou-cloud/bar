@@ -262,7 +262,7 @@ setInterval(() => {
   if (S.media && !S.media.playing) return;
   const f = EQ_PATTERN[eqStep = (eqStep + 1) % EQ_PATTERN.length];
   for (const b of bars) { const is = b.children; for (let i = 0; i < is.length; i++) is[i].style.transform = 'scaleY(' + f[i % 3] + ')'; }
-}, 200);
+}, 250);
 function setOled(on) { Oled.on = !!on; store.set('oled', Oled.on); oledApply(); }
 
 function hoverIn() {
@@ -1827,11 +1827,28 @@ tool({
       const fwd10 = h('button', { class: 'mu-jump', title: 'Вперёд на 10 секунд', 'aria-label': 'Вперёд на 10 секунд', onclick: () => jump(10) }, '10', I('redo'));
       const ib = (ic, title, fn) => h('button', { class: 'ib', title, 'aria-label': title, onclick: fn }, I(ic));
       const shuffle = ib('shuffle', 'Перемешать', () => { anim(shuffle, 'spin'); mcmd('shuffle'); });
-      const repeat = ib('repeat', 'Повтор', () => { anim(repeat, 'spin'); mcmd('repeat'); });
+      // повтор: выкл → плейлист → один трек. Значок меняется только при смене режима и всегда с анимацией;
+      // после нажатия сразу показываем следующий режим, не дожидаясь ответа страницы
+      const REPEAT_NEXT = { NONE: 'ALL', '': 'ALL', ALL: 'ONE', ONE: 'NONE' };
+      const REPEAT_TITLE = { NONE: 'Повтор выключен', ALL: 'Повтор плейлиста', ONE: 'Повтор трека' };
+      let repeatMode = null, optimisticT = 0;
+      const setRepeat = (m, animate) => {
+        m = m || 'NONE';
+        if (m === repeatMode) return;
+        const first = repeatMode === null; repeatMode = m;
+        repeat.innerHTML = icon(m === 'ONE' ? 'repeat1' : 'repeat');
+        repeat.classList.toggle('on', m === 'ALL' || m === 'ONE');
+        repeat.title = REPEAT_TITLE[m] || 'Повтор'; repeat.setAttribute('aria-label', repeat.title);
+        if (animate && !first) anim(repeat, 'spin');
+      };
+      const repeat = ib('repeat', 'Повтор', () => { setRepeat(REPEAT_NEXT[repeatMode || 'NONE'], true); optimisticT = Date.now(); mcmd('repeat'); });
       const play = h('button', { class: 'mu-play', 'aria-label': 'Играть / пауза', onclick: () => mcmd('toggle'), html: PP_SVG });
       let playIcon = '', likeOn = null;
-      const like = ib('heart', 'Нравится', () => { anim(like, 'pop'); mcmd('like'); });
-      const dislike = ib('thumbsdown', 'Не нравится', () => mcmd('dislike'));
+      // оценка: подсвечиваем сразу по нажатию, страница потом подтвердит
+      let likeMode = '', likeT = 0;
+      const setLike = (m) => { likeMode = m; like.classList.toggle('on', m === 'LIKE'); dislike.classList.toggle('on', m === 'DISLIKE'); };
+      const like = ib('heart', 'Нравится', () => { const m = likeMode === 'LIKE' ? 'INDIFFERENT' : 'LIKE'; setLike(m); if (m === 'LIKE') anim(like, 'pop'); likeT = Date.now(); mcmd('like'); });
+      const dislike = ib('thumbsdown', 'Не нравится', () => { const m = likeMode === 'DISLIKE' ? 'INDIFFERENT' : 'DISLIKE'; setLike(m); anim(dislike, 'pop'); likeT = Date.now(); mcmd('dislike'); });
       const vol = makeSlider({ min: 0, max: 100, label: 'Громкость плеера' }); vol.classList.add('vol');
       let volDrag = false, volT = 0, artSrc = null;
       vol.addEventListener('input', () => { volDrag = true; clearTimeout(volT); volT = setTimeout(() => { mcmd('volume', +vol.value); volDrag = false; }, 120); });
@@ -1878,14 +1895,10 @@ tool({
           const pi = st.state === 1 ? 'pause' : 'play';
           if (pi !== playIcon) { playIcon = pi; play.classList.toggle('is-playing', pi === 'pause'); }
           node.classList.toggle('paused', st.state !== 1 && !!st.title);
-          const lk = st.like === 'LIKE';
-          if (likeOn !== null && lk && !likeOn) anim(like, 'pop');
-          likeOn = lk;
-          like.classList.toggle('on', lk);
-          dislike.classList.toggle('on', st.like === 'DISLIKE');
+          // пока страница не успела применить нажатие (до 2,5 с), не перебиваем мгновенную подсветку
+          if (Date.now() - likeT > 2500) { const lk = st.like === 'LIKE'; if (likeOn !== null && lk && !likeOn) anim(like, 'pop'); likeOn = lk; setLike(st.like || ''); }
           shuffle.classList.toggle('on', !!st.shuffle);
-          repeat.innerHTML = icon(st.repeat === 'ONE' ? 'repeat1' : 'repeat');
-          repeat.classList.toggle('on', st.repeat === 'ALL' || st.repeat === 'ONE');
+          if (Date.now() - optimisticT > 2500) setRepeat(st.repeat, repeatMode !== null);
           if (!volDrag && typeof st.volume === 'number') vol.value = st.volume;
         },
       };
@@ -2261,7 +2274,7 @@ function soundCard() {
       chip(a && a.micMuted ? 'Микр. выкл.' : 'Микрофон', a && a.micMuted ? 'micoff' : 'mic', a && a.micMuted, () => a && a.mic && bar.audioSet({ mic: !a.micMuted }), 'Выключить / включить микрофон для всех программ'),
       chip('Не спать', 'coffee', Toggles.awake, async () => { Toggles.awake = await bar.keepAwake(!Toggles.awake); draw(); renderBar(); }, 'Экран не гаснет и компьютер не засыпает'),
       chip('Тема', winLight ? 'sun' : 'moon', false, async () => { if (winLight === null) return; winLight = await bar.winTheme(!winLight); draw(); }, 'Тема Windows: светлая / тёмная'),
-      chip(tbHide ? 'Панель скрыта' : 'Скрыть панель', 'taskbar', !!tbHide, async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); }, tbHide ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows'));
+      chip('Без панели', 'taskbar', !!tbHide, async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); }, tbHide ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows'));
   };
   card.append(h('h4', {}, 'Звук и система'), h('div', { class: 'vol-row' }, muteBtn, slider, val), chips);
   draw();
@@ -2269,6 +2282,12 @@ function soundCard() {
   return card;
 }
 
+// Короткое имя устройства для узкой колонки: без «Wireless» и без марки, если имя длинное (полное — в подсказке)
+function shortDev(n) {
+  let s = String(n || '').replace(/\s+wireless/i, '').replace(/controller/i, 'геймпад').trim();
+  if (s.length > 16) s = s.replace(/^(razer|corsair|logitech|logi|steelseries|hyperx|ajazz|asus|rog|sony|microsoft)\s+/i, '');
+  return s;
+}
 function devicesCard() {
   const card = h('div', { class: 'card devs' });
   const draw = () => {
@@ -2278,7 +2297,7 @@ function devicesCard() {
     list.forEach((d) => rows.push({ ...d, ic: devIcon(d.name, d.kind) }));
     card.replaceChildren(h('h4', {}, 'Устройства'),
       ...rows.slice(0, 5).map((d) => h('div', { class: 'dev' + (d.connected ? '' : ' off'), title: d.connected ? d.name + (d.level === -2 ? ' · на связи; эта прошивка приёмника не сообщает заряд' : '') + (d.charging ? ' · заряжается' : '') : `${d.name} · сейчас не на связи${d.last != null ? ', последний заряд ' + d.last + '%' : ''}` },
-        I(d.ic), h('span', { class: 'txt' }, d.name),
+        I(d.ic), h('span', { class: 'txt' }, shortDev(d.name)),
         h('b', { class: d.connected && d.level >= 0 && d.level <= 20 && !d.charging ? 'red-t' : '' }, d.charging ? h('span', { class: 'hi-t', html: icon('bolt') }) : null,
           d.connected ? (d.level >= 0 ? d.level + '%' : 'на связи') : (d.level === -1 && /mouse|keyboard|headphones/.test(d.kind || '') ? 'не отвечает' : 'нет связи') + (d.last != null ? ` · ${d.last}%` : '')),
         h('div', { class: 'meter' }, h('b', { style: { width: (d.level === -2 ? 0 : d.connected ? d.level : d.last || 0) + '%', opacity: d.connected ? '' : '.45', background: d.connected && d.level <= 20 ? 'var(--red-g)' : 'var(--hi-g)' } })))),

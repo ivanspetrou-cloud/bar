@@ -139,7 +139,7 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .card h4 { margin-bottom: var(--gap); }
 
 /* домашний экран */
-.widgets { display: grid; grid-template-columns: 1.3fr 1.1fr 1fr; gap: var(--gap); }
+.widgets { display: grid; grid-template-columns: 1.25fr 1.2fr 1fr; gap: var(--gap); }
 .media .row { justify-content: space-between; flex-wrap: nowrap; }
 .media .ib { width: var(--h-ctl); height: var(--h-ctl); border-radius: var(--r-ctl); background: var(--ctl); color: var(--fg); }
 .media .ib:hover { background: var(--ctl-hi); }
@@ -349,8 +349,8 @@ kbd.k { font: 600 var(--fs-cap) var(--font); background: var(--ctl); border-radi
 .bar .act { display: flex; align-items: center; gap: var(--gap); }
 .art-mini { width: 18px; height: 18px; border-radius: 4px; object-fit: cover; flex: none; }
 span.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; flex: none; }
-span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1px; transform-origin: 50% 100%; transform: scaleY(.4); }
-/* анимацию столбиков ведёт таймер в app.js (5 кадров/с): CSS-анимация крутила бы отрисовку 60 раз в секунду */
+span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1px; transform-origin: 50% 100%; transform: scaleY(.4); transition: transform .24s cubic-bezier(.45, 0, .55, 1); }
+/* столбики: таймер в app.js задаёт новое положение 4 раза в секунду, плавный переход между ними считает видеокарта */
 @keyframes eq { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
 .trk { max-width: 180px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 
@@ -374,8 +374,8 @@ span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1p
 .qts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: var(--gap); }
 .qt {
   flex: 1 1 auto; min-width: 0; height: 32px; border: 0; border-radius: var(--r-ctl); background: var(--ctl); color: var(--fg);
-  font-size: var(--fs-cap); font-weight: 600; display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px;
-  cursor: pointer; white-space: nowrap; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; transition: background .15s;
+  font-size: var(--fs-cap); font-weight: 600; display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px;
+  cursor: pointer; white-space: nowrap; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; transition: background .15s;
 }
 .qt svg.i { width: 16px; height: 16px; flex: none; }
 .qt:hover { background: var(--ctl-hi); }
@@ -685,8 +685,14 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .mu-meta-row .mu-meta { flex: 1; }
 .mu-meta-row .ib { flex: none; transition: transform .15s ease-out, color .15s; }
 .mu-meta-row .ib:hover { transform: scale(1.08); }
-.mu-meta-row .ib.on { color: var(--red-text); }
+/* оценка: «нравится» — закрашенное сердце в акцентном цвете, «не нравится» — закрашенный палец цвета текста.
+   Без фона и рамок: это значки-переключатели, а не кнопки-плашки */
+.mu-meta-row .ib { background: transparent; outline: none; }
+.mu-meta-row .ib:hover { background: transparent; color: var(--fg); }
+.mu-meta-row .ib.on { color: var(--acc-text); }
+.mu-meta-row .ib:last-child.on { color: var(--fg); }
 .mu-meta-row .ib.on svg { fill: currentColor; }
+.mu-meta-row .ib:focus-visible { box-shadow: 0 0 0 2px var(--acc-g); border-radius: 50%; }
 .mu-extra { width: 100%; }
 /* подвкладки библиотеки: не обрезаются — прокрутка вбок с мягким краем */
 .mu-chips { max-width: 100%; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }

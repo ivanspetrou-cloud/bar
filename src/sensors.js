@@ -242,15 +242,25 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.handle('app-icon', async (_e, a) => {
     const key = a.id || a.exe;
     if (iconCache.has(key)) return iconCache.get(key);
-    let url = null;
-    for (const f of [a.exe, a.lnk]) {
+    // кандидаты по порядку: exe → иконка, на которую указывает ярлык (у Office она в отдельном xlicons.exe) → сам ярлык.
+    // Берём первую, которая не стандартная заглушка Windows.
+    let lnkInfo = {};
+    if (a.lnk) { try { lnkInfo = shell.readShortcutLink(a.lnk); } catch {} }
+    const gen = await genericIcon();
+    let url = null, sawGeneric = false;
+    for (const f of [a.exe, lnkInfo.icon, a.lnk]) {
       if (!f || !fs.existsSync(f)) continue;
-      try { const img = await app.getFileIcon(f, { size: 'large' }); if (!img.isEmpty()) { url = img.toDataURL(); break; } } catch {}
+      try {
+        const img = await app.getFileIcon(f, { size: 'large' });
+        if (img.isEmpty()) continue;
+        const u = img.toDataURL();
+        if (u === gen) { sawGeneric = true; continue; }
+        url = u; break;
+      } catch {}
     }
     let exe = a.exe;
-    if (!exe && a.lnk) { try { const t = shell.readShortcutLink(a.lnk).target; if (/\.exe$/i.test(t)) exe = t; } catch {} }
-    if (url && url === await genericIcon()) {
-      url = null;
+    if (!exe && lnkInfo.target && /\.exe$/i.test(lnkInfo.target)) exe = lnkInfo.target;
+    if (!url && sawGeneric) {
       if (exe) {
         try { if (fs.existsSync(iconFile(exe))) url = 'data:image/png;base64,' + fs.readFileSync(iconFile(exe)).toString('base64'); } catch {}
         if (!url) url = asarLogo(exe);

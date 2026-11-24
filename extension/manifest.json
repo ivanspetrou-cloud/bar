@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bar — YouTube Music",
-  "version": "0.2.2",
+  "version": "0.2.7",
   "description": "Связывает вкладку YouTube Music с нотчем Bar на этом компьютере. Работает только на music.youtube.com; подключаться может только к Bar на 127.0.0.1 — в интернет ничего не отправляет.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1BtbR+l96VXmKKZK04DUGdPxiEm6y1PiIIsv/wyTxV1gXam3GFUyTh7/ODYpjEDve8lgs/GlhzR8k2aUGFT774XDW+CKIrZviFaQGFgI4SGVQIguYXnEJ5nkisfhNN4JeucEh/SbxdtvF5CIVO44dN9+9GcpJPycaqvGr7/5DIWlZogfvzkGb7I9pRe6NKHS0/C0oIIkhbxOyU3SmOjzklRvxY3x58xt+6Xi6KSmUbeRkN/y/VFbw1jniBHHsJw19MnufJdiaqb8FvQ/tF/76FdycKejjsUu4D+RgEwa3k6tt+GyhpYuULTEN7FDDADm2ecenu1r6KWgGimBGAb6ZQIDAQAB",
   "background": {
