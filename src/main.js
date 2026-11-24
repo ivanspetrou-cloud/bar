@@ -43,7 +43,18 @@ let music = null;
 let game = null;
 
 if (process.env.BAR_SNAP) app.setPath('userData', path.join(process.env.BAR_SNAP, 'profile'));
-if (!app.requestSingleInstanceLock()) app.quit();
+// журнал запуска: время, кто запустил, причина выхода — чтобы понять, почему не сработал автозапуск
+const startLog = (msg) => {
+  try {
+    const f = path.join(app.getPath('userData'), 'startup.log');
+    if (fs.existsSync(f) && fs.statSync(f).size > 64 * 1024) fs.writeFileSync(f, ''); // не разрастается
+    fs.appendFileSync(f, new Date().toISOString() + ' ' + msg + '\n');
+  } catch {}
+};
+startLog(`start pid=${process.pid} cwd=${process.cwd()} argv=${JSON.stringify(process.argv.slice(1))}`);
+process.on('uncaughtException', (e) => startLog('uncaught ' + (e && e.stack || e)));
+app.on('will-quit', () => startLog('quit'));
+if (!app.requestSingleInstanceLock()) { startLog('second instance — exit'); app.quit(); }
 app.setAppUserModelId('app.bar.notch');
 
 // ---------- настройки ----------

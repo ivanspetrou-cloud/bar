@@ -96,11 +96,13 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
     stats.fpsState = 'starting';
     pm = spawn(exe, ['--process_id', String(pid), '--output_stdout', '--no_console_stats', '--v2_metrics',
       '--session_name', 'BarFPS', '--stop_existing_session', '--terminate_on_proc_exit',
-      '--no_track_input', '--no_track_gpu', '--no_track_display'], { windowsHide: true });
+      '--no_track_input', '--no_track_gpu'], { windowsHide: true });
     pmBuf = ''; pmCols = null; frames = [];
-    pm.stdout.setEncoding('utf8');
-    pm.stdout.on('data', (d) => {
-      pmBuf += d;
+    // PresentMon пишет CSV в UTF-16 (с BOM) — кодировку определяем по первым байтам
+    let enc = null;
+    pm.stdout.on('data', (chunk) => {
+      if (!enc) enc = (chunk[0] === 0xff && chunk[1] === 0xfe) || chunk[1] === 0 ? 'utf16le' : 'utf8';
+      pmBuf += chunk.toString(enc).replace(/^﻿/, '');
       let i;
       while ((i = pmBuf.indexOf('\n')) >= 0) {
         const line = pmBuf.slice(0, i).trim(); pmBuf = pmBuf.slice(i + 1);
@@ -180,11 +182,11 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   });
   // FPS: Windows разрешает читать кадры чужих программ администраторам и группе «Пользователи журналов производительности» (S-1-5-32-559)
   function fpsPermission() {
-    return new Promise((resolve) => execFile('whoami', ['/groups'], { windowsHide: true }, (e, out) => {
-      if (/S-1-5-32-559/i.test(out || '')) return resolve('ok'); // группа уже в токене входа
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-LocalGroupMember -SID S-1-5-32-559 -ErrorAction SilentlyContinue | Where-Object { $_.SID -eq ([Security.Principal.WindowsIdentity]::GetCurrent().User) }) -ne $null`],
-        { windowsHide: true, timeout: 8000 }, (e2, o2) => resolve(/True/i.test(o2 || '') ? 'relogin' : 'no'));
-    }));
+    // группы текущего входа (токен): есть S-1-5-32-559 — доступ работает; только в списке группы — нужна перезагрузка
+    const ps = "$me=[Security.Principal.WindowsIdentity]::GetCurrent(); if ($me.Groups | Where-Object { $_.Value -eq 'S-1-5-32-559' }) { 'ok' } " +
+      "elseif (Get-LocalGroupMember -SID S-1-5-32-559 -ErrorAction SilentlyContinue | Where-Object { $_.SID -eq $me.User }) { 'relogin' } else { 'no' }";
+    return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 10000 },
+      (e, out) => { const m = String(out || '').match(/ok|relogin|no/); resolve(m ? m[0] : 'no'); }));
   }
   ipcMain.handle('game-perm', () => new Promise((resolve) => {
     // Один раз: Windows спросит подтверждение (UAC). Добавляем именно текущую учётную запись по её SID.
