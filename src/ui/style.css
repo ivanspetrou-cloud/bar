@@ -714,7 +714,7 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 
 /* ---------- игровой режим: плашка в углу ---------- */
 /* плашка прилегает к краям экрана — без тени и обводки, как сам нотч */
-#island.game { left: 0; top: 0; transition: none !important; background: var(--bg); box-shadow: none; }
+#island.game { left: 0; top: 0; transition: none !important; background: var(--bg); box-shadow: none; transform-origin: 0 0; will-change: transform; }
 #island.game .content { display: none; }
 #island.game .bar { pointer-events: none; }
 #island.game.dim .bar { opacity: 1; }

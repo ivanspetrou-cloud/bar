@@ -2697,22 +2697,38 @@ function setIslandRect(r) {
 }
 const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
 // Перелёт: нотч чуть «отрывается» от края, плывёт по дуге и мягко садится; форма — от выреза к плашке.
+// Перелёт «каплей»: нотч сжимается в круглую каплю у края, капля переплывает (чуть вытягиваясь в движении)
+// и в новом месте разворачивается в плашку. Анимируется только transform (сдвиг + масштаб) — считает видеокарта.
+// Элемент сразу конечного размера; капля — это он же, уменьшенный масштабом, со скруглением 50% → ровный круг.
+const DROP = 26;
+function dropAt(rect, c) {
+  // где капля «стоит» у края: по центру для выреза, у внешнего угла — для углов
+  const x = c === 'pill' || c === 'tc' ? rect.x + rect.w / 2 - DROP / 2 : c[1] === 'l' ? rect.x : rect.x + rect.w - DROP;
+  const y = c === 'pill' || c === 'tc' || c[0] === 't' ? rect.y : rect.y + rect.h - DROP;
+  return { x, y };
+}
 function fly(from, to, fromC, toC) {
   const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14;
-  const lerp = (a, b, t) => a + (b - a) * t;
-  // «отрыв» от кромки: от верхней — вниз, от нижней — вверх, от боковой — внутрь экрана
-  const off = (c) => ({ dx: c === 'tl' || c === 'bl' ? 18 : c === 'tr' || c === 'br' ? -18 : 0, dy: c && c[0] === 'b' ? -18 : 18 });
-  const o1 = off(fromC), o2 = off(toC);
-  const at = (t, o, sc) => ({ offset: t, transform: `translate(${lerp(from.x, to.x, t) + o.dx}px, ${lerp(from.y, to.y, t) + o.dy}px) scale(${sc})`,
-    width: lerp(from.w, to.w, t) + 'px', height: lerp(from.h, to.h, t) + 'px', borderRadius: `${r}px` });
+  island.style.width = to.w + 'px'; island.style.height = to.h + 'px';
+  const W = to.w, H = to.h;
+  const tf = (x, y, w, h) => `translate(${x}px, ${y}px) scale(${w / W}, ${h / H})`;
+  const d1 = dropAt(from, fromC), d2 = dropAt(to, toC);
+  const dx = d2.x - d1.x, dy = d2.y - d1.y, dist = Math.hypot(dx, dy) || 1;
+  // вытягивание по направлению движения (по горизонтали или вертикали — что больше)
+  const horiz = Math.abs(dx) >= Math.abs(dy);
+  const sw = horiz ? DROP * 1.45 : DROP * 0.82, sh = horiz ? DROP * 0.82 : DROP * 1.45;
+  const mid = { x: d1.x + dx / 2 - (sw - DROP) / 2, y: d1.y + dy / 2 - (sh - DROP) / 2 };
+  const ease = 'cubic-bezier(.45, 0, .25, 1)';
   const kf = [
-    { offset: 0, transform: `translate(${from.x}px, ${from.y}px) scale(1)`, width: from.w + 'px', height: from.h + 'px', borderRadius: edgeRadius(fromC) },
-    at(0.22, o1, 0.95),
-    at(0.72, o2, 0.98),
-    { offset: 1, transform: `translate(${to.x}px, ${to.y}px) scale(1)`, width: to.w + 'px', height: to.h + 'px', borderRadius: edgeRadius(toC) },
+    { offset: 0, transform: tf(from.x, from.y, from.w, from.h), borderRadius: edgeRadius(fromC), easing: ease },
+    { offset: 0.3, transform: tf(d1.x, d1.y, DROP, DROP), borderRadius: '50%', easing: ease },           // собрался в каплю
+    { offset: 0.5, transform: tf(mid.x, mid.y, sw, sh), borderRadius: '50%', easing: ease },              // плывёт, вытянувшись
+    { offset: 0.7, transform: tf(d2.x, d2.y, DROP, DROP), borderRadius: '50%', easing: 'cubic-bezier(.2, .9, .3, 1.15)' }, // на месте
+    { offset: 1, transform: tf(to.x, to.y, to.w, to.h), borderRadius: edgeRadius(toC) },                  // развернулся
   ];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const a = island.animate(kf, { duration: reduce ? 1 : 950, easing: 'cubic-bezier(.65, 0, .25, 1)', fill: 'forwards' });
+  const dur = reduce ? 1 : Math.round(820 + Math.min(380, dist / 4)); // дальше путь — чуть дольше
+  const a = island.animate(kf, { duration: dur, easing: 'linear', fill: 'forwards' });
   return a.finished.then(() => a, () => a);
 }
 async function gameEnter(m) {
@@ -2720,6 +2736,7 @@ async function gameEnter(m) {
   Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
   if (state === 'open') { pinned = false; collapse(true); }
   clearTimeout(shrinkT); winFull = true;
+  await nextFrame(); // окно уже растянуто на монитор — начинаем только после этого
   island.classList.remove('peek', 'idle', 'dim');
   pushNeed();
   const fromW = island.offsetWidth || 196;
@@ -2728,8 +2745,8 @@ async function gameEnter(m) {
   const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
   const from = { x: (Game.W - fromW) / 2, y: 0, w: fromW, h: 32 };
   setIslandRect(from);
-  barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
-  hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, delay: 480, fill: 'both' });
+  barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
+  hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
   const a = await fly(from, to, 'pill', Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(to); a.cancel();
@@ -2768,9 +2785,9 @@ async function gameExit(m) {
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
   const to = { x: (m.w - pillW) / 2, y: 0, w: pillW, h: 32 };
   hudEl.getAnimations().forEach((x) => x.cancel());
-  hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
+  hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
   barEl.getAnimations().forEach((x) => x.cancel());
-  barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, delay: 640, fill: 'both' });
+  barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
   const a = await fly(from, to, Game.corner, 'pill');
   Game.on = false; Game.rect = null; Game.busy = false;
   island.classList.remove('game');
