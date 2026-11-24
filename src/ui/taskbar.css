@@ -39,8 +39,9 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 
 /* точки открытых окон; у активной программы — полоска цвета акцента */
 .tb-dots { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; }
-.tb-dots i { width: 4px; height: 4px; border-radius: 2px; background: var(--mut); transition: width .3s var(--spring), background .2s; }
-.tbi.active .tb-dots i:first-child { width: 14px; background: var(--acc-g); }
+.tb-dots i { width: 4px; height: 4px; border-radius: 2px; background: var(--mut); transition: width .42s var(--spring), background .3s ease; }
+.tb-dots { transition: gap .3s; }
+.tbi.active .tb-dots i:first-child:not(:only-child), .tbi.active .tb-dots i:only-child { width: 14px; background: var(--acc-g); }
 
 /* запуск — иконка подпрыгивает, пока не появится окно */
 .tbi.launching .tb-ic { animation: tb-bounce .9s var(--soft) infinite; }

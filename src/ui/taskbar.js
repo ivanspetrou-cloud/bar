@@ -91,11 +91,24 @@ function itemEl(it) {
   el.classList.toggle('active', active);
   el.classList.toggle('launching', launching.has(it.key) && n === 0 && !it.away.length);
   if ((n > 0 || it.away.length) && launching.has(it.key)) { clearTimeout(launching.get(it.key)); launching.delete(it.key); }
-  el.querySelector('.tb-dots').replaceChildren(...Array.from({ length: n ? Math.min(n, 3) : it.away.length ? 1 : 0 }, () => h('i')));
+  syncDots(el.querySelector('.tb-dots'), n ? Math.min(n, 3) : it.away.length ? 1 : 0);
   el.title = '';
   return el;
 }
 
+// Точки окон живут между перерисовками: активная плавно вытягивается в полоску и сжимается обратно,
+// новая точка появляется, лишняя — исчезает (а не подменяется мгновенно)
+function syncDots(box, want) {
+  const live = [...box.children].filter((i) => !i._leaving);
+  for (let k = live.length; k < want; k++) {
+    const i = h('i'); box.append(i);
+    i.animate([{ transform: 'scale(0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+  }
+  for (let k = live.length - 1; k >= want; k--) {
+    const i = live[k]; i._leaving = true;
+    i.animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(0)', opacity: 0 }], { duration: 220, easing: 'ease-in' }).onfinish = () => i.remove();
+  }
+}
 function fixed(id, ic, label, fn, alt) {
   let el = els.get(id);
   if (!el) {
