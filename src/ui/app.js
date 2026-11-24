@@ -1652,7 +1652,15 @@ const Apps = {
   uses: store.get('appUses', {}),    // сколько раз запускали через Bar
   icons: new Map(),
   save() { store.set('dock', this.dock); },
-  async load() { if (!this.all) { this._p = this._p || bar.appsList(); this.all = await this._p; } return this.all; },
+  // список программ: при первом обращении и затем не чаще раза в 2 минуты — чтобы новые программы появлялись без перезапуска Bar
+  async load() {
+    if (!this.all || (Date.now() - (this._at || 0) > 120e3 && !this._p)) {
+      this._p = this._p || bar.appsList();
+      const list = await this._p; this._p = null; this._at = Date.now();
+      if (list && list.length) this.all = list;
+    }
+    return this.all || [];
+  },
   icon(a, img) {
     const key = a.id || a.exe;
     if (this.icons.has(key)) { const u = this.icons.get(key); if (u) img.src = u; else img.replaceWith(letterIcon(a.name)); return; }
@@ -1830,10 +1838,21 @@ tool({
           h('button', { class: 'ib', title: 'Правее', disabled: i === arr.length - 1, onclick: (e) => { e.stopPropagation(); const d = Apps.dock; const k = d.indexOf(a); [d[k + 1], d[k]] = [d[k], d[k + 1]]; Apps.save(); draw(); } }, I('fwd')))));
         if (!rows.length) rows = [h('div', { class: 'empty' }, 'В нотче пока пусто.\nЗакрепите приложения на вкладках «Открытые» или «Все».')];
       } else {
-        const list = all.filter((a) => !s || a.name.toLowerCase().includes(s))
+        // и транслитом / в другой раскладке: «тарков» находит «Tarkov»
+        const ns = sNorm(s), tr = ns ? sNorm(translitQ(ns)) : '', lay = ns ? sNorm(fixLayout(ns)) : '';
+        const hit = (n) => { n = sNorm(n); return !ns || n.includes(ns) || (tr && n.includes(tr)) || (lay && n.includes(lay)); };
+        const list = all.filter((a) => hit(a.name))
           .sort((a, b) => (Apps.uses[b.id] || 0) - (Apps.uses[a.id] || 0));
         rows = list.map((a) => appRow(a, null, true));
         if (!rows.length) rows = [h('div', { class: 'empty' }, all.length ? 'Ничего не найдено' : 'Загружаю список приложений…')];
+        // программа без ярлыка в «Пуске» (портативная) — выбрать её .exe и закрепить
+        rows.push(h('button', { class: 'btn sm app-pick', onclick: async () => {
+          const pth = await bar.pickExe(); if (!pth) return;
+          const name = pth.split(/[\\/]/).pop().replace(/\.(exe|lnk|bat|cmd)$/i, '').replace(/[-_]+/g, ' ').trim();
+          const a = { id: 'exe:' + pth, name, exe: /\.exe$/i.test(pth) ? pth : '', lnk: /\.lnk$/i.test(pth) ? pth : '' };
+          if (!Apps.isPinned(a)) Apps.pin(a);
+          flash(`${name} в нотче`); draw();
+        } }, I('folder'), 'Нет в списке? Выбрать файл программы…'));
       }
       body.replaceChildren(...rows);
     }

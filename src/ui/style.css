@@ -970,3 +970,4 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .cam-right::-webkit-scrollbar { width: 6px; }
 .cam-right::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
 .cam-right::-webkit-scrollbar-button { display: none; height: 0; }
+.app-pick { align-self: center; margin: 8px auto; }
