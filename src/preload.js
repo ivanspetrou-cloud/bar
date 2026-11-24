@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld('bar', {
   tbRefresh: () => ipcRenderer.send('tb-refresh'),
   tbStart: () => ipcRenderer.send('tb-start'),
   tbApps: () => ipcRenderer.send('tb-apps'),
+  tbThumbs: (hwnds) => ipcRenderer.invoke('tb-thumbs', hwnds),
+  tbCloseWin: (hwnd) => ipcRenderer.send('tb-closewin', hwnd),
   onOpenTool: on('open-tool'),
   tbDesktop: () => ipcRenderer.send('tb-desktop'),
   tbSearch: () => ipcRenderer.send('tb-search'),

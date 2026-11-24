@@ -217,6 +217,34 @@ namespace Bar {
       }, IntPtr.Zero);
       return list.ToArray();
     }
+    // Снимок одного окна для превью в таскбаре: PrintWindow (с отрисовкой DWM) → уменьшенный JPEG в base64.
+    // Только по запросу, только запрошенные окна; свёрнутые не снимаются.
+    [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+    public static string Thumb(long hwnd, int maxW, int maxH) {
+      var h = new IntPtr(hwnd);
+      if (IsIconic(h)) return "";
+      GRECT r; GetWindowRect(h, out r);
+      int w = r.r - r.l, hh = r.b - r.t;
+      if (w <= 0 || hh <= 0 || w > 10000 || hh > 10000) return "";
+      using (var bmp = new System.Drawing.Bitmap(w, hh, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+        using (var g = System.Drawing.Graphics.FromImage(bmp)) {
+          var hdc = g.GetHdc(); bool ok = PrintWindow(h, hdc, 2); g.ReleaseHdc(hdc);
+          if (!ok) return "";
+        }
+        double k = Math.Min(1.0, Math.Min((double)maxW / w, (double)maxH / hh));
+        int tw = Math.Max(1, (int)(w * k)), th = Math.Max(1, (int)(hh * k));
+        using (var sm = new System.Drawing.Bitmap(tw, th))
+        using (var g2 = System.Drawing.Graphics.FromImage(sm))
+        using (var ms = new System.IO.MemoryStream()) {
+          g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+          g2.DrawImage(bmp, 0, 0, tw, th);
+          sm.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+          return Convert.ToBase64String(ms.ToArray());
+        }
+      }
+    }
+    // закрыть одно конкретное окно (как крестик в его заголовке), а не всю программу
+    public static bool CloseWindow(long hwnd) { return PostMessage(new IntPtr(hwnd), 0x0010, IntPtr.Zero, IntPtr.Zero); }
     public static void StartMenu() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
     public static void ShowDesktop() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 2, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
 
@@ -743,6 +771,8 @@ while ($true) {
       'hidbat'   { @([Bar.HidBattery]::Read()) }
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
       'taskwins' { @([Bar.Win]::TaskWindows()) }
+      'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 440, 260) }) }
+      'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
       'startmenu' { [Bar.Win]::StartMenu(); $true }
       'showdesktop' { [Bar.Win]::ShowDesktop(); $true }
       'hidetaskbar' { [Bar.Taskbar]::Hide($arg -eq '1') }

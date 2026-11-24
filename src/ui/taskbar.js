@@ -79,7 +79,8 @@ function itemEl(it) {
     el.addEventListener('click', () => onClick(el._it));
     el.addEventListener('auxclick', (e) => { if (e.button === 1) { bar.appLaunch(el._it.app); bounce(el._it.key); } });
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); onMenu(el._it); });
-    el.addEventListener('mouseenter', () => showTip(el));
+    el.addEventListener('mouseenter', () => { if (!prevHover(el)) showTip(el); });
+    el.addEventListener('mouseleave', () => prevLeave());
     el._new = true;
     els.set(it.key, el);
   }
@@ -192,6 +193,85 @@ async function onMenu(it) {
   setTimeout(() => bar.tbRefresh(), 300);
 }
 
+// ---------- превью окон ----------
+// Наводишь на программу с открытыми окнами — над ней живые миниатюры всех окон; клик — к этому окну, × — закрыть его.
+const prev = h('div', { class: 'tb-prev', hidden: true });
+document.body.append(prev);
+let prevFor = null, prevT = 0, prevHideT = 0, prevThumbT = 0;
+function prevHover(el) {
+  const it = el._it;
+  clearTimeout(prevHideT); clearTimeout(prevT);
+  if (!it || !(it.wins.length + it.away.length)) { if (prevFor) prevClose(); return false; }
+  if (prevFor) { if (prevFor !== el) prevOpen(el); return true; }   // превью уже открыто — сразу переключаемся
+  prevT = setTimeout(() => prevOpen(el), 420);
+  return false;
+}
+function prevLeave() { clearTimeout(prevT); clearTimeout(prevHideT); prevHideT = setTimeout(prevClose, 320); }
+function prevOpen(el) {
+  const it = el._it;
+  const ws = [...it.wins, ...it.away].slice(0, 6);
+  if (!ws.length) return;
+  const switching = !!prevFor;
+  prevFor = el; hideTip();
+  const iconImg = el._slot && el._slot.querySelector('img');
+  const iconSrc = iconImg ? iconImg.src : '';
+  const cards = ws.map((w, i) => {
+    const shot = h('div', { class: 'tp-shot' + (w.min ? ' min' : '') }, w.min ? h('span', { class: 'tp-min' }, 'Свёрнуто') : null);
+    const x = h('span', { class: 'tp-x', title: 'Закрыть окно', html: '<svg viewBox="0 0 24 24" class="i"><path d="M6 6l12 12M18 6L6 18"/></svg>' });
+    const card = h('button', { class: 'tp-card' + (w.active ? ' on' : '') },
+      h('div', { class: 'tp-head' }, iconSrc ? h('img', { src: iconSrc, alt: '' }) : null, h('span', { class: 'tp-t' }, w.title || it.app.name), x), shot);
+    card.addEventListener('click', () => { bar.winFocus(w.hwnd); prevClose(); setTimeout(() => bar.tbRefresh(), 250); });
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      bar.tbCloseWin(w.hwnd);
+      card.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.85) translateY(8px)' }], { duration: 220, easing: 'ease-in' }).onfinish = () => {
+        card.remove();
+        if (!prev.querySelector('.tp-card')) prevClose(); else prevPlace();
+      };
+    });
+    card._w = w; card._shot = shot;
+    if (!switching) card.animate([{ opacity: 0, transform: 'translateY(10px) scale(.95)' }], { duration: 360, delay: 40 + i * 45, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' });
+    return card;
+  });
+  prev.replaceChildren(...cards);
+  const first = prev.hidden;
+  prev.hidden = false;
+  prevPlace(first);
+  if (first) { prev.classList.remove('on'); void prev.offsetWidth; }
+  prev.classList.add('on');
+  prevThumbs();
+  clearInterval(prevThumbT); prevThumbT = setInterval(prevThumbs, 1500); // пока открыто — живые
+}
+function prevPlace(jump) {
+  if (!prevFor || prev.hidden) return;
+  const r = prevFor.getBoundingClientRect(), sh = shell.getBoundingClientRect();
+  const x = Math.max(8, Math.min(window.innerWidth - prev.offsetWidth - 8, Math.round(r.left + r.width / 2 - prev.offsetWidth / 2)));
+  const y = Math.round(sh.top - sizePx() * 0.45 - prev.offsetHeight - 10);
+  if (jump) { prev.style.transition = 'none'; prev.style.translate = `${x}px ${y}px`; void prev.offsetWidth; prev.style.transition = ''; }
+  else prev.style.translate = `${x}px ${y}px`;
+}
+async function prevThumbs() {
+  const cards = [...prev.querySelectorAll('.tp-card')].filter((c) => !c._w.min);
+  if (!cards.length) return;
+  const map = await bar.tbThumbs(cards.map((c) => c._w.hwnd)).catch(() => ({}));
+  for (const c of cards) {
+    const u = map && map[c._w.hwnd];
+    if (!u) continue;
+    let img = c._shot.querySelector('img');
+    if (!img) { img = h('img', { alt: '' }); c._shot.append(img); img.addEventListener('load', () => img.classList.add('ok'), { once: true }); }
+    img.src = u;
+  }
+}
+function prevClose() {
+  clearTimeout(prevT); clearTimeout(prevHideT); clearInterval(prevThumbT);
+  if (!prevFor) return;
+  prevFor = null;
+  prev.classList.remove('on');
+  setTimeout(() => { if (!prevFor) { prev.hidden = true; prev.replaceChildren(); } }, 200);
+}
+prev.addEventListener('mouseenter', () => { clearTimeout(prevHideT); over = true; show(); bar.tbInteractive(true); });
+prev.addEventListener('mouseleave', () => { over = false; bar.tbInteractive(false); prevLeave(); hideSoon(); });
+
 // ---------- подпись ----------
 // Как в macOS: на одной высоте над доком (не прыгает вместе с увеличением иконки), первая — с небольшой задержкой,
 // дальше при движении по доку просто переезжает от иконки к иконке.
@@ -251,6 +331,7 @@ function magnify(x) {
     });
     bgEl.style.left = bgEl.style.right = (-E / 2).toFixed(1) + 'px';
     if (tipFor) placeTip(tipFor);
+    if (prevFor) prevPlace();
   });
 }
 
@@ -267,7 +348,7 @@ document.addEventListener('mousemove', (e) => {
   if (cfg.mode === 'hide' && !shown && e.clientY >= window.innerHeight - 3) show();
 });
 shell.addEventListener('mouseenter', () => { over = true; show(); document.body.classList.add('mag'); bar.tbInteractive(true); });
-shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); hideSoon(); });
+shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); prevLeave(); hideSoon(); });
 shell.addEventListener('mousemove', (e) => { lastX = e.clientX; magnify(e.clientX); });
 
 function applyCfg(c) {

@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 
 const SIZES = { s: 44, m: 52, l: 62 };   // высота дока (без отступа от края)
 const EDGE = 8;                          // отступ дока от нижнего края
-const WIN_H = 170;                       // окно выше дока: место для подписи и увеличения при наведении
+const WIN_H = 380;                       // окно выше дока: место для подписи, увеличения и превью окон
 const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windows (полноэкранные программы, смена места)
 
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
@@ -182,6 +182,20 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику
   ipcMain.on('tb-apps', () => openApps && openApps());              // все приложения — в нотче, в стиле Bar
   ipcMain.on('tb-desktop', () => call('showdesktop'));
+  ipcMain.on('tb-closewin', (_e, hwnd) => { if (Number.isFinite(+hwnd)) call('closewin', String(+hwnd)).then(refreshSoon); });
+  // превью окон при наведении: снимок только запрошенных окон (PrintWindow в агенте, ~десятки мс на окно)
+  ipcMain.handle('tb-thumbs', async (_e, hwnds) => {
+    const ids = (hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8);
+    if (!ids.length) return {};
+    const rows = await call('winthumbs', ids.join(','), 6000);
+    const out = {};
+    for (const r of Array.isArray(rows) ? rows : rows ? [rows] : []) {
+      const k = String(r).indexOf('|');
+      const b64 = String(r).slice(k + 1);
+      if (b64.length > 100) out[String(r).slice(0, k)] = 'data:image/jpeg;base64,' + b64;
+    }
+    return out;
+  });
   for (const evName of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(evName, () => setTimeout(syncDisplays, 300));
 
   // запуск: включён — поднимаем; выключен, но панель Windows осталась спрятанной (аварийный выход) — возвращаем
