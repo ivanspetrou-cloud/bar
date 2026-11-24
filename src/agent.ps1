@@ -432,6 +432,31 @@ namespace Bar {
       return null;
     }
 
+    // Compx (3554: GravaStar M1/K1, VXE, ATK и др.): протокол из веб-драйвера ATK HUB для этих приёмников.
+    // Отчёт 0x08, 16 байт: [команда, статус, адрес(2), длина, данные…, контрольная сумма = 0x55 − (8 + сумма байт 0..14)].
+    // Команда 0x04 — «заряд»: ответ [0x04, статус, …, заряд %, 1 = заряжается]. Только чтение.
+    static byte[] Compx(string p) {
+      var h = Open(p, 0xC0000000u, 0x40000000u);
+      if (h.IsInvalid) return null;
+      try {
+        using (var fs = new System.IO.FileStream(h, System.IO.FileAccess.ReadWrite, 17, true)) {
+          var w = new byte[17]; w[0] = 0x08; w[1] = 0x04;
+          int sum = 8; for (int i = 1; i <= 15; i++) sum += w[i];
+          w[16] = (byte)((0x55 - (sum & 0xFF)) & 0xFF);
+          fs.Write(w, 0, 17);
+          var until = DateTime.Now.AddMilliseconds(600);
+          while (DateTime.Now < until) {
+            var r = new byte[17];
+            var task = fs.ReadAsync(r, 0, 17);
+            int left = (int)(until - DateTime.Now).TotalMilliseconds;
+            if (left <= 0 || !task.Wait(left)) return null;
+            if (r[0] == 0x08 && r[1] == 0x04) return r;
+          }
+        }
+      } catch { }
+      return null;
+    }
+
     static string lastKb = null;
     static string Pretty(string n) {
       n = n.Replace("Gaming Receiver", "").Replace("Receiver", "").Replace("Wireless", "").Replace("Gaming", "").Replace("RGB", "");
@@ -503,6 +528,20 @@ namespace Bar {
             outp.Add(nm + "|" + lvl + "|1|" + (r[4] == 0x01 ? "1" : "0") + "|headphones");
           }
         }
+      }
+      foreach (var p in Paths("3554")) {
+        HIDP_CAPS c; string name;
+        // только интерфейс с пакетами ровно этого протокола: свой отчёт (vendor-страница) и 16 байт + номер отчёта
+        if (!Caps(p, out c, out name) || c.UsagePage < 0xFF00 || c.OutputReportByteLength != 17 || c.InputReportByteLength != 17) continue;
+        string nm = Pretty(string.IsNullOrEmpty(name) ? "2.4G" : name);
+        if (seen.Contains("cx" + nm)) continue;
+        seen.Add("cx" + nm);
+        string ln = nm.ToLower();
+        string kind = System.Text.RegularExpressions.Regex.IsMatch(ln, @"\bk\d|keyboard|kb") ? "keyboard" : System.Text.RegularExpressions.Regex.IsMatch(ln, @"\bm\d|mouse") ? "mouse" : "mouse";
+        var r = Compx(p);
+        if (r == null || r[2] != 0x00) { outp.Add(nm + "|-1|0|0|" + kind); continue; }   // приёмник есть, устройство спит или вне связи
+        int lvl = Math.Min((int)r[6], 100);
+        outp.Add(nm + "|" + (lvl > 0 ? lvl : -2) + "|1|" + (r[7] == 0x01 ? "1" : "0") + "|" + kind);
       }
       foreach (var p in Paths("0c45")) {
         HIDP_CAPS c; string name;
