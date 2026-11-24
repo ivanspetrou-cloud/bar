@@ -525,6 +525,8 @@ namespace Bar {
       SHAppBarMessage(3, ref d); // ABM_SETPOS
       return d.rc.l + " " + d.rc.t + " " + d.rc.r + " " + d.rc.b;
     }
+    // только подписка на уведомления (полноэкранные программы), без резерва места
+    public static void AppBarNew(long hwnd, int cbMsg) { var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); d.msg = (uint)cbMsg; SHAppBarMessage(0, ref d); }
     public static void AppBarRemove(long hwnd) { var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); SHAppBarMessage(1, ref d); }
   }
 }
@@ -742,6 +744,7 @@ while ($true) {
       'showdesktop' { [Bar.Win]::ShowDesktop(); $true }
       'hidetaskbar' { [Bar.Taskbar]::Hide($arg -eq '1') }
       'appbar'   { $w = $arg.Split(' '); [Bar.Taskbar]::AppBarSet([long]$w[0], [int]$w[1], [int]$w[2], [int]$w[3], [int]$w[4], [int]$w[5]) }
+      'appbarnew' { $w = $arg.Split(' '); [Bar.Taskbar]::AppBarNew([long]$w[0], [int]$w[1]); $true }
       'appbaroff' { [Bar.Taskbar]::AppBarRemove([long]$arg); $true }
       'settaskbar' { [Bar.Taskbar]::SetAutoHide($arg -eq '1'); [Bar.Taskbar]::AutoHide() }
       'appxlogo' {

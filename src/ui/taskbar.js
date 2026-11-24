@@ -192,33 +192,44 @@ function showTip(el) {
   const it = el._it;
   const text = el._label || (it.wins.length === 1 && it.wins[0].title ? it.wins[0].title : it.app.name) + (it.wins.length > 1 ? ` · ${it.wins.length} окна` : '');
   tip.textContent = text.length > 70 ? text.slice(0, 69) + '…' : text;
-  tip.hidden = false;
-  requestAnimationFrame(() => {
-    const r = el.getBoundingClientRect();
-    tip.style.left = Math.round(r.left + r.width / 2 - tip.offsetWidth / 2) + 'px';
-    tip.style.top = Math.round(r.top - tip.offsetHeight - 10) + 'px';
-    tip.classList.add('on');
-  });
+  tip.hidden = false; tipFor = el;
+  requestAnimationFrame(() => { placeTip(el); tip.classList.add('on'); });
 }
-function hideTip() { tip.classList.remove('on'); tip.hidden = true; }
+let tipFor = null;
+function placeTip(el) {
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.round(r.left + r.width / 2 - tip.offsetWidth / 2) + 'px';
+  tip.style.top = Math.round(r.top - tip.offsetHeight - 8) + 'px';
+}
+function hideTip() { tip.classList.remove('on'); tip.hidden = true; tipFor = null; }
 
 // ---------- увеличение при наведении ----------
 const sizePx = () => SIZES[cfg.size] || 52;
 let lastX = null, magRaf = 0;
+// Раскладка дока при наведении НЕ меняется: иконки только масштабируются и раздвигаются трансформацией,
+// а фон дока растягивается отдельным слоем. Расстояния считаются от неподвижных позиций (offsetLeft) —
+// поэтому нет обратной связи «иконка выросла → док сдвинулся → иконка уехала из-под курсора».
+const shell = $('#tb-shell'), bgEl = $('#tb-bg');
 function magnify(x) {
   cancelAnimationFrame(magRaf);
   magRaf = requestAnimationFrame(() => {
     const s = sizePx();
-    for (const el of tb.children) {
-      if (!el.classList.contains('tbi') || el._leaving) continue;
-      let k = 1;
-      if (x != null && cfg.magnify) {
-        const r = el.getBoundingClientRect();
-        const d = Math.abs(x - (r.left + r.width / 2));
-        k = 1 + 0.42 * Math.max(0, 1 - d / (s * 2.2)) ** 2;
-      }
-      el.style.setProperty('--k', k.toFixed(3));
-    }
+    const kids = [...tb.children].filter((el) => !el._leaving);
+    const left = tb.getBoundingClientRect().left;
+    const ks = kids.map((el) => {
+      if (x == null || !cfg.magnify || !el.classList.contains('tbi')) return 1;
+      const d = Math.abs(x - (left + el.offsetLeft + el.offsetWidth / 2));
+      return 1 + 0.45 * Math.max(0, 1 - d / (s * 2.4)) ** 2;
+    });
+    const ex = kids.map((el, i) => (ks[i] - 1) * el.offsetWidth);
+    const E = ex.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    kids.forEach((el, i) => {
+      const off = acc + ex[i] / 2 - E / 2; acc += ex[i];
+      el.style.transform = ks[i] === 1 && Math.abs(off) < 0.05 ? '' : `translateX(${off.toFixed(1)}px) scale(${ks[i].toFixed(3)})`;
+    });
+    bgEl.style.left = bgEl.style.right = (-E / 2).toFixed(1) + 'px';
+    if (tipFor) placeTip(tipFor);
   });
 }
 
@@ -234,9 +245,9 @@ document.addEventListener('mousemove', (e) => {
   // окно таскбара прозрачно для мыши, но получает движение: у нижнего края — выезжаем
   if (cfg.mode === 'hide' && !shown && e.clientY >= window.innerHeight - 3) show();
 });
-tb.addEventListener('mouseenter', () => { over = true; show(); bar.tbInteractive(true); });
-tb.addEventListener('mouseleave', () => { over = false; lastX = null; magnify(null); hideTip(); bar.tbInteractive(false); hideSoon(); });
-tb.addEventListener('mousemove', (e) => { lastX = e.clientX; magnify(e.clientX); });
+shell.addEventListener('mouseenter', () => { over = true; show(); document.body.classList.add('mag'); bar.tbInteractive(true); });
+shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); hideSoon(); });
+shell.addEventListener('mousemove', (e) => { lastX = e.clientX; magnify(e.clientX); });
 
 function applyCfg(c) {
   cfg = { ...cfg, ...c };

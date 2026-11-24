@@ -3,23 +3,31 @@ html, body.tb-body { background: transparent; overflow: hidden; }
 :root { --tb-s: 52px; --tb-edge: 8px; --tb-pad: 6px; }
 
 .tb-wrap { position: fixed; left: 0; right: 0; bottom: var(--tb-edge); display: flex; justify-content: center; pointer-events: none; }
-.tb {
-  pointer-events: auto; display: flex; align-items: flex-end; gap: 4px;
-  padding: var(--tb-pad); border-radius: calc(var(--r) + var(--tb-pad));
-  background: var(--bg); box-shadow: 0 10px 30px var(--shadow), 0 0 0 1px var(--line);
+.tb-shell {
+  position: relative; pointer-events: auto;
   transform: translateY(calc(100% + var(--tb-edge) + 12px)); opacity: 0;
   transition: transform .55s var(--spring), opacity .3s ease;
 }
-body.shown .tb { transform: none; opacity: 1; }
-body.mode-hide:not(.shown) .tb { transition: transform .4s var(--glide), opacity .35s ease .05s; }
+body.shown .tb-shell { transform: none; opacity: 1; }
+body.mode-hide:not(.shown) .tb-shell { transition: transform .4s var(--glide), opacity .35s ease .05s; }
+/* фон отдельным слоем: при увеличении иконок он растягивается в стороны, не трогая раскладку */
+.tb-bg {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0; border-radius: calc(var(--r) + var(--tb-pad));
+  background: var(--bg); box-shadow: 0 10px 30px var(--shadow), 0 0 0 1px var(--line);
+  transition: left .3s var(--spring), right .3s var(--spring);
+}
+body.mag .tb-bg { transition: left .07s linear, right .07s linear; }
+.tb { position: relative; display: flex; align-items: flex-end; gap: 4px; padding: var(--tb-pad); }
 
 .tbi {
-  --k: 1;
   position: relative; flex: none; border: 0; padding: 0; background: transparent; cursor: pointer; color: var(--fg);
-  width: calc(var(--tb-s) * var(--k)); height: calc(var(--tb-s) * var(--k));
+  width: var(--tb-s); height: var(--tb-s);
   display: grid; place-items: center; border-radius: var(--r);
-  transition: width .18s var(--soft), height .18s var(--soft), background .15s;
+  transform-origin: 50% 100%;
+  transition: transform .3s var(--spring), background .15s;
 }
+body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background .15s; }
+.tb-sep { transition: transform .3s var(--spring); }
 .tbi:hover { background: var(--card); }
 .tbi:active .tb-ic { transform: scale(.88); }
 .tb-ic { width: 66%; height: 66%; display: grid; place-items: center; transition: transform .2s var(--spring); }

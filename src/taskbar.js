@@ -13,7 +13,7 @@ const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windo
 
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
   let win = null, ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, reserved = false, fullscreen = false, gameOn = false;
-  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, ...(settings.taskbar || {}) });
+  const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, ...(settings.taskbar || {}) });
   const call = (cmd, arg = '', ms = 4000) => sensors.call(cmd, arg, ms).catch(() => undefined);
   const disp = () => screen.getPrimaryDisplay();
   const own = process.execPath.toLowerCase();
@@ -69,17 +69,19 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     await call('appbar', [hwndOf(), Math.round(b.x * sf), Math.round((b.y + b.height - h) * sf), Math.round((b.x + b.width) * sf), Math.round((b.y + b.height) * sf), CB_MSG].join(' '));
     reserved = true;
   }
-  async function unreserve() { if (reserved && win) { reserved = false; await call('appbaroff', String(hwndOf())); } }
+  async function unreserve() { if (win) { reserved = false; await call('appbaroff', String(hwndOf())); } }
 
   function place() {
     if (!win) return;
     const b = disp().bounds;
     win.setBounds({ x: b.x, y: b.y + b.height - WIN_H, width: b.width, height: WIN_H });
-    if (cfg().mode === 'always') reserve(); else unreserve();
+    // место у края — только если попросили: иначе док висит поверх окон, а они идут до самого низа экрана
+    if (cfg().mode === 'always' && cfg().reserve) reserve();
+    else unreserve().then(() => win && call('appbarnew', hwndOf() + ' ' + CB_MSG)); // уведомления о полноэкранных программах — и без резерва
   }
   function visibleSync() {
     if (!win) return;
-    const hide = gameOn || (fullscreen && cfg().mode === 'always');
+    const hide = gameOn || fullscreen;
     if (process.env.BAR_SNAP) console.log('[tb] visibleSync', { gameOn, fullscreen, hide, vis: win.isVisible() });
     if (hide && win.isVisible()) win.hide();
     else if (!hide && !win.isVisible()) win.showInactive();
@@ -101,7 +103,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       const w = wParam.length >= 8 ? Number(wParam.readBigUInt64LE(0)) : wParam.readUInt32LE(0);
       const l = lParam.length >= 8 ? Number(lParam.readBigUInt64LE(0)) : lParam.readUInt32LE(0);
       if (w === 2) { fullscreen = !!l; visibleSync(); }       // ABN_FULLSCREENAPP
-      if (w === 1 && cfg().mode === 'always') reserve();      // ABN_POSCHANGED
+      if (w === 1 && reserved) reserve();                     // ABN_POSCHANGED
     });
   }
 

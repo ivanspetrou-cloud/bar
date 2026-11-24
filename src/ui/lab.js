@@ -566,11 +566,13 @@ function labSettings(toggle) {
       rows.hidden = !c.on;
       rows.replaceChildren(
         h('div', { class: 'sw' }, h('span', {}, 'Поведение'), seg([['hide', 'Прятаться'], ['always', 'Всегда на месте']], c.mode, (v) => set({ mode: v }))),
+        c.mode === 'always' && h('div', { class: 'sw' }, h('span', {}, 'Резервировать место', h('span', { class: 'muted' }, ' · окна заканчиваются над таскбаром')), toggle(c.reserve, (v) => set({ reserve: v }))),
         h('div', { class: 'sw' }, h('span', {}, 'Размер'), seg([['s', 'S'], ['m', 'M'], ['l', 'L']], c.size, (v) => set({ size: v }))),
         h('div', { class: 'sw' }, h('span', {}, 'Увеличение при наведении'), toggle(c.magnify, (v) => set({ magnify: v }))),
         h('div', { class: 'muted small tb-note' }, c.mode === 'hide'
           ? 'Подведите мышь к нижнему краю экрана — таскбар выедет. Панель Windows спрятана, пока он включён.'
-          : 'Развёрнутые окна заканчиваются над таскбаром. В полноэкранных видео и играх он прячется сам.'));
+          : c.reserve ? 'Развёрнутые окна заканчиваются над таскбаром. В полноэкранных видео и играх он прячется сам.'
+          : 'Таскбар всегда виден поверх окон, окна идут до самого низа экрана. В полноэкранных видео и играх он прячется сам.'));
     }
     tbBox.replaceChildren(
       h('div', { class: 'sw' }, h('span', {}, h('b', {}, 'Таскбар Bar'), h('span', { class: 'muted' }, ' · вместо панели задач Windows')), toggle(t.on, (v) => set({ on: v }))),
