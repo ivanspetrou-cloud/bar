@@ -15,7 +15,7 @@ function h(tag, props = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(c));
   return el;
 }
-const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'PanelBottomClose' };
+const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2' };
 function icon(n) {
   const node = window.lucide && window.lucide.icons && window.lucide.icons[LUC[n]];
   const inner = node ? node.map(([tag, a]) => `<${tag} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('') : '';
@@ -119,7 +119,7 @@ function render() {
     running.length && pinned.length ? sep('sep2') : null,
     ...running.map(itemEl),
     sep('sep3'),
-    fixed('sys:desktop', 'desktop', 'Свернуть всё', () => bar.tbDesktop()),
+    fixed('sys:desktop', 'desktop', 'Свернуть всё', () => toggleDesk()),
   ].filter(Boolean);
   const keep = new Set(want);
   // ушедшие — сжимаются и исчезают
@@ -360,7 +360,35 @@ function applyCfg(c) {
   render();
 }
 
-bar.onTbWins((list) => { wins = list || []; render(); });
+// «Свернуть всё» ↔ «Развернуть всё»: Win+D сам по себе переключатель — повторное нажатие возвращает окна.
+// Если после сворачивания вы сами открыли какое-то окно — кнопка снова «Свернуть всё».
+let desk = false, deskAt = 0;
+function deskIcon(on, animate) {
+  const el = els.get('sys:desktop');
+  if (!el) return;
+  el._label = on ? 'Развернуть всё' : 'Свернуть всё';
+  el.setAttribute('aria-label', el._label);
+  const ic = el.querySelector('.tb-ic');
+  const swap = () => { ic.innerHTML = icon(on ? 'restore' : 'desktop'); };
+  if (!animate) return swap();
+  ic.animate([{ transform: 'scale(1) rotate(0)', opacity: 1 }, { transform: 'scale(.4) rotate(-90deg)', opacity: 0 }], { duration: 150, easing: 'ease-in' }).onfinish = () => {
+    swap();
+    ic.animate([{ transform: 'scale(.4) rotate(90deg)', opacity: 0 }, { transform: 'scale(1) rotate(0)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+  };
+  if (tipFor === el) { tip.textContent = el._label; placeTip(el); }
+}
+function toggleDesk() {
+  desk = !desk; deskAt = Date.now();
+  bar.tbDesktop();
+  deskIcon(desk, true);
+  // окна программ в доке «приседают» вместе с ними
+  for (const el of tb.querySelectorAll('.tbi.run')) el.querySelector('.tb-ic').animate([{ transform: 'none' }, { transform: desk ? 'translateY(5px) scale(.9)' : 'translateY(-5px) scale(1.06)' }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,.7,.2,1)' });
+}
+bar.onTbWins((list) => {
+  wins = list || [];
+  if (desk && Date.now() - deskAt > 900 && wins.some((w) => w.active && !w.min)) { desk = false; deskIcon(false, true); }
+  render();
+});
 bar.onTbCfg(applyCfg);
 window.addEventListener('storage', (e) => { if (e.key === 'bar.dock') { pins = store.get('dock', []) || []; render(); } });
 bar.taskbarGet().then((c) => { applyCfg(c); show(); hideSoon(2500); }); // при запуске — показаться и уехать
