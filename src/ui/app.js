@@ -1492,11 +1492,18 @@ tool({
       const draw = (st) => {
         st = st || {};
         if (!st.ext) {
+          // уже подключалось раньше — значит, стоит: просто сейчас не на связи (браузер закрыт, расширение переподключается)
+          if (store.get('extSeen', false) && !guide) {
+            status.textContent = 'расширение не на связи — откройте браузер; если не поможет, обновите его в edge://extensions';
+            btns.replaceChildren(b('Переустановить', '', async () => { guide = true; await bar.musicInstall(); draw(st); }));
+            return;
+          }
           status.textContent = guide ? 'В Edge откройте edge://extensions → «Режим разработчика» → «Загрузить распакованное» → Ctrl+V (путь скопирован)' : 'расширение не установлено';
           btns.replaceChildren(b(guide ? 'Ещё раз' : 'Установить', 'pri', async () => { guide = true; await bar.musicInstall(); draw(st); }));
           return;
         }
         guide = false;
+        store.set('extSeen', true);
         status.textContent = !st.tab ? 'расширение подключено · вкладка YouTube Music закрыта' : (st.signedIn ? 'подключено · вход выполнен' : 'подключено');
         btns.replaceChildren(b(st.tab ? 'Вкладка' : 'Открыть', st.tab ? '' : 'pri', () => bar.musicOpen()));
       };
@@ -1911,7 +1918,7 @@ const webSt = (w) => ({ ready: true, web: true, host: w.host, site: siteName(w.h
   canNext: w.canNext, canPrev: w.canPrev });
 function muSet(s) {
   if (!s) return;
-  MU.ext = !!s.ext; MU.ytTab = !!s.tab; MU.web = s.web && s.web.title ? s.web : null;
+  MU.ext = !!s.ext; if (MU.ext) store.set('extSeen', true); MU.ytTab = !!s.tab; MU.web = s.web && s.web.title ? s.web : null;
   // источник: YouTube Music, пока он играет (или сайт молчит), иначе играющая вкладка музыкального сайта
   const ytOn = !!(s.ready && s.tab), ytPlaying = ytOn && s.state === 1;
   MU.src = ytOn && (ytPlaying || !(MU.web && MU.web.playing)) ? 'ytm' : MU.web ? 'web' : ytOn ? 'ytm' : null;
