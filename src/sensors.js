@@ -1,6 +1,6 @@
 // Показатели (раскладка, звук, трек, сеть, Bluetooth, нагрузка) и управление приложениями.
 // Опрос идёт ТОЛЬКО того, что включено в настройках, и реже, когда нотч свёрнут.
-const { ipcMain, app, shell, Menu, powerSaveBlocker, powerMonitor, nativeImage } = require('electron');
+const { ipcMain, app, shell, Menu, BrowserWindow, powerSaveBlocker, powerMonitor, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
@@ -145,6 +145,24 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     roots.forEach((r) => walk(r, 0));
     return map;
   }
+  // программы, окна которых видел таскбар (exe → { p: путь, t: когда }): для поиска портативных программ
+  const SEEN_FILE = path.join(app.getPath('userData'), 'seen-apps.json');
+  const SYS_EXE = /\\windows\\|\\windowsapps\\|\\(explorer|applicationframehost|systemsettings|searchhost|shellexperiencehost|startmenuexperiencehost|textinputhost|lockapp|electron|bar|bar lab|powershell|cmd|conhost|windowsterminal|rundll32|dllhost)\.exe$/i;
+  let seenApps = {};
+  try { seenApps = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf8')) || {}; } catch {}
+  let seenSaveT = 0;
+  function noteExe(exe) {
+    if (!exe || SYS_EXE.test(exe)) return;
+    const k = exe.toLowerCase();
+    const isNew = !seenApps[k];
+    seenApps[k] = { p: exe, t: Date.now() };
+    if (isNew) {
+      const keys = Object.keys(seenApps);
+      if (keys.length > 300) keys.sort((a, b) => seenApps[a].t - seenApps[b].t).slice(0, keys.length - 300).forEach((x) => delete seenApps[x]);
+      appsAt = 0; // новая программа — список пересоберётся при следующем поиске
+      clearTimeout(seenSaveT); seenSaveT = setTimeout(() => { try { fs.writeFileSync(SEEN_FILE, JSON.stringify(seenApps)); } catch {} }, 2000);
+    }
+  }
   async function listApps(force) {
     if (appsCache && !force && Date.now() - appsAt < 10 * 60e3) return appsCache;
     const raw = Agent.list(await slow.call('startapps', '', 30000));
@@ -160,6 +178,19 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
       const l = lnks.get(line.slice(0, i).toLowerCase()) || lnks.get(name.toLowerCase());
       const exe = /^[a-z]:\\/i.test(id) ? id : (l && /\.exe$/i.test(l.target) ? l.target : '');
       apps.push({ id, name, lnk: l ? l.lnk : '', exe, uwp: id.includes('!') ? id.split('!')[0] : '' });
+    }
+    // + программы без ярлыка в «Пуске» (портативные, распакованные): те, что были открыты или активны
+    const have = new Set(apps.map((x) => (x.exe || '').toLowerCase()).filter(Boolean));
+    const extra = new Map();
+    for (const [k, e] of Object.entries(fg)) extra.set(((e && e.exe) || k).toLowerCase(), (e && e.exe) || k);
+    for (const exe of Object.keys(seenApps)) extra.set(exe, seenApps[exe].p);
+    for (const [k, exe] of extra) {
+      if (have.has(k) || !/^[a-z]:\\.+\.exe$/i.test(exe) || SYS_EXE.test(exe)) continue;
+      if (!fs.existsSync(exe)) continue;
+      const name = path.basename(exe, path.extname(exe)).replace(/[-_]+/g, ' ').trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase()); have.add(k);
+      apps.push({ id: 'exe:' + exe, name, lnk: '', exe, uwp: '' });
     }
     apps.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     appsCache = apps; appsAt = Date.now();
@@ -400,13 +431,13 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.handle('win-min', (_e, hwnd) => safe(fast.call('minimize', hwnd)));
   ipcMain.handle('win-close', (_e, pid) => safe(fast.call('close', pid)));
 
-  ipcMain.handle('popup-menu', (_e, items) => new Promise((resolve) => {
+  ipcMain.handle('popup-menu', (e, items) => new Promise((resolve) => {
     let picked = null;
     const menu = Menu.buildFromTemplate(items.map((it) => it.sep ? { type: 'separator' } : {
       label: it.label, enabled: it.enabled !== false, click: () => { picked = it.id; },
       ...(it.checked !== undefined ? { type: 'radio', checked: !!it.checked } : {}),
     }));
-    menu.popup({ window: getWin(), callback: () => setTimeout(() => resolve(picked), 0) });
+    menu.popup({ window: BrowserWindow.fromWebContents(e.sender) || getWin(), callback: () => setTimeout(() => resolve(picked), 0) }); // у окна, которое спросило (нотч или таскбар)
   }));
 
   // ---------- быстрые переключатели ----------
@@ -433,6 +464,7 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
 
   return {
     call: (cmd, arg, ms) => fast.call(cmd, arg, ms),
+    noteExe,
     listApps,
     stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); watchSet(false); meterStop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
   };

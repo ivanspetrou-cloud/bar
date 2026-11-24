@@ -1,7 +1,7 @@
 {
   "name": "bar-notch",
   "productName": "Bar",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Нотч для Windows: плеер YouTube Music, показатели, 16 инструментов сверху экрана",
   "main": "src/main.js",
   "author": "ivanspetrou-cloud",
@@ -54,7 +54,8 @@
     "asar": true,
     "asarUnpack": [
       "src/agent.ps1",
-      "src/meter.ps1"
+      "src/meter.ps1",
+      "src/winevents.ps1"
     ],
     "extraResources": [
       {

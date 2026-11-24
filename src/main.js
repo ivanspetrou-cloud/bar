@@ -27,6 +27,7 @@ app.on('web-contents-created', (_e, wc) => {
 const createBridge = require('./bridge');
 const setupSensors = require('./sensors');
 const setupUpdater = require('./updater');
+const setupTaskbar = require('./taskbar');
 const setupGame = require('./game');
 const setupMusic = require('./music'); // регистрирует схему barimg:// — до готовности приложения
 
@@ -41,6 +42,7 @@ let capture = null; // { mode, width, height, data }
 let sensors = null;
 let music = null;
 let game = null;
+let taskbar = null;
 
 if (process.env.BAR_SNAP) app.setPath('userData', path.join(process.env.BAR_SNAP, 'profile'));
 // журнал запуска: время, кто запустил, причина выхода — чтобы понять, почему не сработал автозапуск
@@ -607,6 +609,8 @@ app.whenReady().then(() => {
   music = setupMusic({ send });
   setupUpdater({ send });
   game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats });
+  taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: (id = 'apps') => { if (!win) return; send('open-tool', id); win.focus(); } });
+  ipcMain.on('tb-search', () => openSearch());
   // то, что уже лежит в буфере при запуске, тоже попадает в историю
   loadClips().then(async () => {
     const t = await readClip();
@@ -646,6 +650,13 @@ async function snapshots(dir) {
 }
 
 app.on('second-instance', toggle);
+// перед выходом — вернуть панель задач Windows и освободить место у края (это асинхронно, поэтому выход ждёт)
+let quitReady = false;
+app.on('before-quit', (e) => {
+  if (quitReady || !taskbar) return;
+  e.preventDefault();
+  Promise.race([taskbar.stop(), new Promise((r) => setTimeout(r, 4000))]).finally(() => { quitReady = true; app.quit(); });
+});
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   bridge.stop();

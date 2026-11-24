@@ -82,6 +82,7 @@ namespace Bar {
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int val, int size);
@@ -137,6 +138,7 @@ namespace Bar {
     [StructLayout(LayoutKind.Sequential)] struct GRECT { public int l, t, r, b; }
     [StructLayout(LayoutKind.Sequential)] struct GMONINFO { public int cbSize; public GRECT mon; public GRECT work; public uint flags; }
     // "полноэкранное(1/0)|состояние уведомлений|exe|pid|монитор x,y,w,h (физические пиксели)"
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
     public static string GameState() {
       IntPtr h = Target();
       if (h == IntPtr.Zero) return "";
@@ -146,7 +148,8 @@ namespace Bar {
       GRECT r; GetWindowRect(h, out r);
       var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO));
       GetMonitorInfo(MonitorFromWindow(h, 2), ref mi);
-      bool full = r.l <= mi.mon.l && r.t <= mi.mon.t && r.r >= mi.mon.r && r.b >= mi.mon.b;
+      // развёрнутое окно (кнопка «развернуть») тоже вылезает за края монитора на рамку — но это не полноэкранная игра
+      bool full = !IsZoomed(h) && r.l <= mi.mon.l && r.t <= mi.mon.t && r.r >= mi.mon.r && r.b >= mi.mon.b;
       uint pid; GetWindowThreadProcessId(h, out pid);
       int q = 0; try { SHQueryUserNotificationState(out q); } catch {}
       return (full ? "1" : "0") + "|" + q + "|" + ExePath(pid) + "|" + pid + "|" + mi.mon.l + "," + mi.mon.t + "," + (mi.mon.r - mi.mon.l) + "," + (mi.mon.b - mi.mon.t);
@@ -196,6 +199,58 @@ namespace Bar {
       }, IntPtr.Zero);
       return list.ToArray();
     }
+
+    // Для таскбара Bar: окно|процесс|exe|свёрнуто|активно|монитор (физ. пиксели l,t,r,b)|заголовок (заголовок — последним: в нём может быть «|»)
+    static string MonRect(IntPtr h) { var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO)); if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return ""; var m = mi.mon; return m.l + "," + m.t + "," + m.r + "," + m.b; }
+    public static string[] TaskWindows() {
+      var list = new List<string>();
+      IntPtr fg = GetForegroundWindow();
+      EnumWindows((h, p) => {
+        if (!IsWindowVisible(h) || GetWindowTextLength(h) == 0) return true;
+        if (GetWindow(h, 4) != IntPtr.Zero) return true;
+        if ((GetWindowLong(h, -20) & 0x80) != 0) return true;
+        int cloaked; if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        var sb = new StringBuilder(256); GetWindowText(h, sb, 256);
+        list.Add(h.ToInt64() + "|" + pid + "|" + ExePath(pid) + "|" + (IsIconic(h) ? 1 : 0) + "|" + (h == fg ? 1 : 0) + "|" + MonRect(h) + "|" + sb.ToString().Replace((char)13, ' ').Replace((char)10, ' '));
+        return true;
+      }, IntPtr.Zero);
+      return list.ToArray();
+    }
+    // Снимок одного окна для превью в таскбаре: PrintWindow (с отрисовкой DWM) → уменьшенный JPEG в base64.
+    // Только по запросу, только запрошенные окна; свёрнутые не снимаются.
+    [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+    public static string Thumb(long hwnd, int maxW, int maxH) {
+      var h = new IntPtr(hwnd);
+      if (IsIconic(h)) return "";
+      GRECT r; GetWindowRect(h, out r);
+      int w = r.r - r.l, hh = r.b - r.t;
+      if (w <= 0 || hh <= 0 || w > 10000 || hh > 10000) return "";
+      using (var bmp = new System.Drawing.Bitmap(w, hh, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+        using (var g = System.Drawing.Graphics.FromImage(bmp)) {
+          var hdc = g.GetHdc(); bool ok = PrintWindow(h, hdc, 2); g.ReleaseHdc(hdc);
+          if (!ok) return "";
+        }
+        double k = Math.Min(1.0, Math.Min((double)maxW / w, (double)maxH / hh));
+        int tw = Math.Max(1, (int)(w * k)), th = Math.Max(1, (int)(hh * k));
+        using (var sm = new System.Drawing.Bitmap(tw, th))
+        using (var g2 = System.Drawing.Graphics.FromImage(sm))
+        using (var ms = new System.IO.MemoryStream()) {
+          g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+          g2.DrawImage(bmp, 0, 0, tw, th);
+          // JPEG с качеством 90: по умолчанию (~75) мелкий текст окон мылится
+          var enc = Array.Find(System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders(), (c) => c.MimeType == "image/jpeg");
+          var ep = new System.Drawing.Imaging.EncoderParameters(1);
+          ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 90L);
+          sm.Save(ms, enc, ep);
+          return Convert.ToBase64String(ms.ToArray());
+        }
+      }
+    }
+    // закрыть одно конкретное окно (как крестик в его заголовке), а не всю программу
+    public static bool CloseWindow(long hwnd) { return PostMessage(new IntPtr(hwnd), 0x0010, IntPtr.Zero, IntPtr.Zero); }
+    public static void StartMenu() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
+    public static void ShowDesktop() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 2, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
 
     public static bool Focus(long hwnd) {
       var h = new IntPtr(hwnd);
@@ -483,6 +538,31 @@ namespace Bar {
       d.lParam = new IntPtr(on ? 1 : 2);
       SHAppBarMessage(10, ref d);
     }
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    // Панель задач Windows целиком: прятать, пока работает таскбар Bar (основная и панели на других мониторах)
+    public static int Hide(bool hide) {
+      int n = 0; int cmd = hide ? 0 : 5;
+      var t = FindWindow("Shell_TrayWnd", null); if (t != IntPtr.Zero) { ShowWindow(t, cmd); n++; }
+      IntPtr s2 = IntPtr.Zero;
+      while ((s2 = FindWindowEx(IntPtr.Zero, s2, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) { ShowWindow(s2, cmd); n++; }
+      return n;
+    }
+    // Резерв места у нижнего края (как у обычной панели): развёрнутые окна заканчиваются над таскбаром Bar.
+    // Координаты — физические пиксели экрана. Возвращает итоговый прямоугольник «l t r b».
+    public static string AppBarSet(long hwnd, int l, int t, int r, int b, int cbMsg) {
+      var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); d.msg = (uint)cbMsg; d.edge = 3;
+      SHAppBarMessage(0, ref d); // ABM_NEW (повторный вызов безвреден)
+      int h = b - t;
+      d.rc.l = l; d.rc.r = r; d.rc.b = b; d.rc.t = b - h;
+      SHAppBarMessage(2, ref d); // ABM_QUERYPOS
+      d.rc.t = d.rc.b - h;
+      SHAppBarMessage(3, ref d); // ABM_SETPOS
+      return d.rc.l + " " + d.rc.t + " " + d.rc.r + " " + d.rc.b;
+    }
+    // только подписка на уведомления (полноэкранные программы), без резерва места
+    public static void AppBarNew(long hwnd, int cbMsg) { var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); d.msg = (uint)cbMsg; SHAppBarMessage(0, ref d); }
+    public static void AppBarRemove(long hwnd) { var d = new APPBARDATA(); d.cbSize = Marshal.SizeOf(d); d.hWnd = new IntPtr(hwnd); SHAppBarMessage(1, ref d); }
   }
 }
 '@ -ReferencedAssemblies System.Drawing
@@ -694,6 +774,25 @@ while ($true) {
       'net'      { Get-NetState }
       'hidbat'   { @([Bar.HidBattery]::Read()) }
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
+      'taskwins' { @([Bar.Win]::TaskWindows()) }
+      'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 720, 450) }) }
+      'monsizes' {
+        # физические размеры экранов из EDID: «имя|ширина см|высота см» — чтобы таскбар был одного размера в сантиметрах
+        $ids = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue)
+        $sz = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction SilentlyContinue)
+        @($ids | ForEach-Object {
+          $inst = $_.InstanceName; $name = (($_.UserFriendlyName | Where-Object { $_ } | ForEach-Object { [char]$_ }) -join '').Trim()
+          $p = $sz | Where-Object { $_.InstanceName -eq $inst } | Select-Object -First 1
+          if ($p -and $name) { $name + '|' + $p.MaxHorizontalImageSize + '|' + $p.MaxVerticalImageSize }
+        })
+      }
+      'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
+      'startmenu' { [Bar.Win]::StartMenu(); $true }
+      'showdesktop' { [Bar.Win]::ShowDesktop(); $true }
+      'hidetaskbar' { [Bar.Taskbar]::Hide($arg -eq '1') }
+      'appbar'   { $w = $arg.Split(' '); [Bar.Taskbar]::AppBarSet([long]$w[0], [int]$w[1], [int]$w[2], [int]$w[3], [int]$w[4], [int]$w[5]) }
+      'appbarnew' { $w = $arg.Split(' '); [Bar.Taskbar]::AppBarNew([long]$w[0], [int]$w[1]); $true }
+      'appbaroff' { [Bar.Taskbar]::AppBarRemove([long]$arg); $true }
       'settaskbar' { [Bar.Taskbar]::SetAutoHide($arg -eq '1'); [Bar.Taskbar]::AutoHide() }
       'appxlogo' {
         $fam = $arg; $i = $fam.LastIndexOf('_'); $name = if ($i -gt 0) { $fam.Substring(0, $i) } else { $fam }

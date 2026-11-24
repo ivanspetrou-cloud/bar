@@ -1,0 +1,93 @@
+/* Таскбар Bar: та же палитра и скругления, что у нотча (style.css + theme.js) */
+html, body.tb-body { background: transparent; overflow: hidden; }
+:root { --tb-s: 52px; --tb-edge: 8px; --tb-pad: 6px; }
+
+.tb-wrap { position: fixed; left: 0; right: 0; bottom: var(--tb-edge); display: flex; justify-content: center; pointer-events: none; }
+.tb-shell {
+  position: relative; pointer-events: auto;
+  transform: translateY(calc(100% + var(--tb-edge) + 12px)); opacity: 0;
+  transition: transform .55s var(--spring), opacity .3s ease;
+}
+body.shown .tb-shell { transform: none; opacity: 1; }
+body.mode-hide:not(.shown) .tb-shell { transition: transform .4s var(--glide), opacity .35s ease .05s; }
+/* фон отдельным слоем: при увеличении иконок он растягивается в стороны, не трогая раскладку */
+.tb-bg {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0; border-radius: calc(var(--r) + var(--tb-pad));
+  background: var(--bg); box-shadow: 0 10px 30px var(--shadow), 0 0 0 1px var(--line);
+  transition: left .3s var(--spring), right .3s var(--spring);
+}
+body.mag .tb-bg { transition: left .07s linear, right .07s linear; }
+.tb { position: relative; display: flex; align-items: flex-end; gap: 4px; padding: var(--tb-pad); }
+
+.tbi {
+  position: relative; flex: none; border: 0; padding: 0; background: transparent; cursor: pointer; color: var(--fg);
+  width: var(--tb-s); height: var(--tb-s);
+  display: grid; place-items: center; border-radius: var(--r);
+  transform-origin: 50% 100%;
+  transition: transform .3s var(--spring), background .15s;
+}
+body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background .15s; }
+.tb-sep { transition: transform .3s var(--spring); }
+/* без подложки при наведении — только увеличение, как в macOS */
+.tbi:active .tb-ic { transform: scale(.88); }
+.tb-ic { width: 66%; height: 66%; display: grid; place-items: center; transition: transform .2s var(--spring); }
+.tb-ic img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.tb-ic svg.i { width: 46%; height: 46%; min-width: 18px; min-height: 18px; }
+.tbi.sys { color: var(--fg-2); }
+.tbi.sys:hover { color: var(--fg); }
+.tb-letter { width: 100%; height: 100%; border-radius: calc(var(--r) - 4px); background: var(--ctl); display: grid; place-items: center; font-weight: 600; font-size: calc(var(--tb-s) * .32); }
+
+/* точки открытых окон; у активной программы — полоска цвета акцента */
+.tb-dots { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; }
+.tb-dots i { width: 4px; height: 4px; border-radius: 2px; background: var(--mut); transition: width .3s var(--spring), background .2s; }
+.tbi.active .tb-dots i:first-child { width: 14px; background: var(--acc-g); }
+
+/* запуск — иконка подпрыгивает, пока не появится окно */
+.tbi.launching .tb-ic { animation: tb-bounce .9s var(--soft) infinite; }
+@keyframes tb-bounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-9px); } 60% { transform: translateY(-9px); } }
+
+.tb-sep { width: 1px; align-self: stretch; margin: 8px 4px; background: var(--line); flex: none; }
+
+.tb-tip {
+  position: fixed; left: 0; top: 0; padding: 6px 11px; border-radius: 10px; background: var(--bg); color: var(--fg);
+  font-size: var(--fs-cap); font-weight: 600; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--line);
+  opacity: 0; transform: translateY(6px) scale(.92); transform-origin: 50% 100%;
+  transition: opacity .16s ease, transform .28s var(--spring), translate .16s var(--soft);
+}
+.tb-tip.on { opacity: 1; transform: none; }
+.tbi.away .tb-dots i { background: var(--mut); opacity: .45; }
+
+/* превью окон над доком */
+.tb-prev {
+  position: fixed; z-index: 5; left: 0; top: 0; display: flex; gap: 8px; padding: 8px; border-radius: calc(var(--r) + 8px);
+  background: var(--bg); box-shadow: 0 14px 36px var(--shadow), 0 0 0 1px var(--line);
+  opacity: 0; transform: translateY(10px) scale(.96); transform-origin: 50% 100%;
+  transition: opacity .18s ease, transform .32s var(--spring), translate .22s var(--soft);
+}
+.tb-prev.on { opacity: 1; transform: none; }
+.tp-card {
+  width: 264px; border: 0; padding: 0; border-radius: var(--r); background: var(--card); color: var(--fg); cursor: pointer;
+  display: flex; flex-direction: column; overflow: hidden; text-align: left;
+  box-shadow: inset 0 0 0 1.5px transparent; transition: background .15s, box-shadow .2s, transform .25s var(--spring);
+}
+.tp-card:hover { background: var(--card-hi); transform: translateY(-2px); }
+.tp-card.on { box-shadow: inset 0 0 0 1.5px var(--acc-g); }
+.tp-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 6px 10px; min-width: 0; }
+.tp-head img { width: 16px; height: 16px; flex: none; }
+.tp-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); font-weight: 600; }
+.tp-x { width: 22px; height: 22px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--mut); opacity: 0; transition: opacity .15s, background .15s, color .15s; }
+.tp-x svg.i { width: 14px; height: 14px; }
+.tp-card:hover .tp-x { opacity: 1; }
+.tp-x:hover { background: var(--red); color: var(--on-red); }
+.tp-shot { height: 158px; margin: 0 8px 8px; border-radius: calc(var(--r) - 6px); background: var(--ctl); overflow: hidden; display: grid; place-items: center; position: relative; }
+.tp-shot::before { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.05) 50%, transparent 70%); background-size: 200% 100%; animation: tp-shimmer 1.2s linear infinite; }
+.tp-shot:has(img.ok)::before, .tp-shot.min::before { display: none; }
+/* окно любой формы — целиком, без обрезки (высокий «Список друзей» тоже) */
+.tp-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; image-rendering: auto; }
+.tp-shot img.ok { opacity: 1; }
+.tp-min { color: var(--mut); font-size: var(--fs-cap); position: relative; z-index: 1; }
+/* свёрнутое окно со снимком: картинка чуть приглушена, метка — плашкой в углу */
+.tp-shot.min:has(img.ok) img { opacity: .55; filter: saturate(.7); }
+.tp-shot.min:has(img.ok) .tp-min { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 6px; background: var(--bg); color: var(--fg-2); }
+@keyframes tp-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }

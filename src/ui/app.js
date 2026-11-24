@@ -2537,7 +2537,14 @@ function sMatch(name, q) {
   return 0;
 }
 // тот же запрос в другой раскладке: «ntktuhfv» находит «Телеграм»
-const sScore = (name, q, alt) => Math.max(sMatch(name, q), alt ? sMatch(name, alt) * 0.95 : 0);
+// и транслитом: «тарков» находит «Tarkov», «telegram» — «Телеграм»
+const sScore = (name, q, alt) => Math.max(sMatch(name, q), alt ? sMatch(name, alt) * 0.95 : 0, Srch.tr ? sMatch(name, Srch.tr) * 0.9 : 0);
+const TR_BACK = Object.entries({ shch: 'щ', sh: 'ш', ch: 'ч', zh: 'ж', kh: 'х', ts: 'ц', yu: 'ю', ya: 'я', yo: 'ё', a: 'а', b: 'б', v: 'в', g: 'г', d: 'д', e: 'е', z: 'з', i: 'и', y: 'й', k: 'к', l: 'л', m: 'м', n: 'н', o: 'о', p: 'п', r: 'р', s: 'с', t: 'т', u: 'у', f: 'ф', h: 'х', c: 'к', w: 'в', x: 'кс', q: 'к', j: 'дж' });
+function translitQ(q) {
+  if (/[а-я]/.test(q)) return q.replace(/[а-яё]/g, (ch) => (TR[ch] != null ? TR[ch] : ch)).replace(/kh/g, 'h');
+  if (/[a-z]/.test(q)) { let out = q; for (const [l, c] of TR_BACK) out = out.split(l).join(c); return out; }
+  return '';
+}
 
 function srchBarEntries() {
   const a = S.audio;
@@ -2576,6 +2583,7 @@ async function srchCompute() {
   const q = sNorm(raw);
   const alt0 = sNorm(fixLayout(raw));
   const alt = alt0 !== q ? alt0 : '';
+  const tr = sNorm(translitQ(q)); Srch.tr = tr && tr !== q && tr !== alt ? tr : '';
   const groups = [];
   const v = srchCalc(raw);
   if (v !== null) {
