@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('bar', {
   keepAwake: (on) => ipcRenderer.invoke('keep-awake', on),
   winTheme: (light) => ipcRenderer.invoke('win-theme', light),
   onSensors: on('sensors'),
+  meter: (on) => ipcRenderer.send('meter', !!on),
+  onMeter: on('meter'),
   hotkeysGet: () => ipcRenderer.invoke('hotkeys-get'),
   hotkeysSet: (id, acc) => ipcRenderer.invoke('hotkeys-set', id, acc),
   hotkeysReset: () => ipcRenderer.invoke('hotkeys-reset'),

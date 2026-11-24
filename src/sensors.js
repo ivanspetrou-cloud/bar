@@ -56,8 +56,45 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     // агенты PowerShell раз в 5 минут возвращают Windows неиспользуемую память (рабочий набор ~200 → ~20 МБ)
     every('trim', 5 * 60e3, trimAgents);
   }
+  // ---------- всплывашка громкости: отдельный агент ждёт изменения звука внутри своего процесса ----------
+  const watcher = new Agent('watch');
+  const aw = { v: -1, m: 0, mm: 0, on: false };
+  async function watchLoop() {
+    if (aw.on) return;
+    aw.on = true;
+    while (aw.on && need.osd) {
+      let r;
+      try { r = await watcher.call('waitaudio', `${aw.v} ${aw.m} ${aw.mm} 25000`, 30000); }
+      catch { await new Promise((res) => setTimeout(res, 2000)); continue; }
+      if (!r || !aw.on) continue;
+      const [v, m, hasMic, mm] = String(r).split('|').map(Number);
+      const first = aw.v < 0;
+      const changed = !first && (v !== aw.v || m !== aw.m || mm !== aw.mm);
+      const what = !changed ? '' : mm !== aw.mm ? 'mic' : m !== aw.m ? 'mute' : 'volume';
+      Object.assign(aw, { v, m, mm });
+      if (first || changed) send('sensors', { audio: { volume: v, muted: !!m, mic: !!hasMic, micMuted: !!mm }, ...(what ? { osd: what } : {}) });
+    }
+    aw.on = false;
+  }
+  function watchSet(on) {
+    if (on) { watchLoop(); return; }
+    aw.on = false; aw.v = -1; watcher.stop();
+  }
+
+  // ---------- «живой» эквалайзер: поток уровня звука, только пока его просят ----------
+  const meter = new Agent('meter');
+  let meterBuf = [], meterT = 0;
+  meter.onMeter = (v) => { meterBuf.push(v); };
+  ipcMain.on('meter', (_e, on) => {
+    clearInterval(meterT);
+    if (!on) { meter.stop(); meterBuf = []; return; }
+    if (!meter.ps) { meter.start(); if (meter.ps) meter.ps.stdin.write('1 meter 45\n'); }
+    // в окно — пачками по 2 значения ~11 раз в секунду
+    meterT = setInterval(() => { if (meterBuf.length) { send('meter', meterBuf); meterBuf = []; } }, 90);
+  });
+
   function trimAgents() { for (const ag of [fast, slow, finder]) if (ag.ps) safe(ag.call('trim', '', 5000)); }
-  ipcMain.on('sensors-need', (_e, n) => { need = n || {}; schedule(); });
+  ipcMain.on('sensors-need', (_e, n) => { need = n || {}; schedule(); watchSet(!!need.osd); });
   ipcMain.on('sensors-refresh', (_e, key) => poll[key] && poll[key]());
 
   // ---------- звук и медиа ----------
@@ -389,6 +426,6 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   return {
     call: (cmd, arg, ms) => fast.call(cmd, arg, ms),
     listApps,
-    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
+    stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); watchSet(false); meter.stop(); clearInterval(meterT); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },
   };
 };
