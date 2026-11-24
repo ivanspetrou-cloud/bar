@@ -780,3 +780,84 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .sys-sec .kv b .muted { font-weight: 400; }
 .sys-vol { display: flex; flex-direction: column; gap: 3px; padding: 4px 0 6px; }
 .sys-vol .kv { border: 0; padding: 0; }
+
+/* ============================================================
+   Bar Lab — новые элементы
+   ============================================================ */
+/* всплывашка громкости и микрофона: занимает весь нотч, полоска плавно доезжает до значения */
+.osd { display: flex; align-items: center; gap: 10px; animation: osd-in .35s var(--spring) both; }
+.osd svg.i { width: 16px; height: 16px; color: var(--fg); }
+.osd-track { width: 150px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.osd-track i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--fg); transition: width .22s var(--soft); }
+.osd-v { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+.osd.off .osd-track i { background: var(--mut); }
+.osd.off .osd-v, .osd.off svg.i { color: var(--mut); }
+.osd.mic.off, .osd.mic.off svg.i { color: var(--red-text); }
+@keyframes osd-in { from { opacity: 0; transform: scale(.9); } }
+
+/* события устройств и напоминание */
+.devt, .rem-act { display: flex; align-items: center; gap: var(--gap); animation: osd-in .4s var(--spring) both; }
+.devt svg.i { width: 16px; height: 16px; }
+.devt-n { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.devt.chg svg.i:first-child, .devt.chg b { color: var(--hi-text); }
+.devt.low, .devt.low .ring .fg { color: var(--red-text); stroke: var(--red-g); }
+.devt.gone { color: var(--mut); }
+.rem-act svg.i { width: 15px; height: 15px; color: var(--hi-text); animation: ring-bell 2.4s ease-in-out infinite; transform-origin: 50% 10%; }
+@keyframes ring-bell { 0%, 70%, 100% { transform: rotate(0); } 75% { transform: rotate(14deg); } 82% { transform: rotate(-12deg); } 89% { transform: rotate(8deg); } 95% { transform: rotate(-4deg); } }
+
+/* цвет обложки: мягкое свечение под свёрнутым нотчем, пока играет музыка */
+#island.tinted:not(.open) { box-shadow: 0 6px 20px -10px color-mix(in srgb, var(--tint) 70%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--tint) 40%, transparent); }
+#island.tinted.open .card.np { background: linear-gradient(135deg, color-mix(in srgb, var(--tint) 22%, var(--card)), var(--card) 70%); transition: background .6s; }
+
+/* клик по дате в шапке открывает календарь */
+#island.open .bar .l .sub { cursor: pointer; border-radius: var(--r-sm); padding: 2px 6px; margin-left: -6px; transition: background .15s, color .15s; }
+#island.open .bar .l .sub:hover { background: var(--ctl); color: var(--fg); }
+
+/* календарь */
+.cal { gap: 16px; }
+.cal-head { display: flex; align-items: center; gap: 4px; height: 30px; }
+.cal-title { font-size: var(--fs-title); min-width: 132px; text-align: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-wd { text-align: center; font-size: var(--fs-cap); color: var(--mut); padding: 4px 0; }
+.cal-wd.we { color: color-mix(in srgb, var(--red-text) 70%, var(--mut)); }
+.cal-d { position: relative; height: 38px; border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; color: var(--fg-2); font-weight: 600; transition: background .15s, transform .2s var(--spring); }
+.cal-d:hover { background: var(--card-hi); }
+.cal-d:active { transform: scale(.92); }
+.cal-d.out { color: var(--mut); opacity: .5; }
+.cal-d.we { color: color-mix(in srgb, var(--red-text) 75%, var(--fg-2)); }
+.cal-d.today span { color: var(--hi-text); }
+.cal-d.sel { background: var(--acc); color: var(--on-acc); }
+.cal-d.sel span { color: var(--on-acc); }
+.cal-dot { position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--hi-g); }
+.cal-d.sel .cal-dot { background: var(--on-acc); }
+.cal-day { background: var(--card); border-radius: var(--r-card); padding: var(--in); }
+.cal-wdlong { font-size: var(--fs-title); }
+.cal-list { flex: 1; }
+.cal-empty { padding: 12px 0; }
+.cal-item { gap: 12px; }
+.cal-item.past { opacity: .5; }
+.cal-time { font-variant-numeric: tabular-nums; color: var(--hi-text); min-width: 42px; }
+.cal-add { flex-wrap: nowrap; }
+.cal-add .field { background: var(--ctl); }
+.cal-add .field.grow { flex: 1; min-width: 0; }
+
+/* зеркало */
+.mirror { position: relative; flex: 1; min-height: 0; border-radius: var(--r-card); overflow: hidden; background: #000; display: grid; place-items: center; transition: box-shadow .4s, background .4s; }
+.mirror.light { background: #fff; box-shadow: inset 0 0 0 10px #fff, inset 0 0 40px 18px #fff8ef; }
+.mirror-v { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); transition: transform .45s var(--spring); }
+.mirror-v.noflip { transform: none; }
+.mirror.light .mirror-v { width: calc(100% - 28px); height: calc(100% - 28px); border-radius: calc(var(--r-card) - 4px); }
+.mirror-ph { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; }
+.btn.on { background: var(--ctl-hi); color: var(--hi-text); }
+
+/* пары инструментов на одной плитке */
+.pair-seg { margin-bottom: 0; }
+.pair-in { display: flex; flex-direction: column; gap: var(--gap); flex: 1; min-height: 0; animation: slide .3s var(--soft); }
+
+/* настройки Lab */
+.lab-help { flex: 1; }
+.lab-tips { display: flex; flex-direction: column; gap: 10px; }
+.lab-tips > div { display: flex; align-items: flex-start; gap: 10px; color: var(--fg-2); }
+.lab-tips svg.i { width: 16px; height: 16px; color: var(--acc-text); margin-top: 2px; }
+/* живой эквалайзер обновляется ~22 раза в секунду — короткий переход вместо длинного */
+#island.live-eq span.eq i { transition: transform .07s linear; }

@@ -600,8 +600,9 @@ app.whenReady().then(() => {
   loadSettings();
   // разрешения браузера — только своим страницам: микрофон для диктофона и уведомления
   const ownPage = (wc, origin) => (origin && origin.startsWith('file://')) || (wc && wc.getURL().startsWith(UI_URL));
-  session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb((perm === 'media' || perm === 'notifications') && ownPage(wc, details && details.requestingUrl)));
-  session.defaultSession.setPermissionCheckHandler((wc, perm, origin) => (perm === 'media' || perm === 'notifications') && ownPage(wc, origin));
+  const PERMS = ['media', 'notifications'];
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb(PERMS.includes(perm) && ownPage(wc, details && details.requestingUrl)));
+  session.defaultSession.setPermissionCheckHandler((wc, perm, origin) => PERMS.includes(perm) && ownPage(wc, origin));
   createWindow();
   sensors = setupSensors({ send, getWin: () => win, getStats });
   music = setupMusic({ send });

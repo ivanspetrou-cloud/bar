@@ -34,6 +34,7 @@ class Agent {
       const line = this.buf.slice(0, i).trim();
       this.buf = this.buf.slice(i + 1);
       if (!line) continue;
+      if (line.startsWith('M ') && this.onMeter) { this.onMeter(parseFloat(line.slice(2)) || 0); continue; } // поток уровня звука
       let o;
       try { o = JSON.parse(line); } catch { continue; }
       const p = this.pending.get(Number(o.id));

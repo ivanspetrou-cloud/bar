@@ -263,6 +263,7 @@ setInterval(() => {
   const bars = document.querySelectorAll('span.eq');
   if (!bars.length || document.hidden) return;
   if (S.media && !S.media.playing) return;
+  if (typeof liveEqActive === 'function' && liveEqActive()) return; // столбики двигает настоящий звук (lab.js)
   const f = EQ_PATTERN[eqStep = (eqStep + 1) % EQ_PATTERN.length];
   for (const b of bars) { const is = b.children; for (let i = 0; i < is.length; i++) is[i].style.transform = 'scaleY(' + f[i % 3] + ')'; }
 }, 250);
@@ -296,6 +297,7 @@ function hoverOut(e) {
 }
 island.addEventListener('wheel', (e) => {
   if (state === 'open' || !S.audio) return;
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // горизонтальный свайп — переключение трека (lab.js)
   e.preventDefault();
   const v = Math.max(0, Math.min(100, S.audio.volume + (e.deltaY < 0 ? 2 : -2)));
   S.audio.volume = v; bar.audioSet({ volume: v }); renderBar(); flash('Громкость ' + v + '%', 900);
@@ -344,7 +346,7 @@ island.addEventListener('drop', (e) => {
 
 // ============ «живые активности» в свёрнутом нотче ============
 const acts = new Map();
-const ACT_ORDER = ['flash', 'rec', 'busy', 'timer', 'stopwatch', 'media', 'bridge'];
+const ACT_ORDER = ['osd', 'flash', 'dev', 'rec', 'busy', 'remind', 'timer', 'stopwatch', 'media', 'bridge'];
 function setAct(id, a) { const had = acts.has(id); if (a) acts.set(id, a); else acts.delete(id); renderBar(); if (had !== !!a && typeof schedTick === 'function') schedTick(); }
 function topAct(skip) { for (const id of ACT_ORDER) if (id !== skip && acts.has(id)) return acts.get(id); return null; }
 function flash(text, ms = 1800) {
@@ -412,6 +414,7 @@ bar.onSensors((p) => {
   if ('bt' in p || 'hid' in p) S.btLoaded = true;
   if (p.stats) lastStats = p.stats;
   if ('media' in p) { if (S.media) S.media._at = performance.now(); syncMedia(); }
+  if (p.osd && typeof osdShow === 'function') osdShow(p.osd);
   renderBar();
   liveHooks.forEach((f) => f(p));
 });
@@ -437,6 +440,7 @@ function pushNeed() {
   // в игре — только то, что нужно плашке: микрофон и заряд устройств
   if (typeof Game !== 'undefined' && Game.on) { bar.sensorsNeed({ open: false, layout: false, audio: true, media: false, net: false, bt: true, stats: false }); return; }
   bar.sensorsNeed({
+    osd: typeof Osd !== 'undefined' && Osd.on,
     open: state === 'open', layout: indOn('layout'), audio: indOn('volume') || indOn('mic'), media: indOn('media'),
     net: indOn('net') || indOn('speed'), bt: indOn('bt'), stats: indOn('cpu') || indOn('ram'),
   });
@@ -509,7 +513,7 @@ function renderBar() {
     R = `${a ? `<span class="act">${a.html()}</span>` : ''}<span class="inds">${indHtml(!tool)}</span>${muBtns}<button class="ib ${pinned ? 'on' : ''}" data-do="pin" title="Закрепить открытым">${icon('pin')}</button>`;
   } else if (a) {
     L = a.html();
-    R = `<span class="inds">${indHtml(true)}</span><span>${clockStr()}</span>`;
+    R = a.solo ? '' : `<span class="inds">${indHtml(true)}</span><span>${clockStr()}</span>`; // solo — всплывашка занимает весь нотч
   } else {
     L = `<span>${clockStr()}</span>`;
     R = `<span class="inds">${indHtml(false)}</span>`;
@@ -1417,14 +1421,14 @@ tool({
     const reset = h('button', { class: 'btn sm', onclick: () => { BarTheme.save({ ...BarTheme.DEFAULTS }); BarTheme.apply(); show('look'); } }, I('reset'), 'Сбросить оформление');
     const body = h('div', { class: 'settings col', style: { flex: '1', minHeight: '0' } });
     el.append(h('div', { class: 'row' }, tabs, h('span', { class: 'grow' }), reset), body);
-    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры']];
+    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры'], ['lab', 'Lab']];
     function show(t) {
       store.set('settingsTab', t);
       tabs.replaceChildren(...TABS.map(([k, n]) => h('button', { class: k === t ? 'on' : '', onclick: () => show(k) }, n)));
       reset.hidden = t !== 'look';
       if (body._cleanup) { body._cleanup(); body._cleanup = null; }
       body.replaceChildren(); body._tok = null;
-      ({ main, ind, look, game })[t]();
+      ({ main, ind, look, game, lab: () => body.append(labSettings(toggle)) })[t]();
     }
 
     function main() {

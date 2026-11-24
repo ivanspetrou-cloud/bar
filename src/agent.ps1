@@ -44,7 +44,54 @@ namespace Bar {
     public static bool GetMute(int flow) { bool m; Marshal.ThrowExceptionForHR(Vol(flow).GetMute(out m)); return m; }
     public static void SetMute(int flow, bool m) { Marshal.ThrowExceptionForHR(Vol(flow).SetMute(m, Guid.Empty)); }
     public static bool HasMic() { try { Vol(1); return true; } catch { return false; } }
+
+    // Ожидание изменения громкости / звука / микрофона (для всплывашки в нотче).
+    // Цикл внутри процесса: 12 лёгких чтений в секунду, наружу — ответ только при изменении или по таймауту.
+    public static string WaitChange(int vol, int mute, int mic, int timeoutMs) {
+      var sw = Stopwatch.StartNew();
+      IAudioEndpointVolume o = null, i = null; long got = -10000;
+      while (true) {
+        try {
+          if (sw.ElapsedMilliseconds - got > 2000) { o = Vol(0); try { i = Vol(1); } catch { i = null; } got = sw.ElapsedMilliseconds; } // устройство могли сменить
+          float v; bool m, mm = false;
+          o.GetMasterVolumeLevelScalar(out v); o.GetMute(out m);
+          if (i != null) i.GetMute(out mm);
+          int vp = (int)Math.Round(v * 100), mi = m ? 1 : 0, mmi = mm ? 1 : 0;
+          if (vp != vol || mi != mute || (i != null && mmi != mic) || sw.ElapsedMilliseconds >= timeoutMs)
+            return vp + "|" + mi + "|" + (i != null ? 1 : 0) + "|" + mmi;
+        } catch { o = null; got = -10000; if (sw.ElapsedMilliseconds >= timeoutMs) return ""; }
+        Thread.Sleep(80);
+      }
+    }
+
+    // Уровень звука на выходе для «живого» эквалайзера: бесконечный поток строк "M <пик>" раз в stepMs.
+    // Весь цикл — в C#, без PowerShell на каждом шаге; останавливается вместе с процессом агента.
+    public static void MeterStream(int stepMs) {
+      IAudioMeterInformation meter = null; long at = 0;
+      var inv = System.Globalization.CultureInfo.InvariantCulture;
+      var sw = Stopwatch.StartNew();
+      while (true) {
+        float p = 0;
+        try {
+          if (meter == null || sw.ElapsedMilliseconds - at > 3000) { // устройство вывода могли сменить
+            var en = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
+            IMMDevice dev; Marshal.ThrowExceptionForHR(en.GetDefaultAudioEndpoint(0, 1, out dev));
+            Guid iid = typeof(IAudioMeterInformation).GUID; object o;
+            Marshal.ThrowExceptionForHR(dev.Activate(ref iid, 23, IntPtr.Zero, out o));
+            meter = (IAudioMeterInformation)o; at = sw.ElapsedMilliseconds;
+          }
+          meter.GetPeakValue(out p);
+        } catch { meter = null; }
+        Console.Out.WriteLine("M " + Math.Round(p, 3).ToString(inv));
+        Console.Out.Flush();
+        Thread.Sleep(stepMs);
+      }
+    }
+
   }
+
+  [Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAudioMeterInformation { int GetPeakValue(out float pfPeak); }
 
   public static class Win {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -638,6 +685,8 @@ while ($true) {
   try {
     $data = switch ($cmd) {
       'audio'    { [ordered]@{ volume = [Math]::Round([Bar.Audio]::GetVolume() * 100); muted = [Bar.Audio]::GetMute(0); mic = [Bar.Audio]::HasMic(); micMuted = $(if ([Bar.Audio]::HasMic()) { [Bar.Audio]::GetMute(1) } else { $false }) } }
+      'waitaudio' { $w = $arg.Split(' '); [Bar.Audio]::WaitChange([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
+      'meter'    { [Bar.Audio]::MeterStream([int]$arg) }
       'setvol'   { [Bar.Audio]::SetVolume([float]$arg / 100); $true }
       'mute'     { [Bar.Audio]::SetMute(0, $arg -eq '1'); $true }
       'micmute'  { [Bar.Audio]::SetMute(1, $arg -eq '1'); $true }
