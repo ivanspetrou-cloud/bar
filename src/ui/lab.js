@@ -120,7 +120,11 @@ bar.onMeter((vals) => { LiveEq.q.push(...vals); if (LiveEq.q.length > 6) LiveEq.
 function liveEqTick() {
   const bars = document.querySelectorAll('span.eq');
   if (!bars.length || document.hidden || !LiveEq.q.length) return;
-  const p = Math.min(1, Math.sqrt(LiveEq.q.shift()) * 1.15); // корень — тихая музыка тоже видна
+  // автоусиление: уровень делится на недавний максимум (он медленно спадает), поэтому столбики одинаково
+  // живые и на полной громкости, и когда музыку в плеере сделали тише; настоящая тишина остаётся тишиной
+  const r = LiveEq.q.shift();
+  LiveEq.peak = Math.max(r, (LiveEq.peak || 0) * 0.99, 0.004);
+  const p = r < 0.002 ? 0 : Math.min(1, Math.pow(r / LiveEq.peak, 0.75) * 0.95);
   const L = LiveEq.lvl;
   const step = (i, up, down) => { L[i] = p > L[i] ? L[i] + (p - L[i]) * up : L[i] + (p - L[i]) * down; };
   step(0, 0.9, 0.35); step(1, 0.55, 0.22); step(2, 0.3, 0.12);
