@@ -5,6 +5,7 @@
   "description": "Нотч для Windows: плеер YouTube Music, показатели, 16 инструментов сверху экрана",
   "main": "src/main.js",
   "author": "ivanspetrou-cloud",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/ivanspetrou-cloud/bar",
   "repository": {
     "type": "git",

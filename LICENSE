@@ -1,0 +1,54 @@
+Bar — лицензия на использование
+Copyright (c) 2026 ivanspetrou-cloud. Все права защищены.
+
+Исходный код Bar открыт для просмотра, но не является свободным ПО.
+
+РАЗРЕШЕНО (бесплатно):
+1. Скачивать Bar из официальных релизов https://github.com/ivanspetrou-cloud/bar/releases
+   и пользоваться им на своих компьютерах — в личных целях и в работе.
+2. Просматривать исходный код, в том числе для проверки безопасности,
+   и собирать программу из него для собственного использования.
+3. Изменять код для себя, не передавая изменённую версию другим.
+
+ЗАПРЕЩЕНО без письменного разрешения правообладателя:
+1. Распространять Bar или его части: выкладывать, публиковать на других сайтах
+   и в магазинах приложений, передавать установщик или файлы программы третьим лицам.
+   Делиться можно ссылкой на официальную страницу релизов.
+2. Распространять изменённые версии и производные программы.
+3. Продавать Bar, сдавать в аренду, включать в платные или бесплатные продукты.
+4. Использовать исходный код Bar или его части в других проектах.
+5. Удалять или изменять это уведомление и сведения об авторстве.
+
+ОТСУТСТВИЕ ГАРАНТИЙ. Bar предоставляется «как есть», без каких-либо гарантий.
+Правообладатель не отвечает за любой ущерб, возникший в связи с использованием программы.
+
+Сторонние компоненты (Electron, Lucide и другие) распространяются на условиях
+своих собственных лицензий.
+
+-------------------------------------------------------------------------------
+
+Bar — License
+Copyright (c) 2026 ivanspetrou-cloud. All rights reserved.
+
+The source code of Bar is available for viewing, but Bar is not free/open-source software.
+
+PERMITTED (free of charge):
+1. Downloading Bar from the official releases at https://github.com/ivanspetrou-cloud/bar/releases
+   and using it on your own computers, for personal or work purposes.
+2. Viewing the source code, including for security review, and building it
+   for your own use.
+3. Modifying the code for your own use, without sharing the modified version.
+
+NOT PERMITTED without prior written permission from the copyright holder:
+1. Redistributing Bar or any part of it: re-uploading, publishing on other websites
+   or app stores, or passing the installer or program files to third parties.
+   Sharing a link to the official releases page is allowed.
+2. Distributing modified versions or derivative works.
+3. Selling, renting, or bundling Bar with other products, paid or free.
+4. Using the source code of Bar, in whole or in part, in other projects.
+5. Removing or altering this notice or the authorship information.
+
+NO WARRANTY. Bar is provided "as is", without warranty of any kind. The copyright
+holder is not liable for any damages arising from the use of the software.
+
+Third-party components (Electron, Lucide and others) are subject to their own licenses.
