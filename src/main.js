@@ -633,7 +633,10 @@ ipcMain.on('idle-wake', () => { idleLast = Date.now(); if (idleHidden) { idleHid
 
 // ---------- старт ----------
 app.whenReady().then(() => {
+  // первая установка (настроек ещё нет): Bar сам включается в автозапуск — выключить можно в Настройки → Основное
+  const firstRun = !fs.existsSync(settingsFile());
   loadSettings();
+  if (firstRun && app.isPackaged && !process.env.BAR_SNAP) { app.setLoginItemSettings({ openAtLogin: true, ...loginArgs() }); saveSettings(); }
   // разрешения браузера — только своим страницам: микрофон для диктофона и уведомления
   const ownPage = (wc, origin) => (origin && origin.startsWith('file://')) || (wc && wc.getURL().startsWith(UI_URL));
   const PERMS = ['media', 'notifications'];

@@ -879,3 +879,7 @@ tool({
 });
 SRCH_KW.cam = 'камера вебкамера pixy emeet поворот зум приватность выключить камеру ptz webcam';
 (() => { const i = TOOLS.findIndex((t) => t.id === 'cam'); const [t] = TOOLS.splice(i, 1); t.hidden = true; TOOLS.push(t); })();
+// плитка «Камера»: зеркало и управление поворотной камерой — одна плитка с переключателем сверху
+pairTools(['mirror', 'cam'], ['Зеркало', 'Управление']);
+TOOLS_BY_ID.mirror.short = 'Камера';
+TOOLS_BY_ID.cam.name = 'Камера';
