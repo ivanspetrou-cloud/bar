@@ -551,10 +551,30 @@ const Tuck = { on: false };
 function tuckApply() { island.classList.toggle('tucked', Tuck.on && store.get('tuck', true) && !Game.on); }
 bar.onTuck((v) => { Tuck.on = !!v; tuckApply(); });
 
+// ============ 16. Нотч на другом экране / «за мышью» ============
+// main переносит окно; здесь — анимация: уехать вверх на старом мониторе, выехать на новом.
+bar.onNotchHop((dir) => {
+  if (dir === 'out') island.classList.add('hop');
+  else requestAnimationFrame(() => requestAnimationFrame(() => island.classList.remove('hop')));
+});
+function notchScreenRow() {
+  const sel = h('select', { class: 'field', 'aria-label': 'Экран нотча' });
+  bar.settingsGet().then((s) => {
+    const ds = s.displays || [];
+    const opts = [['primary', 'Основной монитор'], ...ds.filter((d) => !d.primary).map((d) => [String(d.id), `Монитор ${d.n} · ${d.w}×${d.h}`])];
+    if (ds.length > 1) opts.push(['follow', 'На всех — за мышью']);
+    sel.replaceChildren(...opts.map(([v, n]) => h('option', { value: v }, n)));
+    sel.value = String(s.notchOn || 'primary');
+    if (!sel.value) sel.value = 'primary';
+  });
+  sel.onchange = () => { bar.settingsSet({ notchOn: sel.value }); flash(sel.value === 'follow' ? 'Нотч переходит на монитор с курсором' : 'Нотч переехал'); };
+  return h('div', { class: 'sw tb-line', title: '«За мышью» — нотч сам переезжает на монитор, где сейчас курсор' }, h('span', { class: 'tb-lbl' }, 'Экран нотча'), sel);
+}
+
 const LAB_OPTS = [
   ['osd', 'Всплывашка громкости', 'нотч показывает громкость и микрофон, когда вы их меняете', () => Osd.on, setOsd],
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
-  ['tuck', 'Прятать над развёрнутыми окнами', 'не закрывает вкладки браузера; открыть — задержать мышь у верхнего края', () => store.get('tuck', true), (v) => { store.set('tuck', !!v); tuckApply(); }],
+  ['tuck', 'Прятать над развёрнутыми окнами', 'вкладки браузера свободны', () => store.get('tuck', true), (v) => { store.set('tuck', !!v); tuckApply(); }],
   ['tint', 'Цвет обложки', 'фон карточки трека в цвет обложки', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
 ];
 function chimeRow() {
@@ -597,7 +617,7 @@ function labSettings(toggle) {
     draw(t);
   });
   return h('div', { class: 'split', style: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } },
-    h('div', { class: 'col' }, ...LAB_OPTS.map(row), chimeRow()),
+    h('div', { class: 'col' }, notchScreenRow(), ...LAB_OPTS.map(row), chimeRow()),
     tbBox);
 }
 // ============ 14. Настройки таскбара: закреплённые, кнопки, ярлыки ============

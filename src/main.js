@@ -85,8 +85,35 @@ const send = (ch, payload) => win && !win.isDestroyed() && win.webContents.send(
 // ширина та же, что у раскрытого окна: меняется только высота, левый край не двигается — без рывка при раскрытии
 const PILL_W = WIN_W, PILL_H = 44;
 let winMode = 'pill';
+// Монитор нотча: settings.notchOn — 'primary' (основной), id монитора или 'follow' — «за мышью»:
+// нотч переезжает на тот монитор, где сейчас курсор (одно состояние — таймер, музыка, запись — на всех экранах).
+let followId = null;
+function notchDisplay() {
+  const all = screen.getAllDisplays();
+  const v = settings.notchOn || 'primary';
+  if (v === 'follow' && followId != null) { const d = all.find((x) => x.id === followId); if (d) return d; }
+  if (v !== 'primary' && v !== 'follow') { const d = all.find((x) => String(x.id) === String(v)); if (d) return d; }
+  return screen.getPrimaryDisplay();
+}
+let followT = 0, followCand = null, followSince = 0;
+function startFollow() {
+  clearInterval(followT); followT = 0;
+  if (settings.notchOn !== 'follow') { followId = null; return; }
+  followT = setInterval(() => {
+    if (!win || winMode !== 'pill' || (game && game.isActive())) return; // открытую панель и игру не трогаем
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const cur = notchDisplay();
+    if (d.id === cur.id) { followCand = null; return; }
+    if (followCand !== d.id) { followCand = d.id; followSince = Date.now(); return; }
+    if (Date.now() - followSince < 250) return; // курсор задержался на другом мониторе — переезжаем
+    followCand = null;
+    send('notch-hop', 'out');                    // уехать вверх на старом мониторе…
+    setTimeout(() => { followId = d.id; placeWindow(); send('notch-hop', 'in'); }, 230); // …и выехать на новом
+  }, 200);
+}
+
 function placeWindow() {
-  const d = screen.getPrimaryDisplay();
+  const d = notchDisplay();
   const w = winMode === 'full' ? WIN_W : PILL_W, h = winMode === 'full' ? WIN_H : PILL_H;
   win.setBounds({ x: Math.round(d.bounds.x + (d.bounds.width - w) / 2), y: d.bounds.y, width: w, height: h });
 }
@@ -454,12 +481,14 @@ function loginArgs() {
 }
 ipcMain.handle('settings-get', () => ({
   ...settings,
+  displays: (() => { const pid = screen.getPrimaryDisplay().id; return screen.getAllDisplays().map((x, i) => ({ id: x.id, n: i + 1, w: Math.round(x.size.width * x.scaleFactor), h: Math.round(x.size.height * x.scaleFactor), primary: x.id === pid })); })(),
   autostart: app.getLoginItemSettings(loginArgs()).openAtLogin,
   version: app.getVersion(),
 }));
 ipcMain.handle('settings-set', (_e, patch) => {
   if ('autostart' in patch) app.setLoginItemSettings({ openAtLogin: !!patch.autostart, ...loginArgs() });
-  for (const k of ['clipHistory', 'ocrLang', 'idleHide']) if (k in patch) settings[k] = patch[k];
+  for (const k of ['clipHistory', 'ocrLang', 'idleHide', 'notchOn']) if (k in patch) settings[k] = patch[k];
+  if ('notchOn' in patch) { followId = null; if (winMode === 'pill' || winMode === 'full') placeWindow(); startFollow(); }
   if ('idleHide' in patch) startIdleWatch();
   saveSettings();
   return true;
@@ -547,6 +576,10 @@ function buildTrayMenu() {
     { label: 'Сканировать QR' + hkLabel('qrscan'), click: () => startCapture('qrscan') },
     { type: 'separator' },
     {
+      label: 'Игровой режим', type: 'checkbox', checked: !!(settings.game && settings.game.auto),
+      click: (item) => { if (game) game.setAuto(item.checked); },
+    },
+    {
       label: 'Скрыть нотч', type: 'checkbox', checked: !!settings.hidden,
       click: (item) => { settings.hidden = item.checked; saveSettings(); item.checked ? win.hide() : win.showInactive(); },
     },
@@ -582,7 +615,7 @@ function startIdleWatch() {
   idleLast = Date.now();
   idleTimer = setInterval(() => {
     const pt = screen.getCursorScreenPoint();
-    const b = screen.getPrimaryDisplay().bounds; // нотч живёт на основном мониторе
+    const b = notchDisplay().bounds; // монитор, на котором сейчас нотч
     if (game && game.isActive()) return; // в игре нотч не прячем — он в углу
     const onMine = pt.x >= b.x && pt.x < b.x + b.width && pt.y >= b.y && pt.y < b.y + b.height;
     const moved = !idlePt || pt.x !== idlePt.x || pt.y !== idlePt.y;
@@ -609,7 +642,8 @@ app.whenReady().then(() => {
   sensors = setupSensors({ send, getWin: () => win, getStats });
   music = setupMusic({ send });
   setupUpdater({ send });
-  game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats });
+  game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats, notchDisplay: () => notchDisplay(), onAuto: () => buildTrayMenu() });
+  startFollow();
   taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: (id = 'apps') => { if (!win) return; send('open-tool', id); win.focus(); } });
   ipcMain.on('tb-search', () => openSearch());
   // Развёрнутое окно на мониторе нотча (браузер на весь экран) — нотч уезжает вверх тонкой полоской,
@@ -622,7 +656,7 @@ app.whenReady().then(() => {
     if (r) {
       const [l, t, rr, b] = r.split(',').map(Number);
       const d = screen.getDisplayMatching(screen.screenToDipRect(null, { x: l, y: t, width: rr - l, height: b - t }));
-      on = d.id === screen.getPrimaryDisplay().id;
+      on = d.id === notchDisplay().id;
     }
     if (on !== tucked) { tucked = on; send('tuck', on); }
   };

@@ -15,7 +15,7 @@ const Agent = require('./agent-host');
 // Программы на весь экран, которые не игры
 const NOT_GAMES = /\\(msedge|chrome|firefox|opera|brave|vivaldi|yandex|browser|vlc|mpc-hc64|mpc-hc|mpc-be64|potplayermini64|potplayer|mpv|wmplayer|explorer|applicationframehost|powerpnt|teams|ms-teams|zoom|obs64|obs32|discord|telegram|slack|code|devenv|idea64|photoshop|lightroom|resolve|premiere|afterfx|mspaint|snippingtool|screenclippinghost|searchhost|shellexperiencehost|startmenuexperiencehost|lockapp|textinputhost|systemsettings|electron|bar|bar lab|claude|thunderbird|outlook|olk|notion|obsidian|spotify|whatsapp|winword|excel|onenote|figma|cursor|windowsterminal|wt|taskmgr)\.exe$/i;
 
-module.exports = function setupGame({ getWin, send, settings, saveSettings, sensors, win: winCtl, getStats }) {
+module.exports = function setupGame({ getWin, send, settings, saveSettings, sensors, win: winCtl, getStats, notchDisplay, onAuto }) {
   const G = settings.game = Object.assign({
     auto: true, corner: 'tr', fade: 0, hold: 1000, // hold — сколько держать курсор на плашке, чтобы открыть панель (0 — выкл) // corner: tl / tr / bl / br или tc — «на месте», сверху по центру; fade — прозрачность плашки, %
     show: { fps: true, cpu: true, gpu: true, ram: true, ping: true, clock: true },
@@ -191,7 +191,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   });
   ipcMain.handle('game-preview', () => {
     if (active) { exit(); return false; }
-    const d = screen.getPrimaryDisplay();
+    const d = notchDisplay ? notchDisplay() : screen.getPrimaryDisplay();
     enter({ pid: 0, exe: 'preview', name: 'Предпросмотр', mon: d.bounds, manual: true });
     setTimeout(() => { if (active && active.exe === 'preview') exit(); }, 6000);
     return true;
@@ -217,6 +217,8 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   schedule();
   return {
     isActive: () => !!active,
+    // выключатель из меню в трее: автоматический игровой режим вкл/выкл (сейчас идущий — сразу выключается)
+    setAuto(on) { G.auto = !!on; saveSettings(); if (!on && active && !active.manual) exit(); if (onAuto) onAuto(); },
     activeMon: () => (active ? active.mon : null), // монитор игры (в DIP) — таскбар прячется только на нём
     // горячая клавиша игрового режима: включить вручную / выйти
     hotkey() {
@@ -224,7 +226,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       sensors.call('gamestate', '', 2000).then((raw) => {
         const [, , exe, pid, mon] = String(raw || '').split('|');
         const [x, y, w, h] = (mon || '').split(',').map(Number);
-        const m = w ? toDip({ x, y, width: w, height: h }) : screen.getPrimaryDisplay().bounds;
+        const m = w ? toDip({ x, y, width: w, height: h }) : (notchDisplay ? notchDisplay() : screen.getPrimaryDisplay()).bounds;
         enter({ pid: +pid || 0, exe: exe || 'manual', name: exeName(exe) || 'Игра', mon: m, manual: true });
       }).catch(() => {});
     },

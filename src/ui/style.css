@@ -934,3 +934,6 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 /* нотч над развёрнутым окном: уезжает вверх, остаётся полоска 3 px; при наведении и всплывашках — выглядывает */
 #island.tucked:not(.open):not(.peek):not(.act-pop) { transform: translate(calc(-50% + var(--oled-dx, 0px)), calc(-100% + 3px)); }
 #island.tucked.peek:not(.open) { transition-delay: .18s; }
+
+/* переезд нотча на другой монитор: уезжает вверх, выезжает уже на новом */
+#island.hop { transform: translate(calc(-50% + var(--oled-dx, 0px)), -120%) !important; opacity: 0; transition: transform .22s cubic-bezier(.5, 0, .75, 0), opacity .2s; }
