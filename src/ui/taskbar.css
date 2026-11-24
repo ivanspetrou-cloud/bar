@@ -67,7 +67,7 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 }
 .tb-prev.on { opacity: 1; transform: none; }
 .tp-card {
-  width: 220px; border: 0; padding: 0; border-radius: var(--r); background: var(--card); color: var(--fg); cursor: pointer;
+  width: 264px; border: 0; padding: 0; border-radius: var(--r); background: var(--card); color: var(--fg); cursor: pointer;
   display: flex; flex-direction: column; overflow: hidden; text-align: left;
   box-shadow: inset 0 0 0 1.5px transparent; transition: background .15s, box-shadow .2s, transform .25s var(--spring);
 }
@@ -80,10 +80,11 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 .tp-x svg.i { width: 14px; height: 14px; }
 .tp-card:hover .tp-x { opacity: 1; }
 .tp-x:hover { background: var(--red); color: var(--on-red); }
-.tp-shot { height: 128px; margin: 0 8px 8px; border-radius: calc(var(--r) - 6px); background: var(--ctl); overflow: hidden; display: grid; place-items: center; position: relative; }
+.tp-shot { height: 158px; margin: 0 8px 8px; border-radius: calc(var(--r) - 6px); background: var(--ctl); overflow: hidden; display: grid; place-items: center; position: relative; }
 .tp-shot::before { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.05) 50%, transparent 70%); background-size: 200% 100%; animation: tp-shimmer 1.2s linear infinite; }
 .tp-shot:has(img.ok)::before, .tp-shot.min::before { display: none; }
-.tp-shot img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; position: relative; }
+/* окно любой формы — целиком, без обрезки (высокий «Список друзей» тоже) */
+.tp-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; image-rendering: auto; }
 .tp-shot img.ok { opacity: 1; }
 .tp-min { color: var(--mut); font-size: var(--fs-cap); }
 @keyframes tp-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }

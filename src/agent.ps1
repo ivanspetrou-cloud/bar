@@ -238,7 +238,11 @@ namespace Bar {
         using (var ms = new System.IO.MemoryStream()) {
           g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
           g2.DrawImage(bmp, 0, 0, tw, th);
-          sm.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+          // JPEG с качеством 90: по умолчанию (~75) мелкий текст окон мылится
+          var enc = Array.Find(System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders(), (c) => c.MimeType == "image/jpeg");
+          var ep = new System.Drawing.Imaging.EncoderParameters(1);
+          ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 90L);
+          sm.Save(ms, enc, ep);
           return Convert.ToBase64String(ms.ToArray());
         }
       }
@@ -771,7 +775,7 @@ while ($true) {
       'hidbat'   { @([Bar.HidBattery]::Read()) }
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
       'taskwins' { @([Bar.Win]::TaskWindows()) }
-      'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 440, 260) }) }
+      'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 720, 450) }) }
       'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
       'startmenu' { [Bar.Win]::StartMenu(); $true }
       'showdesktop' { [Bar.Win]::ShowDesktop(); $true }

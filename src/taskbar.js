@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 
 const SIZES = { s: 44, m: 52, l: 62 };   // высота дока (без отступа от края)
 const EDGE = 8;                          // отступ дока от нижнего края
-const WIN_H = 380;                       // окно выше дока: место для подписи, увеличения и превью окон
+const WIN_H = 420;                       // окно выше дока: место для подписи, увеличения и превью окон
 const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windows (полноэкранные программы, смена места)
 
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
