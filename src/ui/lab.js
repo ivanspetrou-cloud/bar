@@ -766,26 +766,58 @@ tool({
       return r;
     }));
     const P = (id) => cur && cur.props[id];
+    // перечитать настоящие значения (после включения/выключения камера может сама сдвинуть объектив)
+    async function refresh() {
+      const list = await api.list().catch(() => null); if (!alive || !list) return;
+      const nx = list.find((c) => c.name === (cur && cur.name)); if (nx) { cams = list; cur = nx; draw(); }
+    }
 
     // ---- превью (по желанию: камера включается только пока оно открыто) ----
     const video = h('video', { class: 'cam-v', autoplay: true, muted: true, playsinline: true });
     const ph = h('div', { class: 'cam-ph muted small' }, 'Превью выключено — камера не снимает');
     const prevBtn = h('button', { class: 'btn sm' }, I('eye'), 'Показать картинку');
+    // отражение превью (как в зеркале) и режим: разрешение и частота кадров из того, что камера реально умеет
+    let mirror = store.get('camMirror', true);
+    const flipBtn = h('button', { class: 'btn sm' + (mirror ? ' on' : ''), title: 'Отразить превью по горизонтали' }, I('flip'), 'Отразить');
+    const applyFlip = () => { video.classList.toggle('flip', mirror); flipBtn.classList.toggle('on', mirror); };
+    flipBtn.onclick = () => { mirror = !mirror; store.set('camMirror', mirror); applyFlip(); };
+    const modeSel = h('select', { class: 'field cam-mode', 'aria-label': 'Режим превью', hidden: true });
+    const MODES = [[3840, 2160, 30], [2560, 1440, 30], [1920, 1080, 60], [1920, 1080, 30], [1280, 720, 60], [1280, 720, 30], [640, 480, 30]];
+    function fillModes() {
+      const tr = stream && stream.getVideoTracks()[0];
+      if (!tr || !tr.getCapabilities) { modeSel.hidden = true; return; }
+      const cap = tr.getCapabilities(), now = tr.getSettings();
+      const ok = MODES.filter(([w, hh, f]) => (!cap.width || cap.width.max >= w) && (!cap.height || cap.height.max >= hh) && (!cap.frameRate || cap.frameRate.max >= f - 1));
+      modeSel.replaceChildren(...ok.map(([w, hh, f]) => h('option', { value: `${w}x${hh}@${f}` }, `${hh >= 2160 ? '4K' : hh + 'p'} · ${f} к/с`)));
+      const curV = `${now.width}x${now.height}@${Math.round(now.frameRate || 30)}`;
+      if (![...modeSel.options].some((o) => o.value === curV)) modeSel.prepend(h('option', { value: curV }, `${now.height}p · ${Math.round(now.frameRate || 30)} к/с`));
+      modeSel.value = curV; modeSel.hidden = !modeSel.options.length;
+    }
+    modeSel.onchange = async () => {
+      const [wh, f] = modeSel.value.split('@'); const [w, hh] = wh.split('x').map(Number);
+      const tr = stream && stream.getVideoTracks()[0]; if (!tr) return;
+      try { await tr.applyConstraints({ width: { ideal: w }, height: { ideal: hh }, frameRate: { ideal: +f } }); store.set(key() + ':mode', modeSel.value); } catch { flash('Камера не приняла этот режим'); }
+      fillModes();
+    };
     async function preview(on) {
       if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
       ph.hidden = on; prevBtn.classList.toggle('on', on);
       prevBtn.replaceChildren(I(on ? 'x' : 'eye'), on ? 'Скрыть картинку' : 'Показать картинку');
-      if (!on || !cur) return;
+      if (!on || !cur) { modeSel.hidden = true; return; }
       const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
       const want = devs.find((d) => d.label && cur.name && (d.label.includes(cur.name) || cur.name.includes(d.label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, ''))));
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: want ? { deviceId: { exact: want.deviceId } } : true, audio: false });
+        const md = String(store.get(key() + ':mode', '1920x1080@30')).match(/^(\d+)x(\d+)@(\d+)$/);
+        const want2 = md ? { width: { ideal: +md[1] }, height: { ideal: +md[2] }, frameRate: { ideal: +md[3] } } : {};
+        stream = await navigator.mediaDevices.getUserMedia({ video: want ? { deviceId: { exact: want.deviceId }, ...want2 } : want2, audio: false });
         if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
         video.srcObject = stream;
+        fillModes();
       } catch { ph.hidden = false; ph.textContent = 'Картинку не получить: камера занята или запрещена в параметрах Windows'; }
     }
     prevBtn.onclick = () => preview(!stream);
-    left.append(h('div', { class: 'cam-frame' }, video, ph), prevBtn);
+    applyFlip();
+    left.append(h('div', { class: 'cam-frame' }, video, ph), h('div', { class: 'row cam-prevbar' }, prevBtn, flipBtn, modeSel));
 
     // ---- управление ----
     function draw() {
@@ -803,17 +835,27 @@ tool({
       }
       // приватность: своя команда камеры, а если её нет — объектив вниз до упора (так прячется EMEET PIXY)
       const priv = P(CAM.PRIV), tilt = P(CAM.TILT), pan = P(CAM.PAN);
-      const hiddenNow = priv ? priv.cur === priv.max : !!store.get(key() + ':hid', null);
+      const hiddenNow = priv ? priv.cur !== priv.min : !!store.get(key() + ':hid', null);
       const privBtn = h('button', { class: 'btn cam-priv' + (hiddenNow ? ' red' : ' pri') }, I(hiddenNow ? 'cam' : 'camoff'), hiddenNow ? 'Включить камеру' : 'Выключить камеру');
       privBtn.onclick = async () => {
         privBtn.animate([{ transform: 'scale(.96)' }, { transform: 'none' }], { duration: 220 });
-        if (priv) await send(CAM.PRIV, hiddenNow ? priv.min : priv.max);
-        else if (tilt) {
-          if (!hiddenNow) { store.set(key() + ':hid', { tilt: tilt.cur, pan: pan ? pan.cur : null }); await send(CAM.TILT, tilt.min); }
-          else { const s = store.get(key() + ':hid', {}); store.set(key() + ':hid', null); await send(CAM.TILT, s.tilt ?? tilt.def); }
+        privBtn.disabled = true;
+        if (!hiddenNow) {
+          // запоминаем, куда смотрел объектив, — вернём его туда при включении
+          store.set(key() + ':hid', { tilt: tilt ? tilt.cur : null, pan: pan ? pan.cur : null });
+          if (priv) await send(CAM.PRIV, priv.max); else if (tilt) await send(CAM.TILT, tilt.min);
+        } else {
+          const sv = store.get(key() + ':hid', {}) || {};
+          store.set(key() + ':hid', null);
+          if (priv) { await send(CAM.PRIV, priv.min); await new Promise((r) => setTimeout(r, 400)); }
+          // PIXY после снятия приватности может оставить объектив внизу — поднимаем его сами
+          if (tilt) await send(CAM.TILT, sv.tilt ?? tilt.def);
+          if (pan && sv.pan != null) await send(CAM.PAN, sv.pan);
+          if (priv && P(CAM.PRIV) && P(CAM.PRIV).cur !== priv.min) await send(CAM.PRIV, priv.min); // повтор, если камера не приняла с первого раза
         }
         flash(hiddenNow ? 'Камера включена' : 'Камера выключена — объектив спрятан');
         draw();
+        setTimeout(refresh, 900); // показать то, что камера реально сделала
       };
       if (priv || tilt) rows.push(privBtn);
 
@@ -848,7 +890,7 @@ tool({
         const s = makeSlider({ min: p.min, max: p.max, step: p.step, value: p.cur, label });
         s.addEventListener('change', () => send(id, +s.value));
         const autoT = p.canAuto ? h('button', { class: 'chip tbs-chip' + (p.auto ? ' on' : ''), onclick: async () => { await send(id, p.cur, !p.auto); draw(); } }, 'Авто') : null;
-        return h('div', { class: 'sw cam-sl' }, h('span', { class: 'cam-lbl' }, I(ic), label), s, autoT);
+        return h('div', { class: 'sw cam-sl' }, h('span', { class: 'cam-lbl' }, ic ? I(ic) : null, label), s, autoT);
       };
       rows.push(slider(CAM.ZOOM, 'Зум', 'zoomin'), slider(CAM.FOCUS, 'Фокус', 'focus'));
       // позиции: клик — поехать, правый клик — запомнить текущую
@@ -861,6 +903,20 @@ tool({
             b.oncontextmenu = (e) => { e.preventDefault(); const v = {}; for (const id of [CAM.PAN, CAM.TILT, CAM.ZOOM]) if (P(id)) v[id] = P(id).cur; slots[n] = v; store.set(key() + ':presets', slots); flash(`Позиция ${n + 1} запомнена`); draw(); };
             return b;
           })));
+      }
+      // изображение: настройки самой камеры — действуют во всех программах и сохраняются в камере
+      const IMG = [[100, 'Яркость'], [101, 'Контраст'], [103, 'Насыщенность'], [104, 'Резкость'], [105, 'Гамма'], [107, 'Баланс белого'], [108, 'Компенсация засветки'], [109, 'Усиление']];
+      const imgRows = IMG.map(([id, label]) => slider(id, label, null)).filter(Boolean);
+      const pl = P(113); // частота сети: защита от мерцания ламп
+      if (pl) {
+        const opts = [[0, 'Выкл'], [1, '50 Гц'], [2, '60 Гц'], [3, 'Авто']].filter(([v]) => v >= pl.min && v <= pl.max);
+        imgRows.push(h('div', { class: 'sw cam-sl' }, h('span', { class: 'cam-lbl' }, 'Мерцание'),
+          h('div', { class: 'seg' }, opts.map(([v, n]) => h('button', { class: v === pl.cur ? 'on' : '', onclick: async () => { await send(113, v); draw(); } }, n)))));
+      }
+      if (imgRows.length) {
+        rows.push(h('div', { class: 'row cam-imghead' }, h('b', {}, 'Изображение'), h('span', { class: 'muted small' }, 'для всех программ'), h('span', { class: 'grow' }),
+          h('button', { class: 'btn sm', onclick: async () => { for (const [id] of [...IMG, [113]]) { const p = P(id); if (p) await send(id, p.def, p.canAuto); } draw(); flash('Изображение сброшено'); } }, I('reset'), 'Сбросить')));
+        rows.push(...imgRows);
       }
       right.replaceChildren(...rows.filter(Boolean));
     }

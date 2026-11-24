@@ -576,11 +576,22 @@ namespace Bar {
     [PreserveSig] int Set(int prop, int val, int flags);
     [PreserveSig] int Get(int prop, out int val, out int flags);
   }
+  [ComImport, Guid("C6E13360-30AC-11d0-A18C-00A0C9118956"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAMVideoProcAmp {
+    [PreserveSig] int GetRange(int prop, out int min, out int max, out int step, out int def, out int caps);
+    [PreserveSig] int Set(int prop, int val, int flags);
+    [PreserveSig] int Get(int prop, out int val, out int flags);
+  }
   public static class Cam {
     // 0 Pan, 1 Tilt, 2 Roll, 3 Zoom, 4 Exposure, 5 Iris, 6 Focus, 15 Privacy (KSPROPERTY_CAMERACONTROL_PRIVACY)
     static readonly int[] PROPS = { 0, 1, 2, 3, 4, 6, 15 };
+    // настройки изображения (IAMVideoProcAmp) — номера со сдвигом 100: 100 яркость, 101 контраст, 103 насыщенность,
+    // 104 резкость, 105 гамма, 107 баланс белого, 108 компенсация засветки, 109 усиление, 113 частота сети (мерцание)
+    static readonly int[] VPROPS = { 0, 1, 3, 4, 5, 7, 8, 9, 13 };
+    static Dictionary<string, IAMVideoProcAmp> amps = new Dictionary<string, IAMVideoProcAmp>();
     static List<KeyValuePair<string, IAMCameraControl>> Devices() {
       var res = new List<KeyValuePair<string, IAMCameraControl>>();
+      amps.Clear();
       var t = Type.GetTypeFromCLSID(new Guid("62BE5D10-60EB-11d0-BD3B-00A0C911CE86"));
       var de = (ICreateDevEnum)Activator.CreateInstance(t);
       Guid cat = new Guid("860BB310-5D01-11d0-BD3B-00A0C911CE86");
@@ -594,7 +605,7 @@ namespace Bar {
           object v; if (((IPropertyBag)bag).Read("FriendlyName", out v, IntPtr.Zero) == 0) name = (string)v;
         } catch { }
         IAMCameraControl cc = null;
-        try { object f; Guid bf = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770"); m.BindToObject(null, null, ref bf, out f); cc = f as IAMCameraControl; } catch { }
+        try { object f; Guid bf = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770"); m.BindToObject(null, null, ref bf, out f); cc = f as IAMCameraControl; var va = f as IAMVideoProcAmp; if (va != null) amps[res.Count + ""] = va; } catch { }
         res.Add(new KeyValuePair<string, IAMCameraControl>(name, cc));
       }
       return res;
@@ -610,6 +621,13 @@ namespace Bar {
           if (d.Value.Get(pr, out cur, out fl) != 0) cur = df;
           props.Add(pr + ":" + mn + ":" + mx + ":" + st + ":" + df + ":" + cur + ":" + ((fl & 1) != 0 ? 1 : 0) + ":" + ((cp & 1) != 0 ? 1 : 0));
         }
+        IAMVideoProcAmp va;
+        if (amps.TryGetValue(i + "", out va)) foreach (int pr in VPROPS) {
+          int mn, mx, st, df, cp, cur, fl;
+          if (va.GetRange(pr, out mn, out mx, out st, out df, out cp) != 0 || mx <= mn) continue;
+          if (va.Get(pr, out cur, out fl) != 0) cur = df;
+          props.Add((100 + pr) + ":" + mn + ":" + mx + ":" + st + ":" + df + ":" + cur + ":" + ((fl & 1) != 0 ? 1 : 0) + ":" + ((cp & 1) != 0 ? 1 : 0));
+        }
         outp.Add(i + "|" + d.Key + "|" + string.Join(",", props) + "|" + (d.Value != null ? 1 : 0)); // последнее поле: есть ли у камеры управление вообще
         i++;
       }
@@ -618,6 +636,15 @@ namespace Bar {
     // установить свойство; auto=1 — вернуть камере автоматический режим (фокус, экспозиция)
     public static string Set(int dev, int prop, int val, int auto) {
       var ds = Devices();
+      if (prop >= 100) { // настройка изображения
+        IAMVideoProcAmp va; if (dev < 0 || !amps.TryGetValue(dev + "", out va)) return "nodev";
+        int vp = prop - 100, a1, a2, a3, a4, a5;
+        if (va.GetRange(vp, out a1, out a2, out a3, out a4, out a5) != 0) return "noprop";
+        val = Math.Max(a1, Math.Min(a2, val));
+        int h2 = va.Set(vp, val, auto == 1 ? 1 : 2);
+        int c2, f2; va.Get(vp, out c2, out f2);
+        return h2 == 0 ? "ok:" + c2 : "err:" + h2.ToString("X");
+      }
       if (dev < 0 || dev >= ds.Count || ds[dev].Value == null) return "nodev";
       int mn, mx, st, df, cp;
       if (ds[dev].Value.GetRange(prop, out mn, out mx, out st, out df, out cp) != 0) return "noprop";

@@ -959,3 +959,14 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .cam-lbl { display: inline-flex; align-items: center; gap: 6px; min-width: 76px; }
 .cam-lbl svg.i { width: 15px; height: 15px; }
 .cam-presets { gap: 6px; }
+
+.cam-v.flip { transform: scaleX(-1); }
+.cam-prevbar { flex-wrap: nowrap; gap: 6px; }
+.cam-prevbar .btn { flex: none; }
+.cam-mode { flex: 1; min-width: 0; height: 28px; padding: 0 8px; font-size: var(--fs-cap); }
+.cam-imghead { margin-top: 6px; gap: 8px; flex-wrap: nowrap; }
+.cam-lbl { min-width: 96px; }
+.cam-right > * { flex: none; }
+.cam-right::-webkit-scrollbar { width: 6px; }
+.cam-right::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
+.cam-right::-webkit-scrollbar-button { display: none; height: 0; }
