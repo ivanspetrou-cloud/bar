@@ -871,3 +871,6 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .dz-ic svg.i { width: 24px; height: 24px; }
 .dz.hot { border-color: var(--acc-g); background: color-mix(in srgb, var(--acc) 12%, transparent); transform: scale(1.02); }
 .dz.hot .dz-ic { background: var(--acc); color: var(--on-acc); transform: scale(1.12) translateY(-2px); }
+/* активность в шапке — кнопка к своему инструменту */
+.bar .act.link { cursor: pointer; border-radius: var(--r-sm); padding: 2px 8px; margin: 0 -2px; transition: background .15s; }
+.bar .act.link:hover { background: var(--ctl); }
