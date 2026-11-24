@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('bar', {
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateDownload: () => ipcRenderer.invoke('update-download'),
   updateInstall: () => ipcRenderer.invoke('update-install'),
+  updateManual: () => ipcRenderer.invoke('update-manual'),
   onUpdate: on('update'),
   appUsage: () => ipcRenderer.invoke('app-usage'),
   appsList: (force) => ipcRenderer.invoke('apps-list', force),

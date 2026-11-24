@@ -2,9 +2,15 @@
 // • Проверка: при запуске (через 15 с) и раз в 6 часов. Запрос идёт только на github.com — без каких-либо данных о вас.
 // • Скачивание и установка — только по кнопке в Настройках.
 // • Целостность: electron-updater сверяет SHA-512 скачанного установщика с latest.yml из того же релиза.
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, shell } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
-module.exports = function setupUpdater({ send }) {
+const RELEASES = 'https://github.com/ivanspetrou-cloud/bar/releases/latest';
+
+// beforeInstall — что сделать до запуска установщика (вернуть панель Windows, разрешить выход без задержки):
+// установщик должен застать Bar уже закрывающимся, иначе он не сможет заменить файлы
+module.exports = function setupUpdater({ send, beforeInstall }) {
   let st = { state: 'idle', version: app.getVersion() };
   const set = (p) => { st = { ...st, ...p }; send('update', st); };
 
@@ -23,7 +29,10 @@ module.exports = function setupUpdater({ send }) {
   autoUpdater.autoInstallOnAppQuit = true;   // скачанное ставится при выходе, если не нажали «Перезапустить»
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
-  autoUpdater.logger = null;
+  // журнал обновлений: userData/update.log (только события обновления, без личных данных)
+  const logFile = path.join(app.getPath('userData'), 'update.log');
+  const log = (lvl) => (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${lvl} ${String(m).slice(0, 500)}\n`); } catch {} };
+  autoUpdater.logger = { info: log('info'), warn: log('warn'), error: log('error'), debug: () => {} };
 
   autoUpdater.on('checking-for-update', () => set({ state: 'checking', error: '' }));
   autoUpdater.on('update-available', (i) => set({ state: 'available', next: i.version }));
@@ -46,11 +55,17 @@ module.exports = function setupUpdater({ send }) {
     autoUpdater.downloadUpdate().catch(() => {});
     return true;
   });
-  ipcMain.handle('update-install', () => {
+  ipcMain.handle('update-install', async () => {
     if (st.state !== 'ready') return false;
+    set({ state: 'installing' });
+    log('info')('install requested');
+    try { if (beforeInstall) await Promise.race([beforeInstall(), new Promise((r) => setTimeout(r, 4000))]); } catch {}
     setImmediate(() => autoUpdater.quitAndInstall(true, true)); // тихая установка и запуск новой версии
+    // через 20 с Bar всё ещё работает — установка не началась: говорим об этом и даём скачать установщик вручную
+    setTimeout(() => { log('warn')('still running 20s after quitAndInstall'); set({ state: 'error', error: 'Установка не запустилась — скачайте установщик с GitHub', manual: true }); }, 20000);
     return true;
   });
+  ipcMain.handle('update-manual', () => { shell.openExternal(RELEASES); return true; });
   const t1 = setTimeout(check, 15000);
   const t2 = setInterval(check, 6 * 3600e3);
   return { stop() { clearTimeout(t1); clearInterval(t2); } };

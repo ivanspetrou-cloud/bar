@@ -644,7 +644,7 @@ app.whenReady().then(() => {
   createWindow();
   sensors = setupSensors({ send, getWin: () => win, getStats });
   music = setupMusic({ send });
-  setupUpdater({ send });
+  setupUpdater({ send, beforeInstall: async () => { if (taskbar) await taskbar.stop(); quitReady = true; } });
   game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats, notchDisplay: () => notchDisplay(), onAuto: () => buildTrayMenu() });
   startFollow();
   taskbar = setupTaskbar({ settings, saveSettings, sensors, isGame: () => (game && game.isActive() ? game.activeMon() : null), openApps: (id = 'apps') => { if (!win) return; send('open-tool', id); win.focus(); } });
