@@ -33,6 +33,7 @@ function osdFill(v, off) {
   for (const b of document.querySelectorAll('.osd-v')) b.textContent = off ? 'Без звука' : v + '%';
   Osd.prev = v;
 }
+openHooks.add((open) => { if (open) { setAct('osd', null); Osd.prev = null; } }); // в открытой панели громкость и так видна
 function setOsd(on) { Osd.on = !!on; store.set('osd', Osd.on); pushNeed(); }
 
 // ============ 2. События устройств: подключение, зарядка, низкий заряд ============
@@ -101,9 +102,9 @@ island.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ============ 4. Живой эквалайзер: столбики под настоящий звук ============
-// Windows сама считает пиковый уровень звука на выходе (то, что слышно в колонках) — агент 'meter' передаёт его
-// ~22 раза в секунду. Три столбика — три «характера» одного уровня: быстрый, средний и плавный.
-// Поток идёт, только пока что-то играет и столбики видны; через 8 с паузы — останавливается.
+// Windows сама считает пиковый уровень звука на выходе (то, что слышно в колонках) — маленький процесс meter.ps1
+// передаёт его ~20 раз в секунду. Три столбика — три «характера» одного уровня: быстрый, средний и плавный.
+// Поток идёт, только пока что-то играет и столбики видны; через 30 с паузы — останавливается.
 const LiveEq = { on: store.get('liveEq', true), st: 'off', lvl: [0, 0, 0], idleT: 0, q: [], iv: 0, last: 0 };
 const liveEqActive = () => LiveEq.st === 'on' && performance.now() - LiveEq.last < 1500;
 function liveEqStart() {
@@ -130,7 +131,7 @@ function liveEqTick() {
 function liveEqSync() {
   const want = LiveEq.on && !Game.on && S.media && S.media.playing && document.querySelector('span.eq');
   if (want) { clearTimeout(LiveEq.idleT); LiveEq.idleT = 0; liveEqStart(); }
-  else if (LiveEq.st === 'on' && !LiveEq.idleT) LiveEq.idleT = setTimeout(() => { LiveEq.idleT = 0; liveEqStop(); }, 8000);
+  else if (LiveEq.st === 'on' && !LiveEq.idleT) LiveEq.idleT = setTimeout(() => { LiveEq.idleT = 0; liveEqStop(); }, 30000); // короткие паузы — без перезапуска процесса
 }
 setInterval(liveEqSync, 1500);
 function setLiveEq(on) { LiveEq.on = !!on; store.set('liveEq', LiveEq.on); if (!on) liveEqStop(); else liveEqSync(); }
