@@ -561,6 +561,12 @@ bar.onNotchHop((dir) => {
   if (dir === 'out') island.classList.add('hop');
   else requestAnimationFrame(() => requestAnimationFrame(() => island.classList.remove('hop')));
 });
+// сведения об устройствах — в буфер обмена (для поддержки новых мышей, клавиатур, наушников)
+async function copyDevDiag() {
+  flash('Собираю сведения об устройствах…', 4000);
+  const t = await bar.devDiag().catch(() => '');
+  if (t) { copy(t, 'Сведения об устройствах скопированы'); } else flash('Не удалось собрать сведения');
+}
 function notchScreenRow() {
   const sel = h('select', { class: 'field', 'aria-label': 'Экран нотча' });
   bar.settingsGet().then((s) => {
@@ -621,7 +627,8 @@ function labSettings(toggle) {
     draw(t);
   });
   return h('div', { class: 'split', style: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } },
-    h('div', { class: 'col' }, notchScreenRow(), ...LAB_OPTS.map(row), chimeRow()),
+    h('div', { class: 'col' }, notchScreenRow(), ...LAB_OPTS.map(row), chimeRow(),
+      h('button', { class: 'btn sm', style: { alignSelf: 'flex-start' }, title: 'Если заряд мыши, клавиатуры или наушников не виден — пришлите это разработчику', onclick: copyDevDiag }, I('copy'), 'Скопировать сведения об устройствах')),
     tbBox);
 }
 // ============ 14. Настройки таскбара: закреплённые, кнопки, ярлыки ============

@@ -135,6 +135,12 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     return safe(fast.call('camset', [dev | 0, prop | 0, Math.round(val), auto ? 1 : 0].join(' '), 4000));
   });
 
+  // ---------- диагностика устройств (для поддержки новых мышей и клавиатур) ----------
+  ipcMain.handle('dev-diag', async () => {
+    const [hid, bat] = await Promise.all([safe(slow.call('hiddiag', '', 20000)), safe(slow.call('hidbat', '', 20000))]);
+    return ['Bar ' + app.getVersion() + ' — сведения об устройствах', '', '== Заряд ==', ...Agent.list(bat).map(String), '', '== Интерфейсы ==', ...Agent.list(hid).map(String)].join('\n');
+  });
+
   // ---------- приложения ----------
   let appsCache = null, appsAt = 0;
   function scanLnk() {
