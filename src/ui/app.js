@@ -1369,12 +1369,14 @@ tool({
       tabs.replaceChildren(...TABS.map(([k, n]) => h('button', { class: k === t ? 'on' : '', onclick: () => show(k) }, n)));
       reset.hidden = t !== 'look';
       if (body._cleanup) { body._cleanup(); body._cleanup = null; }
-      body.replaceChildren();
+      body.replaceChildren(); body._tok = null;
       ({ main, ind, look, game })[t]();
     }
 
     function main() {
+      const tok = (body._tok = {});
       bar.settingsGet().then(async (s) => {
+        if (body._tok !== tok) return;
         const lang = h('select', { class: 'field' }, h('option', { value: '' }, 'Как в системе'));
         const idleSel = h('select', { class: 'field', 'aria-label': 'Прятать нотч' }, [[30, 'через 30 секунд'], [60, 'через 1 минуту'], [120, 'через 2 минуты'], [300, 'через 5 минут'], [0, 'никогда']].map(([v, n]) => h('option', { value: String(v) }, n)));
         idleSel.value = String(s.idleHide ?? 60);
@@ -1497,8 +1499,10 @@ tool({
 
 
     function game() {
+      const tok = (body._tok = {});
       bar.gameGet().then((g) => {
-        const CN = { tl: 'слева сверху', tr: 'справа сверху', bl: 'слева снизу', br: 'справа снизу' };
+        if (body._tok !== tok) return; // пока грузилось, вкладку уже переключили
+        const CN = { tl: 'слева сверху', tc: 'на месте', tr: 'справа сверху', bl: 'слева снизу', br: 'справа снизу' };
         const screenEl = h('div', { class: 'g-screen', role: 'radiogroup', 'aria-label': 'Угол для игровой плашки' },
           ...Object.keys(CN).map((c) => h('button', {
             class: 'g-dot ' + c + (g.corner === c ? ' on' : ''), role: 'radio', 'aria-checked': String(g.corner === c), title: CN[c], 'aria-label': CN[c],
@@ -1512,7 +1516,7 @@ tool({
         }, n)));
         const PERM = {
           ok: ['muted', 'Доступ к кадрам игр есть'],
-          relogin: ['hi-t', 'Доступ выдан — выйдите из Windows и войдите снова, чтобы FPS заработал'],
+          relogin: ['hi-t', 'Доступ выдан. Перезагрузите компьютер (или выйдите из Windows и войдите снова) — после этого FPS заработает'],
           no: ['muted', 'Windows показывает кадры чужих игр только с разрешением. Нужно один раз подтвердить запрос Windows.'],
         }[g.perm] || ['muted', ''];
         const permBtn = g.perm === 'no' && h('button', { class: 'btn sm pri', onclick: async (e) => {
@@ -1531,11 +1535,13 @@ tool({
         body.append(h('div', { class: 'split' },
           h('div', { class: 'col' },
             h('div', { class: 'sw' }, h('span', {}, 'Игровой режим ', h('span', { class: 'muted' }, '· сам включается в играх на весь экран')), toggle(g.auto, (v) => bar.gameSet({ auto: v }))),
-            h('div', { class: 'card col g-card' }, h('h4', {}, 'Куда переплывает нотч'), h('div', { class: 'row' }, screenEl,
-              h('div', { class: 'col', style: { gap: '6px', flex: '1' } },
-                h('button', { class: 'btn sm', onclick: () => bar.gamePreview() }, I('play'), 'Показать перелёт'),
-                h('span', { class: 'muted small' }, hk('game') ? `${hk('game')} — включить или выйти вручную` : '')))),
-            h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips)),
+            h('div', { class: 'card col g-card' }, h('h4', {}, 'Где нотч во время игры'), h('div', { class: 'g-place' }, screenEl,
+              h('div', { class: 'col g-place-side' },
+                h('span', { class: 'muted small' }, 'Прозрачность'),
+                segOf([[0, 'Нет'], [40, '40%'], [60, '60%']], g.fade || 0, async (v) => { await bar.gameSet({ fade: v }); show('game'); }),
+                h('button', { class: 'btn sm', onclick: () => bar.gamePreview() }, I('play'), 'Показать')))),
+            h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips,
+              hk('game') && h('span', { class: 'muted small' }, `${hk('game')} — включить или выйти вручную`))),
           h('div', { class: 'col' },
             h('div', { class: 'card col g-card' }, h('h4', {}, 'FPS'), h('div', { class: 'small ' + PERM[0] }, PERM[1]), permBtn,
               !g.presentmon && h('div', { class: 'small red-t' }, 'PresentMon не найден — FPS недоступен')),
@@ -1961,7 +1967,7 @@ tool({
             else artist.replaceChildren(...aText.split(/(\s+и\s+|,\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+)/i).map((part, i) => i % 2
               ? document.createTextNode(part)
               : h('span', { class: 'mu-artist-link', role: 'button', tabindex: 0, title: `Найти «${part}»`,
-                  onclick: () => openSearchFor(part), onkeydown: (e) => { if (e.key === 'Enter') openSearchFor(part); } }, part)));
+                  onclick: () => openArtist(part), onkeydown: (e) => { if (e.key === 'Enter') openArtist(part); } }, part)));
           }
           const src = bimg(st.art);
           if (src !== artSrc) {
@@ -2062,7 +2068,9 @@ tool({
             h('div', { class: 'mu-hd-txt' }, h('b', {}, hd.title), h('span', { class: 'muted small' }, hd.subtitle),
               playN && h('button', { class: 'btn sm pri', onclick: () => mcmd('play', playN) }, I('play'), 'Слушать'))));
         }
+        const fallbackThumb = data.header && data.header.thumb;
         for (const sec of data.sections || []) {
+          if (fallbackThumb) for (const it of sec.items) if (!it.thumb && it.kind !== 'card') it.thumb = fallbackThumb; // у треков альбома своих обложек нет
           if (sec.title) parts.push(h('div', { class: 'cap mu-sec' }, sec.title));
           const cards = sec.items.filter((i) => i.kind === 'card');
           if (cards.length >= sec.items.length / 2) parts.push(h('div', { class: 'mu-grid-cards' }, sec.items.map((it) => cardEl(it, () => go(it)))));
@@ -2097,7 +2105,19 @@ tool({
       const run = () => { const v = q.value.trim(); if (v.length < 2) return; br.reset(() => bar.musicSearch(v), v); };
       q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 500); });
       q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(t); run(); } e.stopPropagation(); });
-      return { node, focus: () => q.focus(), query: (text) => { q.value = text; clearTimeout(t); run(); } };
+      // артист: если среди результатов есть его страница — открываем её («Назад» вернёт к результатам)
+      const artist = async (name) => {
+        q.value = name; clearTimeout(t);
+        const res = await bar.musicSearch(name).catch(() => null);
+        br.reset(async () => res, name);
+        const norm = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+        const items = ((res && res.sections) || []).flatMap((sec) => sec.items || []);
+        const a = items.find((it) => it.nav && it.nav.page === 'MUSIC_PAGE_TYPE_ARTIST' && it.nav.browseId && norm(it.title) === norm(name));
+        if (a) br.open(() => bar.musicBrowse(a.nav.browseId, a.nav.params), a.title);
+      };
+      // сразу страница артиста; «Назад» — к результатам поиска по его имени
+      const page = (name, id) => { q.value = name; clearTimeout(t); br.reset(() => bar.musicSearch(name), name); br.open(() => bar.musicBrowse(id, ''), name); };
+      return { node, focus: () => q.focus(), query: (text) => { q.value = text; clearTimeout(t); run(); }, artist, page };
     }
 
     function lyricsBlock() {
@@ -2115,11 +2135,21 @@ tool({
     }
 
     // открыть «Поиск» с готовым запросом (клик по имени артиста под обложкой)
+    // артист: если у трека есть ссылка на его страницу — открываем её сразу, иначе ищем по имени
+    const openArtist = (name) => {
+      const norm = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').trim();
+      const a = ((MU.st && MU.st.artists) || []).find((x) => norm(x.name) === norm(name));
+      if (!a) return openSearchFor(name);
+      const idx = ML.cols.findIndex((c) => c.includes('search'));
+      if (idx < 0) return;
+      ML.active[idx] = 'search'; saveML(); render();
+      setTimeout(() => blocks.search && blocks.search.page(a.name, a.id), 30);
+    };
     const openSearchFor = (text) => {
       const idx = ML.cols.findIndex((c) => c.includes('search'));
       if (idx < 0 || !text) return;
       ML.active[idx] = 'search'; saveML(); render();
-      setTimeout(() => blocks.search && blocks.search.query(text), 30);
+      setTimeout(() => blocks.search && blocks.search.artist(text), 30);
     };
     const MAKERS = { player: playerBlock, queue: queueBlock, library: libraryBlock, search: searchBlock, lyrics: lyricsBlock };
 
@@ -2628,7 +2658,7 @@ const srchTyping = () => document.activeElement === srchInput;
 const Game = { on: false, corner: 'tr', show: {}, st: {}, rect: null, W: 0, H: 0, busy: false, chain: Promise.resolve() };
 const hudEl = h('div', { class: 'hud', 'aria-hidden': 'true' });
 island.append(hudEl);
-const HUD_M = 14, HUD_H = 34;
+const HUD_M = 0, HUD_H = 34; // плашка прилегает к краям экрана, как сам нотч
 const hudVal = (v, suf, w) => `<b class="hud-v" style="min-width:${w}ch">${v == null ? '—' : v + suf}</b>`;
 function hudHtml() {
   const s = Game.st || {}, sh = Game.show || {}, out = [];
@@ -2646,25 +2676,40 @@ function hudHtml() {
   if (sh.clock) out.push(`<span class="hud-it hud-clock">${clockStr()}</span>`);
   return out.join('');
 }
-const cornerRect = (w, hh, c) => ({ x: c[1] === 'l' ? HUD_M : Game.W - w - HUD_M, y: c[0] === 't' ? HUD_M : Game.H - hh - HUD_M, w, h: hh });
+const cornerRect = (w, hh, c) => (c === 'tc'
+  ? { x: (Game.W - w) / 2, y: 0, w, h: hh } // «на месте»: сверху по центру, форма выреза
+  : { x: c[1] === 'l' ? HUD_M : Game.W - w - HUD_M, y: c[0] === 't' ? HUD_M : Game.H - hh - HUD_M, w, h: hh });
+// Форма по положению: прилегает к краям, скруглён только угол, обращённый внутрь экрана.
+// 'pill' / 'tc' — вырез сверху (скруглены оба нижних угла).
+function edgeRadius(c) {
+  const r = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14) + 'px';
+  return { pill: `0 0 ${r} ${r}`, tc: `0 0 ${r} ${r}`, tl: `0 0 ${r} 0`, tr: `0 0 0 ${r}`, bl: `0 ${r} 0 0`, br: `${r} 0 0 0` }[c] || r;
+}
+// прозрачность плашки после посадки (в полёте — непрозрачная)
+function applyFade(on) {
+  island.style.borderRadius = edgeRadius(Game.corner);
+  const o = on ? 1 - (Game.fade || 0) / 100 : 1;
+  island.animate([{ opacity: getComputedStyle(island).opacity }, { opacity: o }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
+}
 function setIslandRect(r) {
   island.style.transform = `translate(${r.x}px, ${r.y}px)`;
   island.style.width = r.w + 'px'; island.style.height = r.h + 'px';
 }
 const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
 // Перелёт: нотч чуть «отрывается» от края, плывёт по дуге и мягко садится; форма — от выреза к плашке.
-function fly(from, to, { fromPill = false, toPill = false } = {}) {
+function fly(from, to, fromC, toC) {
   const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14;
-  const rad = (pill) => (pill ? `0px 0px ${r}px ${r}px` : `${r}px`);
   const lerp = (a, b, t) => a + (b - a) * t;
-  const lift = fromPill || toPill ? 18 : 10;
-  const at = (t, dy, sc) => ({ offset: t, transform: `translate(${lerp(from.x, to.x, t)}px, ${lerp(from.y, to.y, t) + dy}px) scale(${sc})`,
+  // «отрыв» от кромки: от верхней — вниз, от нижней — вверх, от боковой — внутрь экрана
+  const off = (c) => ({ dx: c === 'tl' || c === 'bl' ? 18 : c === 'tr' || c === 'br' ? -18 : 0, dy: c && c[0] === 'b' ? -18 : 18 });
+  const o1 = off(fromC), o2 = off(toC);
+  const at = (t, o, sc) => ({ offset: t, transform: `translate(${lerp(from.x, to.x, t) + o.dx}px, ${lerp(from.y, to.y, t) + o.dy}px) scale(${sc})`,
     width: lerp(from.w, to.w, t) + 'px', height: lerp(from.h, to.h, t) + 'px', borderRadius: `${r}px` });
   const kf = [
-    { offset: 0, transform: `translate(${from.x}px, ${from.y}px) scale(1)`, width: from.w + 'px', height: from.h + 'px', borderRadius: rad(fromPill) },
-    at(0.22, fromPill ? lift : 0, 0.95),
-    at(0.7, toPill ? lift : 0, 0.98),
-    { offset: 1, transform: `translate(${to.x}px, ${to.y}px) scale(1)`, width: to.w + 'px', height: to.h + 'px', borderRadius: rad(toPill) },
+    { offset: 0, transform: `translate(${from.x}px, ${from.y}px) scale(1)`, width: from.w + 'px', height: from.h + 'px', borderRadius: edgeRadius(fromC) },
+    at(0.22, o1, 0.95),
+    at(0.72, o2, 0.98),
+    { offset: 1, transform: `translate(${to.x}px, ${to.y}px) scale(1)`, width: to.w + 'px', height: to.h + 'px', borderRadius: edgeRadius(toC) },
   ];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const a = island.animate(kf, { duration: reduce ? 1 : 950, easing: 'cubic-bezier(.65, 0, .25, 1)', fill: 'forwards' });
@@ -2672,7 +2717,7 @@ function fly(from, to, { fromPill = false, toPill = false } = {}) {
 }
 async function gameEnter(m) {
   if (Game.on) return;
-  Game.on = true; Game.busy = true; Game.corner = m.corner; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
+  Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
   if (state === 'open') { pinned = false; collapse(true); }
   clearTimeout(shrinkT); winFull = true;
   island.classList.remove('peek', 'idle', 'dim');
@@ -2685,30 +2730,39 @@ async function gameEnter(m) {
   setIslandRect(from);
   barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
   hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, delay: 480, fill: 'both' });
-  const a = await fly(from, to, { fromPill: true });
+  const a = await fly(from, to, 'pill', Game.corner);
+  island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(to); a.cancel();
   Game.rect = to;
   await bar.gameDock(to);
   await nextFrame();
   setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  applyFade(true);
   Game.busy = false;
 }
-async function gameMove(to) {
+async function gameMove(to, fromCorner) {
   Game.busy = true;
   const from = Game.rect;
+  island.getAnimations().forEach((x) => x.cancel());
+  island.classList.remove('game-tc');
   setIslandRect(from);
   await bar.gameStage(); await nextFrame();
-  const a = await fly(from, to);
+  const a = await fly(from, to, fromCorner, Game.corner);
+  island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(to); a.cancel();
   Game.rect = to;
   await bar.gameDock(to); await nextFrame();
   setIslandRect({ x: 0, y: 0, w: to.w, h: to.h });
+  applyFade(true);
   Game.busy = false;
 }
 async function gameExit(m) {
   if (!Game.on) return;
   Game.busy = true;
   const from = Game.rect || cornerRect(200, HUD_H, Game.corner);
+  const wasTc = Game.corner === 'tc';
+  island.getAnimations().forEach((x) => x.cancel()); // снять прозрачность
+  island.classList.remove('game-tc');
   setIslandRect(from);
   await bar.gameStage(); await nextFrame();
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
@@ -2717,10 +2771,10 @@ async function gameExit(m) {
   hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' });
   barEl.getAnimations().forEach((x) => x.cancel());
   barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, delay: 640, fill: 'both' });
-  const a = await fly(from, to, { toPill: true });
+  const a = await fly(from, to, Game.corner, 'pill');
   Game.on = false; Game.rect = null; Game.busy = false;
   island.classList.remove('game');
-  island.style.transform = ''; island.style.width = ''; island.style.height = '';
+  island.style.transform = ''; island.style.width = ''; island.style.height = ''; island.style.borderRadius = '';
   a.cancel();
   hudEl.getAnimations().forEach((x) => x.cancel()); barEl.getAnimations().forEach((x) => x.cancel());
   hudEl.innerHTML = hudEl._h = '';
@@ -2749,8 +2803,9 @@ bar.onGame((m) => {
         Game.show = m.show || Game.show; Game.W = m.w || Game.W; Game.H = m.h || Game.H;
         hudEl.innerHTML = hudEl._h = hudHtml();
         const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, m.corner);
-        if (m.corner !== Game.corner) { Game.corner = m.corner; await gameMove(to); }
-        else { Game.rect = to; setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }); bar.gameDock(to); }
+        Game.fade = m.fade || 0;
+        if (m.corner !== Game.corner) { const old = Game.corner; Game.corner = m.corner; await gameMove(to, old); }
+        else { Game.rect = to; setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }); bar.gameDock(to); applyFade(true); }
       }
     } catch (e) { console.warn('game', e); Game.busy = false; }
   });

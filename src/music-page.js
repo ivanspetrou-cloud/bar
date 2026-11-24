@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.2.9';
+  const BAR_PAGE_V = '0.3.0';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -13,17 +13,30 @@
   const ctlBtn = (re) => { const b = BAR(); return b ? [...b.querySelectorAll('button, tp-yt-paper-icon-button')].find((x) => re.test((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || ''))) : null; };
   const RE_REPEAT = /повтор|repeat/i, RE_SHUFFLE = /перемеш|shuffle/i;
   // отметка «нравится» текущего трека — из данных трека (запрос next), кешируется по ID
-  const likeCache = { id: '', status: '', loading: '' };
+  const likeCache = { id: '', status: '', loading: '', artists: [] };
   function findLike(o, id, depth = 0) {
     if (!o || typeof o !== 'object' || depth > 30) return null;
     if (o.likeButtonRenderer && o.likeButtonRenderer.likeStatus && (!o.likeButtonRenderer.target || o.likeButtonRenderer.target.videoId === id)) return o.likeButtonRenderer.likeStatus;
     for (const k in o) { const r = findLike(o[k], id, depth + 1); if (r) return r; }
     return null;
   }
+  // артисты трека со ссылками на их страницы: из строки «исполнитель • альбом • год» в данных трека
+  function findArtists(o, id, depth = 0) {
+    if (!o || typeof o !== 'object' || depth > 40) return null;
+    const v = o.playlistPanelVideoRenderer;
+    if (v && v.videoId === id) {
+      const runs = (v.longBylineText && v.longBylineText.runs) || (v.shortBylineText && v.shortBylineText.runs) || [];
+      return runs.filter((r) => { const b = r.navigationEndpoint && r.navigationEndpoint.browseEndpoint; const c = b && b.browseEndpointContextSupportedConfigs;
+        return b && /^UC/.test(b.browseId) && (!c || !c.browseEndpointContextMusicConfig || c.browseEndpointContextMusicConfig.pageType === 'MUSIC_PAGE_TYPE_ARTIST'); })
+        .map((r) => ({ name: r.text, id: r.navigationEndpoint.browseEndpoint.browseId }));
+    }
+    for (const k in o) { const r = findArtists(o[k], id, depth + 1); if (r) return r; }
+    return null;
+  }
   function loadLike(id) {
     if (!id || likeCache.loading === id || likeCache.id === id) return;
     likeCache.loading = id;
-    api('next', { videoId: id }).then((r) => { if (likeCache.loading === id) { likeCache.id = id; likeCache.status = findLike(r, id) || 'INDIFFERENT'; } })
+    api('next', { videoId: id }).then((r) => { if (likeCache.loading === id) { likeCache.id = id; likeCache.status = findLike(r, id) || 'INDIFFERENT'; likeCache.artists = findArtists(r, id) || []; } })
       .catch(() => {}).finally(() => { if (likeCache.loading === id) likeCache.loading = ''; });
   }
   async function rate(kind) {
@@ -199,6 +212,7 @@
       art: big(art), state: p.getPlayerState(), time: p.getCurrentTime() || 0, duration: p.getDuration() || 0,
       volume: p.getVolume(), muted: p.isMuted(), like: likeState(),
       repeat: repeatState(),
+      artists: likeCache.id === vd.video_id ? likeCache.artists : [],
       shuffle: (() => { const sb = ctlBtn(RE_SHUFFLE); return sb ? sb.getAttribute('aria-pressed') === 'true' : !!(b && b.querySelector('.shuffle.style-default-active')); })(),
     };
   }

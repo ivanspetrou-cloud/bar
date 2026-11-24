@@ -713,8 +713,8 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .mu-artist-link:hover, .mu-artist-link:focus-visible { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; outline: none; }
 
 /* ---------- игровой режим: плашка в углу ---------- */
-#island.game { left: 0; top: 0; transition: none !important; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 90%, transparent);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .35), 0 0 0 1px var(--line); }
+/* плашка прилегает к краям экрана — без тени и обводки, как сам нотч */
+#island.game { left: 0; top: 0; transition: none !important; background: var(--bg); box-shadow: none; }
 #island.game .content { display: none; }
 #island.game .bar { pointer-events: none; }
 #island.game.dim .bar { opacity: 1; }
@@ -730,11 +730,11 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .hud-clock { color: var(--fg-2); }
 
 /* ---------- настройки → Игры ---------- */
-.g-card { gap: 10px; }
+.g-card { gap: 10px; flex: none; }
 .g-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .g-chips .qt { flex: none; }
 .g-ign.off { color: var(--mut); text-decoration: line-through; }
-.g-screen { position: relative; width: 168px; height: 96px; flex: none; border-radius: 10px; border: 1.5px solid var(--ctl-hi);
+.g-screen { position: relative; width: 150px; height: 84px; flex: none; border-radius: 10px; border: 1.5px solid var(--ctl-hi);
   background: linear-gradient(160deg, var(--card-hi), var(--bg)); }
 .g-dot { position: absolute; width: 34px; height: 14px; border: 0; border-radius: 7px; background: var(--ctl-hi); cursor: pointer;
   transition: background .15s, transform .2s var(--spring); }
@@ -743,3 +743,12 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .g-dot.tl { left: 8px; top: 8px; } .g-dot.tr { right: 8px; top: 8px; } .g-dot.bl { left: 8px; bottom: 8px; } .g-dot.br { right: 8px; bottom: 8px; }
 .g-screen-lbl { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; }
 .mic-sel { width: min(100%, 300px); min-height: 32px; padding: 4px 10px; background: var(--ctl); border-color: transparent; font-size: var(--fs-cap); }
+
+/* «на месте»: плашка остаётся вырезом сверху по центру */
+#island.game.game-tc { border-radius: 0 0 var(--r) var(--r); box-shadow: none; }
+.g-dot.tc { left: 50%; top: 0; width: 48px; height: 12px; margin-left: -24px; border-radius: 0 0 7px 7px; }
+.g-place { display: flex; gap: var(--in); align-items: stretch; }
+.g-place-side { gap: 6px; flex: 1; min-width: 0; justify-content: center; }
+.g-place-side .seg { align-self: stretch; display: flex; }
+.g-place-side .seg button { flex: 1; padding: 0 6px; height: 28px; font-size: var(--fs-cap); }
+.g-place-side .btn { align-self: stretch; justify-content: center; }

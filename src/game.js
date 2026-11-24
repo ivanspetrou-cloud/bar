@@ -17,7 +17,7 @@ const NOT_GAMES = /\\(msedge|chrome|firefox|opera|brave|vivaldi|yandex|browser|v
 
 module.exports = function setupGame({ getWin, send, settings, saveSettings, sensors, win: winCtl, getStats }) {
   const G = settings.game = Object.assign({
-    auto: true, corner: 'tr',
+    auto: true, corner: 'tr', fade: 0, // corner: tl / tr / bl / br или tc — «на месте», сверху по центру; fade — прозрачность плашки, %
     show: { fps: true, cpu: true, gpu: true, ram: true, ping: true, clock: true },
     ignore: [], seen: [],
   }, settings.game || {});
@@ -68,7 +68,7 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
       saveSettings();
     }
     winCtl.stage(g.mon);
-    send('game', { phase: 'enter', corner: G.corner, show: G.show, name: g.name, w: g.mon.width, h: g.mon.height });
+    send('game', { phase: 'enter', corner: G.corner, fade: G.fade, show: G.show, name: g.name, w: g.mon.width, h: g.mon.height });
     startStats(g);
   }
   function exit(after) {
@@ -162,11 +162,13 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   ipcMain.on('game-exit-done', () => { winCtl.pill(); const f = exitDone; exitDone = null; if (f) f(); });
   ipcMain.handle('game-get', async () => ({ ...G, active: active ? { name: active.name, manual: !!active.manual } : null, presentmon: !!presentMonPath(), perm: await fpsPermission() }));
   ipcMain.handle('game-set', (_e, patch) => {
-    for (const k of ['auto', 'corner']) if (k in patch) G[k] = patch[k];
+    for (const k of ['auto', 'corner', 'fade']) if (k in patch) G[k] = patch[k];
+    if (!['tl', 'tr', 'bl', 'br', 'tc'].includes(G.corner)) G.corner = 'tr';
+    G.fade = [0, 40, 60].includes(+G.fade) ? +G.fade : 0;
     if (patch.show) G.show = Object.assign(G.show, patch.show);
     if (Array.isArray(patch.ignore)) G.ignore = patch.ignore.filter((x) => typeof x === 'string').slice(0, 50);
     saveSettings();
-    if (active) { send('game', { phase: 'update', corner: G.corner, show: G.show, w: active.mon.width, h: active.mon.height }); }
+    if (active) { send('game', { phase: 'update', corner: G.corner, fade: G.fade, show: G.show, w: active.mon.width, h: active.mon.height }); }
     return true;
   });
   ipcMain.handle('game-preview', () => {
