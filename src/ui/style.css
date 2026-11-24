@@ -199,6 +199,8 @@ textarea.field { flex: 1; min-height: 0; }
 .list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 0; flex: 1; padding-right: 4px; }
 .list::-webkit-scrollbar { width: 6px; }
 .list::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
+.settings::-webkit-scrollbar { width: 6px; }
+.settings::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
 .item {
   display: flex; align-items: center; gap: var(--gap); background: var(--card); border-radius: var(--r-ctl);
   min-height: var(--h-ctl); padding: 4px 6px 4px var(--in); cursor: pointer; transition: background .15s; flex: none;
@@ -325,6 +327,7 @@ kbd.k { font: 600 var(--fs-cap) var(--font); background: var(--ctl); border-radi
 .swatch-btn.on { outline: 2px solid var(--fg); outline-offset: 2px; }
 .swatch-btn.custom { background: conic-gradient(#ff4d61, #ffb020, #d7ff3e, #3ee8b5, #4cc9ff, #6c5cff, #e5468f, #ff4d61); overflow: hidden; }
 .swatch-btn.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.settings { overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
 .settings .sw { min-height: 40px; }
 .settings .col { gap: 4px; }
 .file-ico { width: 24px; height: 24px; display: grid; place-items: center; color: var(--mut); flex: none; }
@@ -984,3 +987,13 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .home-handle.on .chev { transform: rotate(-90deg); }
 #home .tiles { flex: none; grid-auto-rows: 72px; transition: opacity .25s ease, transform .35s var(--soft); }
 #home:not(.tiles-open) .tiles { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+
+/* Настройки → Показатели: выбор устройств */
+.dev-pick { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.dev-pick-h { display: flex; align-items: baseline; gap: 10px; font-weight: 600; }
+.dev-pick .sw { gap: 10px; }
+.dev-pick .dev-ic { flex: none; display: grid; color: var(--mut); }
+.dev-pick .dev-ic svg.i { width: 16px; height: 16px; }
+.dev-pick .ind-lbl { flex: 1; }
+.dev-pick .dev-ic, .dev-pick .ind-lbl { transition: opacity .25s ease; }
+.dev-pick .dev-off .dev-ic, .dev-pick .dev-off .ind-lbl { opacity: .45; }
