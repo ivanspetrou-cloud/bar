@@ -45,13 +45,14 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
 
   function schedule() {
     const open = !!need.open;
-    every('layout', need.layout ? 700 : 0, poll.layout);
-    every('audio', need.audio || open ? (open ? 1500 : 4000) : 0, poll.audio);
-    every('media', need.media || open ? (open ? 1500 : 3000) : 0, poll.media);
-    every('net', need.net ? (open ? 2000 : 4000) : 0, poll.net);
+    // свёрнутый нотч опрашивает реже: раскладку — раз в 1,5 с, звук и трек — раз в 5–6 с
+    every('layout', need.layout ? (open ? 700 : 1500) : 0, poll.layout);
+    every('audio', need.audio || open ? (open ? 1500 : 6000) : 0, poll.audio);
+    every('media', need.media || open ? (open ? 1500 : 5000) : 0, poll.media);
+    every('net', need.net ? (open ? 2000 : 8000) : 0, poll.net);
     every('hid', need.bt || open ? 60000 : 0, poll.hid);
     every('bt', need.bt || open ? 120000 : 0, poll.bt);
-    every('stats', need.stats || open ? 2000 : 0, poll.stats);
+    every('stats', need.stats || open ? (open ? 2000 : 6000) : 0, poll.stats);
     // агенты PowerShell раз в 5 минут возвращают Windows неиспользуемую память (рабочий набор ~200 → ~20 МБ)
     every('trim', 5 * 60e3, trimAgents);
   }

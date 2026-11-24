@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.2.1';
+  const BAR_PAGE_V = '0.2.2';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -167,9 +167,13 @@
     const id = r.videoId || (r.navigationEndpoint && r.navigationEndpoint.watchEndpoint && r.navigationEndpoint.watchEndpoint.videoId);
     return id ? 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg' : '';
   }
+  // Все строки очереди по порядку: сначала добавленные вами, затем автоподборка (Automix) —
+  // она лежит на странице отдельным блоком, и без неё «следующих» треков не видно.
+  const qItems = () => [...document.querySelectorAll('ytmusic-player-queue ytmusic-player-queue-item')];
   function queue() {
-    return [...document.querySelectorAll('ytmusic-player-queue #contents > ytmusic-player-queue-item, ytmusic-player-queue #contents ytmusic-player-queue-item')]
-      .slice(0, 80).map((el, i) => ({
+    return qItems()
+      .slice(0, 120).map((el, i) => ({
+        auto: !!el.closest('#automix-contents'),
         i, title: (el.querySelector('.song-title') || {}).textContent || '', subtitle: ((el.querySelector('.byline') || {}).textContent || '').trim(),
         duration: ((el.querySelector('.duration') || {}).textContent || '').trim(), thumb: qThumb(el),
         current: el.hasAttribute('selected') || el.getAttribute('play-button-state') === 'playing' || el.getAttribute('play-button-state') === 'paused',
@@ -197,7 +201,7 @@
     shuffle() { return click('.shuffle'); },
     repeat() { return click('.repeat'); },
     playQueue(i) {
-      const el = document.querySelectorAll('ytmusic-player-queue #contents ytmusic-player-queue-item')[i];
+      const el = qItems()[i];
       if (!el) return false;
       const btn = el.querySelector('ytmusic-play-button-renderer') || el;
       btn.click(); return true;

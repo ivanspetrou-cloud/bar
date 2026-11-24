@@ -29,6 +29,7 @@ const setupSensors = require('./sensors');
 const setupUpdater = require('./updater');
 const setupMusic = require('./music'); // регистрирует схему barimg:// — до готовности приложения
 
+if (process.env.BAR_NOGPU) app.disableHardwareAcceleration(); // только для замеров
 const WIN_W = 820;   // окно чуть больше раскрытой панели — место под тень
 const WIN_H = 700;
 
@@ -62,15 +63,21 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 const send = (ch, payload) => win && !win.isDestroyed() && win.webContents.send(ch, payload);
 
 // ---------- окно нотча ----------
+// Свёрнутый нотч живёт в маленьком окне: каждый кадр (столбики «играет», часы) перекладывает
+// и смешивает с рабочим столом всё прозрачное окно, так что 700×44 вместо 820×700 — в разы дешевле.
+// Перед раскрытием окно мгновенно возвращает полный размер.
+const PILL_W = 700, PILL_H = 44;
+let winMode = 'pill';
 function placeWindow() {
   const d = screen.getPrimaryDisplay();
-  win.setBounds({
-    x: Math.round(d.bounds.x + (d.bounds.width - WIN_W) / 2),
-    y: d.bounds.y,
-    width: WIN_W,
-    height: WIN_H,
-  });
+  const w = winMode === 'full' ? WIN_W : PILL_W, h = winMode === 'full' ? WIN_H : PILL_H;
+  win.setBounds({ x: Math.round(d.bounds.x + (d.bounds.width - w) / 2), y: d.bounds.y, width: w, height: h });
 }
+ipcMain.handle('win-size', (_e, mode) => {
+  mode = mode === 'full' ? 'full' : 'pill';
+  if (win && mode !== winMode) { winMode = mode; placeWindow(); }
+  return winMode;
+});
 
 function createWindow() {
   win = new BrowserWindow({

@@ -175,7 +175,18 @@ function setInteractive(v) {
   bar.setInteractive(v);
 }
 
+// размер окна: маленькое, пока нотч свёрнут (см. main.js → win-size)
+let winFull = false, shrinkT = 0;
+function growWin() { clearTimeout(shrinkT); if (winFull) return Promise.resolve(); winFull = true; return bar.winSize('full'); }
+function shrinkWinSoon(ms = 600) {
+  clearTimeout(shrinkT);
+  shrinkT = setTimeout(() => {
+    if (state === 'open' || island.classList.contains('peek') || island.matches(':hover')) return;
+    winFull = false; bar.winSize('pill');
+  }, ms);
+}
 function expand(opts = {}) {
+  if (!winFull) { growWin().then(() => expand(opts)); return; }
   clearTimeout(leaveT); clearTimeout(enterT); clearTimeout(autoT);
   if (opts.auto) {
     // открыт программно (результат OCR и т.п.) — если мышь так и не пришла, свернуться
@@ -189,6 +200,7 @@ function expand(opts = {}) {
   setInteractive(true);
   if (!current) renderHome();
   renderBar();
+  schedTick();
   openHooks.forEach((f) => f(true));
 }
 
@@ -205,6 +217,9 @@ function collapse(force) {
   setTimeout(() => { if (state !== 'open' && current && !TOOLS_BY_ID[current].sticky?.()) goHome(); }, 450);
   renderBar();
   oledArmDim();
+  wakeLive();
+  schedTick();
+  shrinkWinSoon(650); // после анимации сворачивания
 }
 
 // смена содержимого шапки (таблетка ↔ раскрытая) — плавным проявлением, без мгновенной подмены
@@ -236,9 +251,23 @@ function oledArmDim() {
   if (!Oled.on || state === 'open') return;
   Oled.dimT = setTimeout(() => { if (state !== 'open' && !island.matches(':hover')) island.classList.add('dim'); }, 15000);
 }
+// Столбики «играет»: двигаются, пока играет музыка, но всего 5 кадров в секунду и только когда
+// столбики есть на экране. Между кадрами страница ничего не рисует (CSS-анимация рисовала бы 60 раз в секунду).
+function wakeLive() {}
+const EQ_PATTERN = [[.4, .9, .6], [.7, .5, 1], [1, .7, .4], [.6, 1, .8], [.3, .6, .9], [.8, .4, .6], [.5, .8, .3], [.9, .6, .7]];
+let eqStep = 0;
+setInterval(() => {
+  const bars = document.querySelectorAll('span.eq');
+  if (!bars.length || document.hidden) return;
+  if (S.media && !S.media.playing) return;
+  const f = EQ_PATTERN[eqStep = (eqStep + 1) % EQ_PATTERN.length];
+  for (const b of bars) { const is = b.children; for (let i = 0; i < is.length; i++) is[i].style.transform = 'scaleY(' + f[i % 3] + ')'; }
+}, 200);
 function setOled(on) { Oled.on = !!on; store.set('oled', Oled.on); oledApply(); }
 
 function hoverIn() {
+  wakeLive();
+  growWin();
   clearTimeout(leaveT);
   clearTimeout(Oled.dimT);
   island.classList.remove('dim');
@@ -254,6 +283,7 @@ function hoverOut(e) {
   clearTimeout(enterT);
   island.classList.remove('peek');
   oledArmDim();
+  if (state !== 'open') shrinkWinSoon(500);
   setInteractive(false); // прозрачные поля окна не должны перехватывать клики
   if (state !== 'open' || pinned || srchTyping()) return;
   const ae = document.activeElement;
@@ -311,10 +341,11 @@ island.addEventListener('drop', (e) => {
 // ============ «живые активности» в свёрнутом нотче ============
 const acts = new Map();
 const ACT_ORDER = ['flash', 'rec', 'busy', 'timer', 'stopwatch', 'media', 'bridge'];
-function setAct(id, a) { if (a) acts.set(id, a); else acts.delete(id); renderBar(); }
+function setAct(id, a) { const had = acts.has(id); if (a) acts.set(id, a); else acts.delete(id); renderBar(); if (had !== !!a && typeof schedTick === 'function') schedTick(); }
 function topAct(skip) { for (const id of ACT_ORDER) if (id !== skip && acts.has(id)) return acts.get(id); return null; }
 function flash(text, ms = 1800) {
   oledArmDim(); // событие — нотч снова на полной яркости
+  wakeLive();
   setAct('flash', { html: () => `<span class="dot"></span><span>${esc(text)}</span>` });
   clearTimeout(flash.t);
   flash.t = setTimeout(() => setAct('flash', null), ms);
@@ -390,6 +421,7 @@ function syncMedia() {
     if (src) fetch(src).then((r) => r.blob()).then((b) => { if (artSrc === src) { artUrl = URL.createObjectURL(b); renderBar(); liveHooks.forEach((f) => f({ media: S.media })); } }).catch(() => {});
   }
   const show = indOn('media') && m && m.playing && m.title;
+  if (show && m.title !== syncMedia.last) { syncMedia.last = m.title; wakeLive(); } // новый трек — эквалайзер оживает
   setAct('media', show ? { html: () => `${artUrl ? `<img class="art-mini" src="${artUrl}" alt="">` : icon('music')}<span class="eq"><i></i><i></i><i></i></span><span class="trk">${esc(m.title)}</span>` } : null);
 }
 
@@ -510,11 +542,17 @@ async function pickLayout() {
 
 // единый «тик» раз в секунду, выровненный по границе секунды
 const tickers = new Set();
-(function tick() {
-  renderBar();
-  tickers.forEach((f) => f());
-  setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
-})();
+// Раз в секунду — только пока панель открыта или идёт таймер / секундомер / запись.
+// Свёрнутый нотч без таких активностей обновляется раз в минуту: часы показывают только минуты.
+let tickT = 0;
+const needFastTick = () => state === 'open' || ['timer', 'stopwatch', 'rec', 'busy'].some((k) => acts.has(k));
+function schedTick() {
+  clearTimeout(tickT);
+  const now = Date.now();
+  tickT = setTimeout(tick, needFastTick() ? 1000 - (now % 1000) + 5 : 60000 - (now % 60000) + 20);
+}
+function tick() { renderBar(); tickers.forEach((f) => f()); schedTick(); }
+tick();
 
 // ============ навигация ============
 const homeEl = $('#home');
@@ -1818,7 +1856,7 @@ tool({
       const node = h('div', { class: 'mu-player' },
         h('div', { class: 'mu-cover' }, art, ph),
         h('div', { class: 'mu-info' },
-          h('div', { class: 'mu-meta-row' }, dislike, h('div', { class: 'mu-meta' }, title, artist), like),
+          h('div', { class: 'mu-meta-row' }, like, h('div', { class: 'mu-meta' }, title, artist), dislike),
           h('div', { class: 'mu-progress' }, seek, h('div', { class: 'mu-times muted' }, t1, h('span', { class: 'mu-jumps' }, back10, fwd10), t2)),
           h('div', { class: 'mu-ctl' }, shuffle, prevB, play, nextB, repeat),
           h('div', { class: 'mu-extra' }, h('span', { class: 'mu-vol-ic', html: icon('voldown') }), vol, h('span', { class: 'mu-vol-ic', html: icon('volup') }))));
@@ -1881,8 +1919,15 @@ tool({
         const q = await bar.musicQueue().catch(() => []);
         busy = false;
         if (!q || !q.length) { list.replaceChildren(h('div', { class: 'empty' }, 'Очередь пуста.\nВключите трек, альбом или плейлист.')); return; }
-        list.replaceChildren(...q.map((x) => rowEl(x, () => { mcmd('playQueue', x.i); setTimeout(load, 900); }, x.current)));
-        const cur = list.querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+        const rows = [];
+        q.forEach((x, k) => {
+          // автоподборка YouTube Music — отдельным заголовком, как в самом плеере
+          if (x.auto && !(k && q[k - 1].auto)) rows.push(h('div', { class: 'mu-q-h muted small' }, 'Дальше — автоподборка'));
+          rows.push(rowEl(x, () => { mcmd('playQueue', x.i); setTimeout(load, 900); }, x.current));
+        });
+        list.replaceChildren(...rows);
+        // текущий трек — ближе к верху, чтобы были видны следующие
+        const cur = list.querySelector('.cur'); if (cur) list.scrollTop = Math.max(0, cur.offsetTop - list.offsetTop - 56);
       }
       load();
       const iv = setInterval(() => { if (!list.closest('[hidden]')) load(); }, 4000);
@@ -2216,7 +2261,7 @@ function soundCard() {
       chip(a && a.micMuted ? 'Микр. выкл.' : 'Микрофон', a && a.micMuted ? 'micoff' : 'mic', a && a.micMuted, () => a && a.mic && bar.audioSet({ mic: !a.micMuted }), 'Выключить / включить микрофон для всех программ'),
       chip('Не спать', 'coffee', Toggles.awake, async () => { Toggles.awake = await bar.keepAwake(!Toggles.awake); draw(); renderBar(); }, 'Экран не гаснет и компьютер не засыпает'),
       chip('Тема', winLight ? 'sun' : 'moon', false, async () => { if (winLight === null) return; winLight = await bar.winTheme(!winLight); draw(); }, 'Тема Windows: светлая / тёмная'),
-      chip('Панель', 'taskbar', !!tbHide, async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); }, tbHide ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows'));
+      chip(tbHide ? 'Панель скрыта' : 'Скрыть панель', 'taskbar', !!tbHide, async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); }, tbHide ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows'));
   };
   card.append(h('h4', {}, 'Звук и система'), h('div', { class: 'vol-row' }, muteBtn, slider, val), chips);
   draw();
@@ -2508,3 +2553,4 @@ renderHome();
 renderBar();
 pushNeed();
 oledApply();
+wakeLive(); // и сразу после запуска свёрнутый нотч через 8 с успокаивается

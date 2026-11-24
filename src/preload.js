@@ -5,6 +5,7 @@ const on = (ch) => (cb) => ipcRenderer.on(ch, (_e, v) => cb(v));
 contextBridge.exposeInMainWorld('bar', {
   setInteractive: (v) => ipcRenderer.send('interactive', !!v),
   focus: () => ipcRenderer.send('focus'),
+  winSize: (mode) => ipcRenderer.invoke('win-size', mode),
   capture: (mode) => ipcRenderer.invoke('capture', mode),
   media: (k) => ipcRenderer.send('media', k),
   stats: () => ipcRenderer.invoke('stats'),

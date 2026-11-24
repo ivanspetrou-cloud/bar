@@ -349,10 +349,8 @@ kbd.k { font: 600 var(--fs-cap) var(--font); background: var(--ctl); border-radi
 .bar .act { display: flex; align-items: center; gap: var(--gap); }
 .art-mini { width: 18px; height: 18px; border-radius: 4px; object-fit: cover; flex: none; }
 span.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; flex: none; }
-/* эквалайзер: transform вместо height (без перерисовки страницы) и ступенями ~12 кадров/с вместо 60 — в прозрачном окне каждый кадр дорогой */
-span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1px; transform-origin: 50% 100%; transform: scaleY(.25); animation: eq .9s steps(6, jump-none) infinite; }
-span.eq i:nth-child(2) { animation-delay: -.3s; }
-span.eq i:nth-child(3) { animation-delay: -.6s; }
+span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1px; transform-origin: 50% 100%; transform: scaleY(.4); }
+/* анимацию столбиков ведёт таймер в app.js (5 кадров/с): CSS-анимация крутила бы отрисовку 60 раз в секунду */
 @keyframes eq { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
 .trk { max-width: 180px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 
@@ -680,7 +678,10 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 
 /* ---------- правки после дизайн-ревью ---------- */
 /* плеер: «не нравится» · название · «нравится» — оценка рядом с тем, что оцениваем */
-.mu-meta-row { display: flex; align-items: center; gap: 6px; width: min(100%, 240px, calc(var(--mu-h, 520px) - 246px)); } /* по краям обложки */
+/* строка ровно под обложкой и той же ширины; значки — точно по её краям (кнопка 28 px, значок 16 px → −6 px) */
+.mu-meta-row { display: flex; align-items: center; gap: 8px; width: min(100%, 240px, calc(var(--mu-h, 520px) - 246px)); margin: 0 auto; align-self: center; }
+.mu-meta-row > .ib:first-child { margin-left: -6px; }
+.mu-meta-row > .ib:last-child { margin-right: -6px; }
 .mu-meta-row .mu-meta { flex: 1; }
 .mu-meta-row .ib { flex: none; transition: transform .15s ease-out, color .15s; }
 .mu-meta-row .ib:hover { transform: scale(1.08); }
@@ -699,3 +700,5 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .mu-card-img { position: relative; display: grid; }
 .mu-card-ph { display: grid; place-items: center; width: 100%; height: 100%; color: var(--mut); background: linear-gradient(135deg, var(--ctl), var(--ctl-hi)); }
 .mu-card-ph svg.i { width: 32px; height: 32px; }
+
+.mu-q-h { flex: none; padding: 10px 6px 2px; }
