@@ -13,7 +13,7 @@ const { spawn, execFile } = require('child_process');
 const Agent = require('./agent-host');
 
 // Программы на весь экран, которые не игры
-const NOT_GAMES = /\\(msedge|chrome|firefox|opera|brave|vivaldi|yandex|browser|vlc|mpc-hc64|mpc-hc|mpc-be64|potplayermini64|potplayer|mpv|wmplayer|explorer|applicationframehost|powerpnt|teams|ms-teams|zoom|obs64|obs32|discord|telegram|slack|code|devenv|idea64|photoshop|lightroom|resolve|premiere|afterfx|mspaint|snippingtool|screenclippinghost|searchhost|shellexperiencehost|startmenuexperiencehost|lockapp|textinputhost|systemsettings|electron|bar)\.exe$/i;
+const NOT_GAMES = /\\(msedge|chrome|firefox|opera|brave|vivaldi|yandex|browser|vlc|mpc-hc64|mpc-hc|mpc-be64|potplayermini64|potplayer|mpv|wmplayer|explorer|applicationframehost|powerpnt|teams|ms-teams|zoom|obs64|obs32|discord|telegram|slack|code|devenv|idea64|photoshop|lightroom|resolve|premiere|afterfx|mspaint|snippingtool|screenclippinghost|searchhost|shellexperiencehost|startmenuexperiencehost|lockapp|textinputhost|systemsettings|electron|bar|bar lab|claude|thunderbird|outlook|olk|notion|obsidian|spotify|whatsapp|winword|excel|onenote|figma|cursor|windowsterminal|wt|taskmgr)\.exe$/i;
 
 module.exports = function setupGame({ getWin, send, settings, saveSettings, sensors, win: winCtl, getStats }) {
   const G = settings.game = Object.assign({

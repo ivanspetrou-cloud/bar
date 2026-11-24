@@ -49,9 +49,11 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 .tb-sep { width: 1px; align-self: stretch; margin: 8px 4px; background: var(--line); flex: none; }
 
 .tb-tip {
-  position: fixed; padding: 5px 10px; border-radius: var(--r-sm); background: var(--bg); color: var(--fg);
+  position: fixed; left: 0; top: 0; padding: 6px 11px; border-radius: 10px; background: var(--bg); color: var(--fg);
   font-size: var(--fs-cap); font-weight: 600; white-space: nowrap; pointer-events: none;
-  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--line);
-  opacity: 0; transform: translateY(4px) scale(.96); transition: opacity .15s, transform .2s var(--spring);
+  box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--line);
+  opacity: 0; transform: translateY(6px) scale(.92); transform-origin: 50% 100%;
+  transition: opacity .16s ease, transform .28s var(--spring), translate .16s var(--soft);
 }
 .tb-tip.on { opacity: 1; transform: none; }
+.tbi.away .tb-dots i { background: var(--mut); opacity: .45; }

@@ -138,6 +138,7 @@ namespace Bar {
     [StructLayout(LayoutKind.Sequential)] struct GRECT { public int l, t, r, b; }
     [StructLayout(LayoutKind.Sequential)] struct GMONINFO { public int cbSize; public GRECT mon; public GRECT work; public uint flags; }
     // "полноэкранное(1/0)|состояние уведомлений|exe|pid|монитор x,y,w,h (физические пиксели)"
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
     public static string GameState() {
       IntPtr h = Target();
       if (h == IntPtr.Zero) return "";
@@ -147,7 +148,8 @@ namespace Bar {
       GRECT r; GetWindowRect(h, out r);
       var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO));
       GetMonitorInfo(MonitorFromWindow(h, 2), ref mi);
-      bool full = r.l <= mi.mon.l && r.t <= mi.mon.t && r.r >= mi.mon.r && r.b >= mi.mon.b;
+      // развёрнутое окно (кнопка «развернуть») тоже вылезает за края монитора на рамку — но это не полноэкранная игра
+      bool full = !IsZoomed(h) && r.l <= mi.mon.l && r.t <= mi.mon.t && r.r >= mi.mon.r && r.b >= mi.mon.b;
       uint pid; GetWindowThreadProcessId(h, out pid);
       int q = 0; try { SHQueryUserNotificationState(out q); } catch {}
       return (full ? "1" : "0") + "|" + q + "|" + ExePath(pid) + "|" + pid + "|" + mi.mon.l + "," + mi.mon.t + "," + (mi.mon.r - mi.mon.l) + "," + (mi.mon.b - mi.mon.t);
@@ -198,7 +200,8 @@ namespace Bar {
       return list.ToArray();
     }
 
-    // Для таскбара Bar: окно|процесс|exe|свёрнуто|активно|заголовок (заголовок — последним: в нём может быть «|»)
+    // Для таскбара Bar: окно|процесс|exe|свёрнуто|активно|монитор (физ. пиксели l,t,r,b)|заголовок (заголовок — последним: в нём может быть «|»)
+    static string MonRect(IntPtr h) { var mi = new GMONINFO(); mi.cbSize = Marshal.SizeOf(typeof(GMONINFO)); if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return ""; var m = mi.mon; return m.l + "," + m.t + "," + m.r + "," + m.b; }
     public static string[] TaskWindows() {
       var list = new List<string>();
       IntPtr fg = GetForegroundWindow();
@@ -209,7 +212,7 @@ namespace Bar {
         int cloaked; if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
         uint pid; GetWindowThreadProcessId(h, out pid);
         var sb = new StringBuilder(256); GetWindowText(h, sb, 256);
-        list.Add(h.ToInt64() + "|" + pid + "|" + ExePath(pid) + "|" + (IsIconic(h) ? 1 : 0) + "|" + (h == fg ? 1 : 0) + "|" + sb.ToString().Replace((char)13, ' ').Replace((char)10, ' '));
+        list.Add(h.ToInt64() + "|" + pid + "|" + ExePath(pid) + "|" + (IsIconic(h) ? 1 : 0) + "|" + (h == fg ? 1 : 0) + "|" + MonRect(h) + "|" + sb.ToString().Replace((char)13, ' ').Replace((char)10, ' '));
         return true;
       }, IntPtr.Zero);
       return list.ToArray();

@@ -42,19 +42,21 @@ function matchUwp(fam, exe) {
 }
 const owns = (app, w) => (app.exe && lower(app.exe) === lower(w.exe)) || (app.uwp && matchUwp(app.uwp, w.exe));
 
-// модель: закреплённые (по порядку) + открытые незакреплённые (по первому появлению)
+// доки на всех мониторах одинаковые: все окна — в каждом (так проще и не путает)
+const here = () => true;
+// модель: закреплённые (на всех мониторах, по порядку) + открытые незакреплённые этого монитора
 function model() {
   const used = new Set();
   const items = pins.map((p) => {
-    const ws = wins.filter((w) => owns(p, w));
-    ws.forEach((w) => used.add(w.hwnd));
-    return { key: 'p:' + p.id, app: p, wins: ws, pinned: true };
+    const all = wins.filter((w) => owns(p, w));
+    all.forEach((w) => used.add(w.hwnd));
+    return { key: 'p:' + p.id, app: p, wins: all.filter(here), away: all.filter((w) => !here(w)), pinned: true };
   });
   const groups = new Map();
   for (const w of wins) {
-    if (used.has(w.hwnd)) continue;
+    if (used.has(w.hwnd) || !here(w)) continue;
     const k = lower(w.exe);
-    if (!groups.has(k)) groups.set(k, { key: 'w:' + k, app: { id: 'exe:' + w.exe, name: prettyName(w.exe), exe: w.exe }, wins: [], pinned: false });
+    if (!groups.has(k)) groups.set(k, { key: 'w:' + k, app: { id: 'exe:' + w.exe, name: prettyName(w.exe), exe: w.exe }, wins: [], away: [], pinned: false });
     groups.get(k).wins.push(w);
   }
   return [items, [...groups.values()]];
@@ -84,10 +86,11 @@ function itemEl(it) {
   el._it = it;
   const n = it.wins.length, active = it.wins.some((w) => w.active);
   el.classList.toggle('run', n > 0);
+  el.classList.toggle('away', n === 0 && it.away.length > 0); // открыта только на другом мониторе — бледная точка
   el.classList.toggle('active', active);
-  el.classList.toggle('launching', launching.has(it.key) && n === 0);
-  if (n > 0 && launching.has(it.key)) { clearTimeout(launching.get(it.key)); launching.delete(it.key); }
-  el.querySelector('.tb-dots').replaceChildren(...Array.from({ length: Math.min(n, 3) }, () => h('i')));
+  el.classList.toggle('launching', launching.has(it.key) && n === 0 && !it.away.length);
+  if ((n > 0 || it.away.length) && launching.has(it.key)) { clearTimeout(launching.get(it.key)); launching.delete(it.key); }
+  el.querySelector('.tb-dots').replaceChildren(...Array.from({ length: n ? Math.min(n, 3) : it.away.length ? 1 : 0 }, () => h('i')));
   el.title = '';
   return el;
 }
@@ -108,8 +111,8 @@ function fixed(id, ic, label, fn, alt) {
 function render() {
   const [pinned, running] = model();
   const want = [
-    fixed('sys:start', 'start', 'Все приложения · правый клик — «Пуск» Windows', () => bar.tbApps(), () => bar.tbStart()),
-    fixed('sys:search', 'search', 'Поиск Bar', () => bar.tbSearch()),
+    fixed('sys:start', 'start', 'Приложения', () => bar.tbApps(), () => bar.tbStart()), // правый клик — «Пуск» Windows
+    fixed('sys:search', 'search', 'Поиск', () => bar.tbSearch()),
     sep('sep1'),
     ...pinned.map(itemEl),
     running.length && pinned.length ? sep('sep2') : null,
@@ -149,6 +152,7 @@ function bounce(key) {
   render();
 }
 async function onClick(it) {
+  if (!it.wins.length && it.away.length) { bar.winFocus(it.away[0].hwnd); setTimeout(() => bar.tbRefresh(), 250); return; } // окно на другом мониторе — к нему
   if (!it.wins.length) { bar.appLaunch(it.app); bounce(it.key); return; }
   const active = it.wins.find((w) => w.active);
   if (active && it.wins.length === 1) { bar.winMin(active.hwnd); return; }
@@ -163,17 +167,18 @@ async function onClick(it) {
 async function onMenu(it) {
   menuOpen = true;
   const items = [];
-  it.wins.slice(0, 8).forEach((w, i) => items.push({ id: 'w' + i, label: (w.title || it.app.name).slice(0, 60), checked: w.active }));
-  if (it.wins.length) items.push({ sep: true });
+  const all = [...it.wins, ...it.away];
+  all.slice(0, 10).forEach((w, i) => items.push({ id: 'w' + i, label: (w.title || it.app.name).slice(0, 60) + (here(w) ? '' : '  ·  другой монитор'), checked: w.active }));
+  if (all.length) items.push({ sep: true });
   items.push({ id: 'new', label: it.wins.length ? 'Новое окно' : 'Открыть' });
   items.push({ id: 'pin', label: it.pinned ? 'Открепить' : 'Закрепить' });
-  if (it.wins.length) items.push({ sep: true }, { id: 'close', label: it.wins.length > 1 ? `Закрыть все окна (${it.wins.length})` : 'Закрыть окно' });
+  if (all.length) items.push({ sep: true }, { id: 'close', label: all.length > 1 ? `Закрыть все окна (${all.length})` : 'Закрыть окно' });
   const pick = await bar.popupMenu(items);
   menuOpen = false;
   if (!pick) return;
-  if (pick[0] === 'w' && pick !== 'new') bar.winFocus(it.wins[+pick.slice(1)].hwnd);
+  if (pick[0] === 'w' && pick !== 'new') bar.winFocus(all[+pick.slice(1)].hwnd);
   if (pick === 'new') { bar.appLaunch(it.app); bounce(it.key); }
-  if (pick === 'close') [...new Set(it.wins.map((w) => w.pid))].forEach((pid) => bar.winClose(pid));
+  if (pick === 'close') [...new Set(all.map((w) => w.pid))].forEach((pid) => bar.winClose(pid));
   if (pick === 'pin') {
     pins = store.get('dock', []) || [];
     if (it.pinned) pins = pins.filter((d) => d.id !== it.app.id);
@@ -188,27 +193,43 @@ async function onMenu(it) {
 }
 
 // ---------- подпись ----------
-function showTip(el) {
+// Как в macOS: на одной высоте над доком (не прыгает вместе с увеличением иконки), первая — с небольшой задержкой,
+// дальше при движении по доку просто переезжает от иконки к иконке.
+let tipFor = null, tipT = 0, tipLive = false;
+function tipText(el) {
   const it = el._it;
-  const text = el._label || (it.wins.length === 1 && it.wins[0].title ? it.wins[0].title : it.app.name) + (it.wins.length > 1 ? ` · ${it.wins.length} окна` : '');
-  tip.textContent = text.length > 70 ? text.slice(0, 69) + '…' : text;
-  tip.hidden = false; tipFor = el;
-  requestAnimationFrame(() => { placeTip(el); tip.classList.add('on'); });
+  if (el._label) return el._label;
+  const t = it.wins.length === 1 && it.wins[0].title ? it.wins[0].title : it.app.name;
+  return (t.length > 48 ? t.slice(0, 47) + '…' : t) + (it.wins.length > 1 ? ` · ${it.wins.length}` : '');
 }
-let tipFor = null;
-function placeTip(el) {
-  const r = el.getBoundingClientRect();
-  tip.style.left = Math.round(r.left + r.width / 2 - tip.offsetWidth / 2) + 'px';
-  tip.style.top = Math.round(r.top - tip.offsetHeight - 8) + 'px';
+function showTip(el) {
+  tipFor = el;
+  clearTimeout(tipT);
+  const go = () => {
+    if (tipFor !== el) return;
+    tip.textContent = tipText(el);
+    const first = tip.hidden;
+    tip.hidden = false;
+    placeTip(el, first);
+    tip.classList.add('on'); tipLive = true;
+  };
+  if (tipLive) go(); else tipT = setTimeout(go, 280);
 }
-function hideTip() { tip.classList.remove('on'); tip.hidden = true; tipFor = null; }
+function placeTip(el, jump) {
+  if (tip.hidden) return;
+  const r = el.getBoundingClientRect(), sh = shell.getBoundingClientRect();
+  const x = Math.round(r.left + r.width / 2 - tip.offsetWidth / 2);
+  const y = Math.round(sh.top - sizePx() * 0.45 - tip.offsetHeight - 6); // над самой высокой иконкой
+  if (jump) { tip.style.transition = 'none'; tip.style.translate = `${x}px ${y}px`; void tip.offsetWidth; tip.style.transition = ''; }
+  else tip.style.translate = `${x}px ${y}px`;
+}
+function hideTip() { clearTimeout(tipT); tipFor = null; tipLive = false; tip.classList.remove('on'); setTimeout(() => { if (!tipLive) tip.hidden = true; }, 180); }
 
-// ---------- увеличение при наведении ----------
-const sizePx = () => SIZES[cfg.size] || 52;
-let lastX = null, magRaf = 0;
 // Раскладка дока при наведении НЕ меняется: иконки только масштабируются и раздвигаются трансформацией,
 // а фон дока растягивается отдельным слоем. Расстояния считаются от неподвижных позиций (offsetLeft) —
 // поэтому нет обратной связи «иконка выросла → док сдвинулся → иконка уехала из-под курсора».
+const sizePx = () => SIZES[cfg.size] || 52;
+let lastX = null, magRaf = 0;
 const shell = $('#tb-shell'), bgEl = $('#tb-bg');
 function magnify(x) {
   cancelAnimationFrame(magRaf);

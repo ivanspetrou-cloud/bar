@@ -1,7 +1,7 @@
-// Таскбар Bar: док внизу основного монитора вместо панели задач Windows.
-// • Окна: события Windows (winevents.ps1) → список окон по запросу (agent: taskwins) → в окно таскбара.
-// • Режимы: «прятаться» — выезжает от нижнего края; «всегда» — резервирует место (AppBar), развёрнутые окна над ним.
-// • Панель Windows прячется, пока таскбар Bar включён, и возвращается при выключении или выходе.
+// Таскбар Bar: док внизу КАЖДОГО монитора вместо панели задач Windows.
+// • Окна: события Windows (winevents.ps1) → список окон (agent: taskwins) → во все доки; доки на всех мониторах одинаковые.
+// • Режимы: «прятаться» — выезжает от нижнего края; «всегда» — виден всегда (по желанию — с резервом места, AppBar).
+// • Панель Windows (и на других мониторах) прячется, пока таскбар Bar включён, и возвращается при выключении или выходе.
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -12,25 +12,32 @@ const WIN_H = 170;                       // окно выше дока: мест
 const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windows (полноэкранные программы, смена места)
 
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
-  let win = null, ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, reserved = false, fullscreen = false, gameOn = false;
+  const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
+  let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
   const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, ...(settings.taskbar || {}) });
   const call = (cmd, arg = '', ms = 4000) => sensors.call(cmd, arg, ms).catch(() => undefined);
-  const disp = () => screen.getPrimaryDisplay();
   const own = process.execPath.toLowerCase();
-  const send = (ch, v) => win && !win.isDestroyed() && win.webContents.send(ch, v);
-  const hwndOf = () => { const b = win.getNativeWindowHandle(); return b.length >= 8 ? Number(b.readBigUInt64LE(0)) : b.readUInt32LE(0); };
+  const hwndOf = (win) => { const b = win.getNativeWindowHandle(); return b.length >= 8 ? Number(b.readBigUInt64LE(0)) : b.readUInt32LE(0); };
+  const sendAll = (ch, v) => { for (const d of docks.values()) if (!d.win.isDestroyed()) d.win.webContents.send(ch, v); };
 
   // ---------- окна ----------
+  // монитор окна приходит в физических пикселях — переводим в монитор Electron
+  function displayIdOf(rect) {
+    const [l, t, r, b] = String(rect || '').split(',').map(Number);
+    if (!Number.isFinite(l)) return screen.getPrimaryDisplay().id;
+    const dip = screen.screenToDipRect(null, { x: l, y: t, width: r - l, height: b - t });
+    return screen.getDisplayMatching(dip).id;
+  }
   async function refresh() {
     const rows = await call('taskwins', '', 4000);
     if (!rows) return;
-    const list = (Array.isArray(rows) ? rows : [rows]).map((r) => {
-      const s = String(r); const p = s.split('|');
-      return { hwnd: Number(p[0]), pid: Number(p[1]), exe: p[2] || '', min: p[3] === '1', active: p[4] === '1', title: p.slice(5).join('|') };
+    lastList = (Array.isArray(rows) ? rows : [rows]).map((r) => {
+      const p = String(r).split('|');
+      return { hwnd: Number(p[0]), pid: Number(p[1]), exe: p[2] || '', min: p[3] === '1', active: p[4] === '1', disp: displayIdOf(p[5]), title: p.slice(6).join('|') };
     }).filter((w) => w.exe && w.exe.toLowerCase() !== own
       // окна самого Bar (и Bar Lab, и запущенного из исходников) — не программы пользователя
       && !(/\\(bar|bar lab|electron)\.exe$/i.test(w.exe) && /^Bar( Lab)?( — таскбар)?$/.test(w.title)));
-    send('tb-wins', list);
+    sendAll('tb-wins', lastList);
   }
   const refreshSoon = () => { clearTimeout(debT); debT = setTimeout(refresh, 120); };
   function startEvents() {
@@ -61,68 +68,95 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     delete settings.tbPrevAutoHide; saveSettings();
   }
 
-  // ---------- место у края (режим «всегда») ----------
-  async function reserve() {
-    if (!win) return;
-    const d = disp(), sf = d.scaleFactor, b = d.bounds;
-    const h = SIZES[cfg().size] + EDGE * 2;
-    await call('appbar', [hwndOf(), Math.round(b.x * sf), Math.round((b.y + b.height - h) * sf), Math.round((b.x + b.width) * sf), Math.round((b.y + b.height) * sf), CB_MSG].join(' '));
-    reserved = true;
+  // ---------- место у края ----------
+  async function reserve(d) {
+    const sf = d.display.scaleFactor;
+    const p = screen.dipToScreenRect(null, d.display.bounds);
+    const h = Math.round((SIZES[cfg().size] + EDGE * 2) * sf);
+    await call('appbar', [hwndOf(d.win), p.x, p.y + p.height - h, p.x + p.width, p.y + p.height, CB_MSG].join(' '));
+    d.reserved = true;
   }
-  async function unreserve() { if (win) { reserved = false; await call('appbaroff', String(hwndOf())); } }
+  async function unreserve(d) { if (!d.win.isDestroyed()) { d.reserved = false; await call('appbaroff', String(hwndOf(d.win))); } }
 
-  function place() {
-    if (!win) return;
-    const b = disp().bounds;
-    win.setBounds({ x: b.x, y: b.y + b.height - WIN_H, width: b.width, height: WIN_H });
+  function place(d) {
+    const b = d.display.bounds;
+    d.win.setBounds({ x: b.x, y: b.y + b.height - WIN_H, width: b.width, height: WIN_H });
     // место у края — только если попросили: иначе док висит поверх окон, а они идут до самого низа экрана
-    if (cfg().mode === 'always' && cfg().reserve) reserve();
-    else unreserve().then(() => win && call('appbarnew', hwndOf() + ' ' + CB_MSG)); // уведомления о полноэкранных программах — и без резерва
+    if (cfg().mode === 'always' && cfg().reserve) reserve(d); else unreserve(d);
   }
-  function visibleSync() {
-    if (!win) return;
-    const hide = gameOn || fullscreen;
-    if (process.env.BAR_SNAP) console.log('[tb] visibleSync', { gameOn, fullscreen, hide, vis: win.isVisible() });
-    if (hide && win.isVisible()) win.hide();
-    else if (!hide && !win.isVisible()) win.showInactive();
+  function visibleSync(d) {
+    if (d.win.isDestroyed()) return;
+    const hide = d.gameOn || d.fullscreen;
+    if (hide && d.win.isVisible()) d.win.hide();
+    else if (!hide && !d.win.isVisible()) d.win.showInactive();
   }
 
-  function create() {
-    win = new BrowserWindow({
+  function create(display) {
+    const win = new BrowserWindow({
       width: 800, height: WIN_H, frame: false, transparent: true, resizable: false, movable: false,
       minimizable: false, maximizable: false, fullscreenable: false, focusable: false,
       skipTaskbar: true, alwaysOnTop: true, hasShadow: false, show: false, backgroundColor: '#00000000',
       webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false },
     });
+    const d = { win, display, reserved: false, fullscreen: false, gameOn: false };
+    docks.set(display.id, d);
     win.setAlwaysOnTop(true, 'pop-up-menu');
     win.setIgnoreMouseEvents(true, { forward: true });
-    win.loadFile(path.join(__dirname, 'ui', 'taskbar.html'));
-    win.once('ready-to-show', () => { place(); visibleSync(); refresh(); });
-    // Windows сообщает таскбару о полноэкранных программах (видео, игры) и о смене места
+    if (process.env.BAR_SNAP) win.webContents.on('console-message', (e) => console.log('[tb-ui]', e.level, e.message));
+    win.loadFile(path.join(__dirname, 'ui', 'taskbar.html'), { query: { d: String(display.id) } });
+    win.once('ready-to-show', () => { place(d); visibleSync(d); win.webContents.send('tb-wins', lastList); refreshSoon(); });
+    // Windows сообщает таскбару о полноэкранных программах на ЕГО мониторе и о смене места
     win.hookWindowMessage(CB_MSG, (wParam, lParam) => {
       const w = wParam.length >= 8 ? Number(wParam.readBigUInt64LE(0)) : wParam.readUInt32LE(0);
       const l = lParam.length >= 8 ? Number(lParam.readBigUInt64LE(0)) : lParam.readUInt32LE(0);
-      if (w === 2) { fullscreen = !!l; visibleSync(); }       // ABN_FULLSCREENAPP
-      if (w === 1 && reserved) reserve();                     // ABN_POSCHANGED
+      if (w === 1 && d.reserved) reserve(d);                   // ABN_POSCHANGED (уведомление о «полноэкранных» не используем:
+      void l;                                                  // Windows считает такими и развёрнутые окна без рамки — Steam, Claude)
     });
+    return d;
+  }
+  // мониторы подключили, отключили, поменяли разрешение — у каждого свой док
+  function syncDisplays() {
+    if (!cfg().on) return;
+    const now = screen.getAllDisplays();
+    const ids = new Set(now.map((x) => x.id));
+    for (const [id, d] of docks) if (!ids.has(id)) { unreserve(d); d.win.destroy(); docks.delete(id); }
+    for (const display of now) {
+      const d = docks.get(display.id);
+      if (!d) create(display);
+      else { d.display = display; place(d); }
+    }
+  }
+
+  // Полноэкранное (игра, видео на весь экран) — активное окно ровно на весь монитор и НЕ развёрнутое кнопкой.
+  // Прячем док только на мониторе этого окна; игровой режим Bar тоже прячет док своего монитора.
+  async function fullCheck() {
+    const raw = String((await call('gamestate', '', 2000)) || '');
+    const [full, , , , mon] = raw.split('|');
+    let fullId = null;
+    if (full === '1' && mon) {
+      const [x, y, w, h] = mon.split(',').map(Number);
+      fullId = screen.getDisplayMatching(screen.screenToDipRect(null, { x, y, width: w, height: h })).id;
+    }
+    const gm = isGame && isGame();
+    for (const d of docks.values()) {
+      const b = d.display.bounds;
+      const g = !!(gm && gm.x < b.x + b.width && gm.x + gm.width > b.x && gm.y < b.y + b.height && gm.y + gm.height > b.y);
+      const f = fullId === d.display.id;
+      if (g !== d.gameOn || f !== d.fullscreen) { d.gameOn = g; d.fullscreen = f; visibleSync(d); }
+    }
   }
 
   async function enable() {
-    if (!win) create(); else { place(); visibleSync(); }
+    syncDisplays();
     startEvents();
     await hideWinTaskbar();
     clearInterval(keepT); keepT = setInterval(() => call('hidetaskbar', '1'), 10000); // Проводник перезапустился — снова прячем
-    clearInterval(gameT); gameT = setInterval(() => {
-      // игра на другом мониторе таскбару не мешает
-      const m = isGame && isGame(), b = disp().bounds;
-      const g = !!(m && m.x < b.x + b.width && m.x + m.width > b.x && m.y < b.y + b.height && m.y + m.height > b.y);
-      if (g !== gameOn) { gameOn = g; visibleSync(); }
-    }, 2000);
+    clearInterval(gameT); gameT = setInterval(fullCheck, 2000);
   }
   async function disable() {
     clearInterval(keepT); clearInterval(gameT); stopEvents();
-    await unreserve();
-    if (win) { win.destroy(); win = null; }
+    for (const d of docks.values()) { await unreserve(d); d.win.destroy(); }
+    docks.clear();
     await restoreWinTaskbar();
   }
   const apply = () => (cfg().on ? enable() : disable());
@@ -134,20 +168,25 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     saveSettings();
     const now = cfg();
     if (now.on !== before.on) await apply();
-    else if (win) { place(); visibleSync(); send('tb-cfg', now); }
+    else { for (const d of docks.values()) { place(d); visibleSync(d); } sendAll('tb-cfg', now); }
     return now;
   });
-  ipcMain.on('tb-interactive', (_e, on) => { if (win) win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); });
-  ipcMain.on('tb-refresh', () => refresh());
+  const dockOf = (e) => [...docks.values()].find((d) => !d.win.isDestroyed() && d.win.webContents === e.sender);
+  ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); });
+  ipcMain.on('tb-refresh', () => refreshSoon());
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику
   ipcMain.on('tb-apps', () => openApps && openApps());              // все приложения — в нотче, в стиле Bar
   ipcMain.on('tb-desktop', () => call('showdesktop'));
-  screen.on('display-metrics-changed', () => win && place());
+  for (const evName of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(evName, () => setTimeout(syncDisplays, 300));
 
   // запуск: включён — поднимаем; выключен, но панель Windows осталась спрятанной (аварийный выход) — возвращаем
   if (cfg().on) apply(); else if (settings.tbPrevAutoHide !== undefined) restoreWinTaskbar();
 
   return {
-    async stop() { clearInterval(keepT); clearInterval(gameT); stopEvents(); await unreserve(); if (settings.tbPrevAutoHide !== undefined) { await call('hidetaskbar', '0'); await call('settaskbar', settings.tbPrevAutoHide ? '1' : '0'); delete settings.tbPrevAutoHide; saveSettings(); } },
+    async stop() {
+      clearInterval(keepT); clearInterval(gameT); stopEvents();
+      for (const d of docks.values()) await unreserve(d);
+      if (settings.tbPrevAutoHide !== undefined) { await call('hidetaskbar', '0'); await call('settaskbar', settings.tbPrevAutoHide ? '1' : '0'); delete settings.tbPrevAutoHide; saveSettings(); }
+    },
   };
 };
