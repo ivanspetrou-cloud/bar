@@ -545,7 +545,7 @@ chime = function () {
 const LAB_OPTS = [
   ['osd', 'Всплывашка громкости', 'нотч показывает громкость и микрофон, когда вы их меняете', () => Osd.on, setOsd],
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
-  ['tint', 'Цвет обложки', 'свечение под нотчем в цвет трека', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
+  ['tint', 'Цвет обложки', 'фон карточки трека в цвет обложки', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
 ];
 function chimeRow() {
   const sl = makeSlider({ min: 0, max: 100, step: 5, value: chimeVol(), label: 'Громкость сигнала' });
@@ -592,7 +592,7 @@ function labSettings(toggle) {
 }
 // ============ 14. Настройки таскбара: закреплённые, кнопки, ярлыки ============
 // Открывается правым кликом по пустому месту дока или из Настройки → Дополнительно.
-Object.assign(LUCIDE, { dock: 'PanelBottom', up: 'ChevronUp', down: 'ChevronDown', grip2: 'GripVertical', recycle: 'Trash2', dl: 'Download', docs: 'FileText', pc: 'HardDrive', wset: 'Settings2', tmgr: 'Activity', fold: 'FolderPlus' });
+Object.assign(LUCIDE, { pwr: 'Power', dock: 'PanelBottom', up: 'ChevronUp', down: 'ChevronDown', grip2: 'GripVertical', recycle: 'Trash2', dl: 'Download', docs: 'FileText', pc: 'HardDrive', wset: 'Settings2', tmgr: 'Activity', fold: 'FolderPlus' });
 const TB_PLACES = [['recycle', 'Корзина', 'recycle'], ['downloads', 'Загрузки', 'dl'], ['documents', 'Документы', 'docs'], ['pc', 'Этот компьютер', 'pc'], ['settings', 'Параметры Windows', 'wset'], ['taskmgr', 'Диспетчер задач', 'tmgr']];
 const TB_TOOLS = ['timer', 'stopwatch', 'calendar', 'notes', 'calc', 'voice', 'clip', 'shelf', 'shot', 'color', 'ocr', 'qrscan', 'mirror', 'phone', 'system', 'text'];
 tool({
@@ -678,7 +678,9 @@ tool({
           h('button', { class: 'chip tbs-chip' + (c.btn.start ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, start: !c.btn.start } }) }, I('apps'), 'Приложения'),
           h('button', { class: 'chip tbs-chip' + (c.btn.search ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, search: !c.btn.search } }) }, I('search'), 'Поиск'),
           h('button', { class: 'chip tbs-chip' + (c.btn.desktop ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, desktop: !c.btn.desktop } }) }, I('minimize'), 'Свернуть всё'),
-          h('button', { class: 'chip tbs-chip' + (c.running ? ' on' : ''), onclick: () => set({ running: !c.running }) }, I('apps'), 'Открытые программы')),
+          h('button', { class: 'chip tbs-chip' + (c.running ? ' on' : ''), onclick: () => set({ running: !c.running }) }, I('apps'), 'Открытые программы'),
+          h('button', { class: 'chip tbs-chip' + (c.btn.restart ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, restart: !c.btn.restart } }) }, I('redo'), 'Перезагрузка'),
+          h('button', { class: 'chip tbs-chip' + (c.btn.shutdown ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, shutdown: !c.btn.shutdown } }) }, I('pwr'), 'Завершение работы')),
         h('b', { class: 'tbs-cap' }, 'Места Windows'),
         h('div', { class: 'tbs-chips' }, ...TB_PLACES.map(([id, label, ic]) => chip({ place: id, name: label }, label, ic))),
         h('b', { class: 'tbs-cap' }, 'Инструменты Bar'),

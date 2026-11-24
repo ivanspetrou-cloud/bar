@@ -15,7 +15,7 @@ function h(tag, props = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(c));
   return el;
 }
-const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2' };
+const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2', restart: 'RotateCw', shutdown: 'Power' };
 function icon(n) {
   const node = window.lucide && window.lucide.icons && window.lucide.icons[LUC[n] || n];
   const inner = node ? node.map(([tag, a]) => `<${tag} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('') : '';
@@ -125,6 +125,9 @@ function render() {
     ...extras,
     b.desktop !== false && sep('sep3'),
     b.desktop !== false && fixed('sys:desktop', desk ? 'restore' : 'desktop', desk ? 'Развернуть всё' : 'Свернуть всё', () => toggleDesk()),
+    (b.restart !== false || b.shutdown !== false) && sep('sep5'),
+    b.restart !== false && powerBtn('restart', 'Перезагрузка'),
+    b.shutdown !== false && powerBtn('shutdown', 'Завершение работы'),
   ].filter(Boolean);
   const keep = new Set(want);
   // ушедшие — сжимаются и исчезают
@@ -195,6 +198,23 @@ tb.addEventListener('contextmenu', async (e) => {
   if (pick === 'mode') bar.taskbarSet({ mode: cfg.mode === 'hide' ? 'always' : 'hide' });
   if (pick === 'mag') bar.taskbarSet({ magnify: !cfg.magnify });
 });
+// питание: первый клик «взводит» кнопку (красная, пульсирует, подсказка «ещё раз»), второй в течение 3 с — выполняет
+function powerBtn(what, label) {
+  const id = 'sys:' + what;
+  let el = els.get(id);
+  if (!el) {
+    el = fixed(id, what, label, () => {
+      if (el.classList.contains('arm')) { clearTimeout(el._armT); el.classList.remove('arm'); bar.tbPower(what); return; }
+      el.classList.add('arm');
+      el._label = what === 'shutdown' ? 'Нажмите ещё раз — выключить' : 'Нажмите ещё раз — перезагрузить';
+      showTip(el);
+      clearTimeout(el._armT);
+      el._armT = setTimeout(() => { el.classList.remove('arm'); el._label = label; if (tipFor === el) { tip.textContent = label; placeTip(el); } }, 3000);
+    });
+    el.classList.add('power');
+  }
+  return el;
+}
 function sep(id) { let el = els.get(id); if (!el) { el = h('span', { class: 'tb-sep' }); els.set(id, el); } return el; }
 
 // ---------- действия ----------

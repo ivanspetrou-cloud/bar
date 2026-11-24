@@ -19,7 +19,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   // btn — какие кнопки показывать; running — открытые незакреплённые программы; extras — ярлыки (папки, места Windows, инструменты Bar)
   const cfg = () => {
     const c = { on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, same: true, running: true, extras: [], ...(settings.taskbar || {}) };
-    c.btn = { start: true, search: true, desktop: true, ...((settings.taskbar || {}).btn || {}) };
+    c.btn = { start: true, search: true, desktop: true, restart: true, shutdown: true, ...((settings.taskbar || {}).btn || {}) };
     return c;
   };
   // размер — свой у каждого монитора (по умолчанию общий)
@@ -278,6 +278,13 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
   });
   ipcMain.on('tb-desktop', () => call('showdesktop'));
+  // питание: только эти действия; подтверждение — вторым кликом в доке
+  const POWER = { shutdown: ['/s', '/t', '0'], restart: ['/r', '/t', '0'] };
+  ipcMain.on('tb-power', (_e, what) => {
+    if (!POWER[what]) return;
+    spawn('shutdown.exe', POWER[what], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  });
+  ipcMain.on('tb-lock', () => spawn('rundll32.exe', ['user32.dll,LockWorkStation'], { detached: true, stdio: 'ignore' }).unref());
   ipcMain.on('tb-closewin', (_e, hwnd) => { if (Number.isFinite(+hwnd)) call('closewin', String(+hwnd)).then(refreshSoon); });
   // превью окон при наведении: снимок только запрошенных окон (PrintWindow в агенте, ~десятки мс на окно)
   ipcMain.handle('tb-thumbs', async (_e, hwnds) => {
