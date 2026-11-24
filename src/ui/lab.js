@@ -582,6 +582,7 @@ function notchScreenRow() {
 }
 
 const LAB_OPTS = [
+  ['homeDock', 'Панель приложений', 'закреплённые программы на главной', () => store.get('homeDock', true), (v) => { store.set('homeDock', !!v); if (state === 'open' && !current) renderHome(); }],
   ['osd', 'Всплывашка громкости', 'нотч показывает громкость и микрофон, когда вы их меняете', () => Osd.on, setOsd],
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
   ['tuck', 'Прятать над развёрнутыми окнами', 'вкладки браузера свободны', () => store.get('tuck', true), (v) => { store.set('tuck', !!v); tuckApply(); }],

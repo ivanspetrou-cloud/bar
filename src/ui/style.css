@@ -971,3 +971,16 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .cam-right::-webkit-scrollbar-thumb { background: var(--ctl-hi); border-radius: 3px; }
 .cam-right::-webkit-scrollbar-button { display: none; height: 0; }
 .app-pick { align-self: center; margin: 8px auto; }
+
+/* главная: стрелка «Инструменты» и сворачиваемые плитки */
+.home-handle {
+  flex: none; height: 26px; align-self: center; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px;
+  border: 0; border-radius: 13px; background: transparent; color: var(--mut); cursor: pointer; font-size: var(--fs-cap); font-weight: 600;
+  transition: background .15s, color .15s;
+}
+.home-handle:hover { background: var(--card); color: var(--fg); }
+.home-handle .chev { display: grid; transform: rotate(90deg); transition: transform .35s var(--spring); }
+.home-handle .chev svg.i { width: 14px; height: 14px; }
+.home-handle.on .chev { transform: rotate(-90deg); }
+#home .tiles { flex: none; grid-auto-rows: 72px; transition: opacity .25s ease, transform .35s var(--soft); }
+#home:not(.tiles-open) .tiles { opacity: 0; transform: translateY(-8px); pointer-events: none; }

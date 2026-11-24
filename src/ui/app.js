@@ -2727,6 +2727,8 @@ function srchSet(q) {
   const on = !!q.trim();
   searchEl.hidden = !on;
   if (!current) homeEl.hidden = on;
+  // поиску — полная высота панели; без поиска — снова по содержимому главной
+  if (!current) { if (on) island.style.removeProperty('--h-open'); else requestAnimationFrame(homeHeight); }
   if (!on) { Srch.items = []; searchEl.replaceChildren(); Srch.seq++; return; }
   srchRender();
   // файлы — с небольшой задержкой, пока человек печатает
@@ -3012,14 +3014,42 @@ island.addEventListener('mouseenter', () => {
 });
 island.addEventListener('mouseleave', () => { if (Game.on) holdCancel(true); });
 
+// Главная: панель приложений можно убрать (Настройки → Дополнительно), плитки инструментов — свернуть стрелкой.
+// Высота нотча считается под то, что видно: свёрнутые плитки — нотч ниже, с анимацией.
+const TILE_H = 72;
+function homeHeight() {
+  if (current) return;
+  const kids = [...homeEl.children].filter((el) => !el.classList.contains('tiles'));
+  let hh = kids.reduce((n, el) => n + el.offsetHeight, 0) + Math.max(0, kids.length - 1) * 8;
+  if (homeEl.classList.contains('tiles-open')) {
+    const n = TOOLS.filter((t) => !t.hidden).length, rows = Math.ceil(n / 8);
+    hh += 8 + rows * TILE_H + (rows - 1) * 8;
+  }
+  island.style.setProperty('--h-open', Math.round(44 + hh + 16) + 'px');
+}
+function setTilesOpen(on) {
+  store.set('tilesOpen', !!on);
+  homeEl.classList.toggle('tiles-open', !!on);
+  const b = homeEl.querySelector('.home-handle');
+  if (b) { b.classList.toggle('on', !!on); b.title = on ? 'Свернуть инструменты' : 'Показать инструменты'; }
+  if (on) homeEl.querySelectorAll('.tile').forEach((t, i) => t.animate([{ opacity: 0, transform: 'translateY(-10px) scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 40 + i * 12, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' }));
+  homeHeight();
+}
 function renderHome() {
   homeEl.innerHTML = '';
   const np = nowPlayingCard(), snd = soundCard(), dev = devicesCard();
-  homeEl.append(h('div', { class: 'widgets' }, np, snd, dev), dockEl());
+  homeEl.append(h('div', { class: 'widgets' }, np, snd, dev));
+  if (store.get('homeDock', true)) homeEl.append(dockEl());
+  // кнопка со стрелкой: инструменты свёрнуты (стрелка вниз) / развёрнуты (стрелка вверх)
+  const open = store.get('tilesOpen', false);
+  homeEl.classList.toggle('tiles-open', open);
+  homeEl.append(h('button', { class: 'home-handle' + (open ? ' on' : ''), title: open ? 'Свернуть инструменты' : 'Показать инструменты',
+    onclick: () => setTilesOpen(!homeEl.classList.contains('tiles-open')) }, h('span', { class: 'lbl' }, 'Инструменты'), h('span', { class: 'chev', html: icon('fwd') })));
   homeEl.append(h('div', { class: 'tiles' }, TOOLS.filter((t) => !t.hidden).map((t, i) => h('button', {
     class: 'tile', style: { animationDelay: `${60 + i * 16}ms` }, onclick: () => openTool(t.id),
     title: t.hk && hk(t.hk) ? `${t.name} · ${hk(t.hk)}` : t.name,
   }, I(t.icon), h('span', { class: 'lbl' }, t.short || t.name)))));
+  homeHeight();
   homeEl._live = (p) => {
     if ('media' in p) np._draw();
     if ('audio' in p) snd._draw();
