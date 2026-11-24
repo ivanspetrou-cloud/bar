@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('bar', {
   onSensors: on('sensors'),
   onTuck: on('tuck'),
   camList: () => ipcRenderer.invoke('cam-list'),
+  devDiag: () => ipcRenderer.invoke('dev-diag'),
   camSet: (dev, prop, val, auto) => ipcRenderer.invoke('cam-set', dev, prop, val, auto),
   onNotchHop: on('notch-hop'),
   taskbarGet: () => ipcRenderer.invoke('taskbar-get'),

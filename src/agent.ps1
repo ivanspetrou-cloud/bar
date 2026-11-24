@@ -457,6 +457,26 @@ namespace Bar {
       return null;
     }
 
+    // Диагностика: интерфейсы HID с собственной (vendor) страницей — VID:PID, номер интерфейса, страница/использование,
+    // размеры отчётов и название. Только чтение описаний устройств, команд им не шлём.
+    public static string[] Diag() {
+      var outp = new List<string>();
+      foreach (var p in Paths("")) {
+        HIDP_CAPS c; string name;
+        if (!Caps(p, out c, out name)) continue;
+        var lp = p.ToLower();
+        var m = System.Text.RegularExpressions.Regex.Match(lp, @"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})");
+        if (!m.Success) continue;
+        if (c.UsagePage < 0xFF00 && c.UsagePage != 0x0C && c.UsagePage != 0x06) continue;
+        var mi = System.Text.RegularExpressions.Regex.Match(lp, @"&mi_([0-9a-f]{2})");
+        var col = System.Text.RegularExpressions.Regex.Match(lp, @"&col([0-9a-f]{2})");
+        outp.Add(m.Groups[1].Value.ToUpper() + ":" + m.Groups[2].Value.ToUpper() + " mi" + (mi.Success ? mi.Groups[1].Value : "--") + (col.Success ? " col" + col.Groups[1].Value : "") +
+          " page " + c.UsagePage.ToString("X4") + "/" + c.Usage.ToString("X2") + " in " + c.InputReportByteLength + " out " + c.OutputReportByteLength + " feat " + c.FeatureReportByteLength + " " + name);
+      }
+      outp.Sort();
+      return outp.ToArray();
+    }
+
     static string lastKb = null;
     static string Pretty(string n) {
       n = n.Replace("Gaming Receiver", "").Replace("Receiver", "").Replace("Wireless", "").Replace("Gaming", "").Replace("RGB", "");
@@ -979,6 +999,7 @@ while ($true) {
           if ($p -and $name) { $name + '|' + $p.MaxHorizontalImageSize + '|' + $p.MaxVerticalImageSize }
         })
       }
+      'hiddiag'  { @([Bar.HidBattery]::Diag()) }
       'camlist'  { @([Bar.Cam]::List()) }
       'camset'   { $w = $arg.Split(' '); [Bar.Cam]::Set([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
       'closewin' { [Bar.Win]::CloseWindow([long]$arg) }
