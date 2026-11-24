@@ -216,7 +216,7 @@ function prevOpen(el) {
   const iconImg = el._slot && el._slot.querySelector('img');
   const iconSrc = iconImg ? iconImg.src : '';
   const cards = ws.map((w, i) => {
-    const shot = h('div', { class: 'tp-shot' + (w.min ? ' min' : '') }, w.min ? h('span', { class: 'tp-min' }, 'Свёрнуто') : null);
+    const shot = h('div', { class: 'tp-shot' + (w.min ? ' min' : '') }, w.min ? h('span', { class: 'tp-min' }, 'Свёрнуто') : null); // у свёрнутых — снимок с момента сворачивания и метка
     const x = h('span', { class: 'tp-x', title: 'Закрыть окно', html: '<svg viewBox="0 0 24 24" class="i"><path d="M6 6l12 12M18 6L6 18"/></svg>' });
     const card = h('button', { class: 'tp-card' + (w.active ? ' on' : '') },
       h('div', { class: 'tp-head' }, iconSrc ? h('img', { src: iconSrc, alt: '' }) : null, h('span', { class: 'tp-t' }, w.title || it.app.name), x), shot);
@@ -251,7 +251,7 @@ function prevPlace(jump) {
   else prev.style.translate = `${x}px ${y}px`;
 }
 async function prevThumbs() {
-  const cards = [...prev.querySelectorAll('.tp-card')].filter((c) => !c._w.min);
+  const cards = [...prev.querySelectorAll('.tp-card')];
   if (!cards.length) return;
   const map = await bar.tbThumbs(cards.map((c) => c._w.hwnd)).catch(() => ({}));
   for (const c of cards) {

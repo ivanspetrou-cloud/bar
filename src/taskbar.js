@@ -14,6 +14,7 @@ const CB_MSG = 0x0400 + 77;              // сообщение AppBar от Windo
 module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame, openApps }) {
   const docks = new Map();   // id монитора → { win, display, reserved, fullscreen, gameOn }
   let ev = null, evBuf = '', debT = 0, keepT = 0, gameT = 0, lastList = [];
+  const thumbs = new Map(); // окно → последний снимок (для свёрнутых: снят в момент сворачивания)
   const cfg = () => ({ on: false, mode: 'hide', size: 'm', magnify: true, reserve: false, sizes: {}, ...(settings.taskbar || {}) });
   // размер — свой у каждого монитора (по умолчанию общий)
   const sizeOf = (display) => (cfg().sizes || {})[display.id] || cfg().size;
@@ -42,6 +43,22 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       // окна самого Bar (и Bar Lab, и запущенного из исходников) — не программы пользователя
       && !(/\\(bar|bar lab|electron)\.exe$/i.test(w.exe) && /^Bar( Lab)?( — таскбар)?$/.test(w.title)));
     sendAll('tb-wins', lastList);
+    const fg = lastList.find((w) => w.active && !w.min);
+    if (fg && fg.hwnd !== lastFg) { lastFg = fg.hwnd; clearTimeout(fgSnapT); fgSnapT = setTimeout(snapFg, 700); } // новое активное — снимок, когда дорисуется
+  }
+  // Свёрнутое окно Windows не рисует — поэтому заранее держим свежий снимок активного окна
+  // (раз в 5 с и при смене окна; одно окно ≈ 30 мс). Свернёте — в превью останется картинка.
+  let lastFg = 0, fgSnapT = 0, fgT = 0;
+  async function snapFg() {
+    const fg = lastList.find((w) => w.active && !w.min);
+    if (!fg) return;
+    const rows = await call('winthumbs', String(fg.hwnd), 4000);
+    const r = String((Array.isArray(rows) ? rows[0] : rows) || '');
+    const k = r.indexOf('|');
+    if (k > 0 && r.length - k > 100) {
+      thumbs.delete(fg.hwnd); thumbs.set(fg.hwnd, 'data:image/jpeg;base64,' + r.slice(k + 1));
+      if (thumbs.size > 60) thumbs.delete(thumbs.keys().next().value);
+    }
   }
   const refreshSoon = () => { clearTimeout(debT); debT = setTimeout(refresh, 120); };
   function startEvents() {
@@ -49,7 +66,19 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     const script = path.join(__dirname, 'winevents.ps1').replace('app.asar', 'app.asar.unpacked');
     ev = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
     ev.stdout.setEncoding('utf8');
-    ev.stdout.on('data', (d) => { evBuf += d; if (evBuf.includes('E')) { evBuf = ''; refreshSoon(); } });
+    ev.stdout.on('data', (d) => {
+      evBuf += d;
+      let i;
+      while ((i = evBuf.indexOf('\n')) >= 0) {
+        const line = evBuf.slice(0, i).trim(); evBuf = evBuf.slice(i + 1);
+        if (line === 'E') refreshSoon();
+        else if (line.startsWith('T ')) { // снимок окна в момент сворачивания — для превью свёрнутых
+          const k = line.indexOf(' ', 2);
+          thumbs.set(Number(line.slice(2, k)), 'data:image/jpeg;base64,' + line.slice(k + 1));
+          if (thumbs.size > 60) thumbs.delete(thumbs.keys().next().value);
+        }
+      }
+    });
     ev.on('exit', () => { ev = null; if (cfg().on) setTimeout(startEvents, 3000); }); // упал — перезапуск
     ev.on('error', () => { ev = null; });
   }
@@ -155,10 +184,11 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     startEvents();
     await hideWinTaskbar();
     clearInterval(keepT); keepT = setInterval(() => call('hidetaskbar', '1'), 10000); // Проводник перезапустился — снова прячем
+    clearInterval(fgT); fgT = setInterval(snapFg, 5000);
     clearInterval(gameT); gameT = setInterval(fullCheck, 2000);
   }
   async function disable() {
-    clearInterval(keepT); clearInterval(gameT); stopEvents();
+    clearInterval(keepT); clearInterval(gameT); clearInterval(fgT); stopEvents(); thumbs.clear();
     for (const d of docks.values()) { await unreserve(d); d.win.destroy(); }
     docks.clear();
     await restoreWinTaskbar();
@@ -188,12 +218,14 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     const ids = (hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8);
     if (!ids.length) return {};
     const rows = await call('winthumbs', ids.join(','), 6000);
-    const out = {};
     for (const r of Array.isArray(rows) ? rows : rows ? [rows] : []) {
       const k = String(r).indexOf('|');
       const b64 = String(r).slice(k + 1);
-      if (b64.length > 100) out[String(r).slice(0, k)] = 'data:image/jpeg;base64,' + b64;
+      if (b64.length > 100) thumbs.set(Number(String(r).slice(0, k)), 'data:image/jpeg;base64,' + b64);
     }
+    // свёрнутые окна сейчас не снять — отдаём последний снимок
+    const out = {};
+    for (const h of ids) if (thumbs.has(h)) out[h] = thumbs.get(h);
     return out;
   });
   for (const evName of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(evName, () => setTimeout(syncDisplays, 300));
@@ -203,7 +235,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
 
   return {
     async stop() {
-      clearInterval(keepT); clearInterval(gameT); stopEvents();
+      clearInterval(keepT); clearInterval(gameT); clearInterval(fgT); stopEvents();
       for (const d of docks.values()) await unreserve(d);
       if (settings.tbPrevAutoHide !== undefined) { await call('hidetaskbar', '0'); await call('settaskbar', settings.tbPrevAutoHide ? '1' : '0'); delete settings.tbPrevAutoHide; saveSettings(); }
     },

@@ -86,5 +86,8 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 /* окно любой формы — целиком, без обрезки (высокий «Список друзей» тоже) */
 .tp-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; image-rendering: auto; }
 .tp-shot img.ok { opacity: 1; }
-.tp-min { color: var(--mut); font-size: var(--fs-cap); }
+.tp-min { color: var(--mut); font-size: var(--fs-cap); position: relative; z-index: 1; }
+/* свёрнутое окно со снимком: картинка чуть приглушена, метка — плашкой в углу */
+.tp-shot.min:has(img.ok) img { opacity: .55; filter: saturate(.7); }
+.tp-shot.min:has(img.ok) .tp-min { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 6px; background: var(--bg); color: var(--fg-2); }
 @keyframes tp-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
