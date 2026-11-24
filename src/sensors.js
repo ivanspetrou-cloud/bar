@@ -364,6 +364,11 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   const ICON_DIR = path.join(app.getPath('userData'), 'icons');
   const iconFile = (exe) => path.join(ICON_DIR, require('crypto').createHash('sha1').update(exe.toLowerCase()).digest('hex').slice(0, 16) + '.png');
 
+  // стандартная иконка exe без своей иконки (в том же размере), чтобы не принять её за настоящую
+  let shellGen = null;
+  const shellGeneric = () => shellGen || (shellGen = (async () => {
+    try { fs.mkdirSync(ICON_DIR, { recursive: true }); const f = path.join(ICON_DIR, 'blank.exe'); if (!fs.existsSync(f)) fs.writeFileSync(f, ''); return (await safe(fast.call('fileicon', f, 6000))) || ''; } catch { return ''; }
+  })());
   ipcMain.handle('app-icon', async (_e, a) => {
     const key = a.id || a.exe;
     if (iconCache.has(key)) return iconCache.get(key);
@@ -375,6 +380,12 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     // 2) запасной путь: exe → иконка, на которую указывает ярлык → сам ярлык; без стандартной заглушки Windows
     let lnkInfo = {};
     if (a.lnk) { try { lnkInfo = shell.readShortcutLink(a.lnk); } catch {} }
+    // 2а) иконка exe через оболочку Windows в 96×96 — у app.getFileIcon она не больше 32×32 и на панели выглядит мутной
+    for (const f of [a.exe, lnkInfo.icon]) {
+      if (!f || !/\.(exe|ico|dll)$/i.test(f) || !fs.existsSync(f)) continue;
+      const [b64, gen96] = await Promise.all([safe(fast.call('fileicon', f, 6000)), shellGeneric()]);
+      if (b64 && typeof b64 === 'string' && b64.length > 200 && b64 !== gen96) { const u = 'data:image/png;base64,' + b64; iconCache.set(key, u); return u; }
+    }
     const gen = await genericIcon();
     let url = null, sawGeneric = false;
     for (const f of [a.exe, lnkInfo.icon, a.lnk]) {
