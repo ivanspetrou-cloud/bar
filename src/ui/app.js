@@ -67,7 +67,7 @@ const fmtDur = (ms, ceil = true) => {
   const hh = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
   return hh ? `${hh}:${pad(m)}:${pad(x)}` : `${pad(m)}:${pad(x)}`;
 };
-const fmtSize = (n) => n < 1024 ? n + ' Б' : n < 1048576 ? (n / 1024).toFixed(0) + ' КБ' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' МБ' : (n / 1073741824).toFixed(2) + ' ГБ';
+const fmtSize = (n) => n < 1024 ? n + ' Б' : n < 1048576 ? (n / 1024).toFixed(0) + ' КБ' : n < 1073741824 ? (n / 1048576).toFixed(1).replace('.', ',') + ' МБ' : (n / 1073741824).toFixed(1).replace('.', ',') + ' ГБ';
 const copy = (t, note = 'Скопировано') => { bar.clipWrite(t); flash(note); };
 
 // ============ иконки ============
@@ -143,7 +143,7 @@ const LUCIDE = {
   coffee: 'Coffee', apps: 'LayoutGrid', sun: 'Sun', moon: 'Moon', laptop: 'Laptop', minimize: 'Minus',
   bolt: 'Zap', taskbar: 'PanelBottom', eye: 'Eye', wifi: 'Wifi', wifihigh: 'WifiHigh', wifilow: 'WifiLow',
   heart: 'Heart', thumbsdown: 'ThumbsDown', shuffle: 'Shuffle', repeat: 'Repeat', repeat1: 'Repeat1', search: 'Search',
-  download: 'Download', check: 'Check', code: 'Code', layout: 'LayoutDashboard', grip: 'GripVertical', disc: 'Disc3', redo: 'RotateCw', globe: 'Globe', enter: 'CornerDownLeft',
+  ram: 'MemoryStick', cpu: 'Cpu', download: 'Download', check: 'Check', code: 'Code', layout: 'LayoutDashboard', grip: 'GripVertical', disc: 'Disc3', redo: 'RotateCw', globe: 'Globe', enter: 'CornerDownLeft',
 };
 const iconCache = new Map();
 const attrEsc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -425,8 +425,8 @@ const IND = [
     return n.wifi ? `<span class="ind" title="${esc(n.wifi.ssid)} · ${n.wifi.signal}%">${wifiSvg(n.wifi.signal)}</span>` : '';
   } },
   { id: 'speed', name: 'Скорость сети', desc: 'загрузка в реальном времени', html: () => S.net && S.net.online ? `<span class="ind" title="Отдача ${fmtRate(S.net.txs)}">↓ ${fmtRate(S.net.rxs)}</span>` : '' },
-  { id: 'cpu', name: 'Процессор', desc: 'загрузка CPU', html: () => S.stats ? `<span class="ind"><span class="sub">CPU</span>${S.stats.cpu}%</span>` : '' },
-  { id: 'ram', name: 'Память', desc: 'занято ОЗУ', html: () => S.stats ? `<span class="ind"><span class="sub">RAM</span>${Math.round(S.stats.memUsed / S.stats.memTotal * 100)}%</span>` : '' },
+  { id: 'cpu', name: 'Процессор', desc: 'загрузка CPU', html: () => S.stats ? `<span class="ind" title="Загрузка процессора">${icon('cpu')}${S.stats.cpu}%</span>` : '' },
+  { id: 'ram', name: 'Память', desc: 'занято ОЗУ', html: () => S.stats ? `<span class="ind" title="Занято памяти">${icon('ram')}${Math.round(S.stats.memUsed / S.stats.memTotal * 100)}%</span>` : '' },
   { id: 'battery', name: 'Батарея ПК', desc: 'только на ноутбуке', html: () => batt ? battHtml() : '' },
   { id: 'awake', name: 'Не засыпать', desc: 'значок, пока экран не гаснет', html: () => Toggles.awake ? `<span class="ind hi-t" title="Экран не гаснет">${icon('coffee')}</span>` : '' },
   { id: 'date', name: 'Дата', desc: 'день недели и число', html: () => `<span class="sub">${new Date().toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}</span>` },
@@ -707,8 +707,9 @@ tool({
       h('button', { onclick: (e) => setMode('wifi', e.currentTarget) }, 'Wi‑Fi'));
     function setMode(m, b) { mode = m; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); ta.hidden = m !== 'text'; wifiBox.hidden = m !== 'wifi'; update(); }
     el.append(h('div', { class: 'split', style: { gridTemplateColumns: '1fr auto' } },
-      h('div', { class: 'col' }, seg, ta, wifiBox, h('div', { class: 'row', style: { marginTop: 'auto' } }, copyBtn)),
-      h('div', { class: 'col' }, img, ph)));
+      h('div', { class: 'col' }, seg, ta, wifiBox),
+      // кнопка копирования — под самой картинкой, к которой относится
+      h('div', { class: 'col qr-side' }, img, ph, copyBtn)));
     update();
     bar.clipRead().then((t) => { t = (t || '').trim(); if (t.length <= 300 && !ta.value) { ta.value = t; update(); } });
   },
@@ -1387,7 +1388,7 @@ tool({
     function hotkeysCard() {
       const card = h('div', { class: 'card status col hk-card', style: { gap: '0' } });
       const msg = h('div', { class: 'small hk-msg' });
-      const NAMES = [['toggle', 'Открыть нотч'], ['search', 'Поиск'], ['ocr', 'Текст с экрана'], ['color', 'Пипетка'], ['shot', 'Скриншот области'], ['qrscan', 'QR с экрана']];
+      const NAMES = [['toggle', 'Открыть нотч'], ['search', 'Поиск'], ['ocr', 'Текст с экрана'], ['color', 'Пипетка'], ['shot', 'Скриншот'], ['qrscan', 'QR с экрана']];
       const KEYNAME = (e) => {
         const c = e.code;
         if (/^Key[A-Z]$/.test(c)) return c.slice(3);
@@ -1817,10 +1818,10 @@ tool({
       const node = h('div', { class: 'mu-player' },
         h('div', { class: 'mu-cover' }, art, ph),
         h('div', { class: 'mu-info' },
-          h('div', { class: 'mu-meta' }, title, artist),
+          h('div', { class: 'mu-meta-row' }, dislike, h('div', { class: 'mu-meta' }, title, artist), like),
           h('div', { class: 'mu-progress' }, seek, h('div', { class: 'mu-times muted' }, t1, h('span', { class: 'mu-jumps' }, back10, fwd10), t2)),
           h('div', { class: 'mu-ctl' }, shuffle, prevB, play, nextB, repeat),
-          h('div', { class: 'mu-extra' }, like, dislike, h('span', { class: 'mu-vol-ic', html: icon('voldown') }), vol)));
+          h('div', { class: 'mu-extra' }, h('span', { class: 'mu-vol-ic', html: icon('voldown') }), vol, h('span', { class: 'mu-vol-ic', html: icon('volup') }))));
       return {
         node,
         update() {
@@ -1863,8 +1864,12 @@ tool({
     function cardEl(it, onClick) {
       const img = h('img', { alt: '' });
       const s = bimg(it.thumb); if (s) img.src = s;
+      // без обложки (например, «Понравившаяся музыка») — значок вместо пустого квадрата
+      const ph = h('span', { class: 'mu-card-ph', html: icon(/понрав|liked/i.test(it.title || '') ? 'heart' : 'music') });
+      if (!s) img.hidden = true; else ph.hidden = true;
+      img.addEventListener('error', () => { img.hidden = true; ph.hidden = false; });
       return h('button', { class: 'mu-card', onclick: onClick, title: it.title },
-        h('span', { class: 'mu-card-img' }, img),
+        h('span', { class: 'mu-card-img' }, img, ph),
         h('span', { class: 'mu-card-t' }, it.title), h('span', { class: 'mu-card-s muted small' }, it.subtitle || ''));
     }
 
