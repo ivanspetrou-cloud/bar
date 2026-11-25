@@ -29,7 +29,7 @@ const CMDS: &[&str] = &[
     "media", "mediactl", "gpu", "appicon", "fileicon", "winicon", "windows", "focus", "minimize", "hidepid", "showpid", "close",
     "bt", "net", "hidbat", "g435has", "g435", "hiddiag", "taskbar", "settaskbar", "hidetaskbar", "taskwins", "winthumbs",
     "monsizes", "exeinfo", "camlist", "camset", "closewin", "startmenu", "showdesktop", "appbar", "appbarnew", "appbaroff",
-    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles",
+    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey",
 ];
 
 type R<T> = windows::core::Result<T>;
@@ -201,6 +201,7 @@ fn main() {
             "close" => win::close_pid(num(a) as u32).map(|b| json!(b)),
             "closewin" => Ok(json!(win::close_window(num(a)))),
             "startmenu" => { win::start_menu(); Ok(json!(true)) }
+            "mediakey" => { win::media_key(num(a) as u8); Ok(json!(true)) }
             "showdesktop" => { win::show_desktop(); Ok(json!(true)) }
             "taskwins" => Ok(win::task_windows()),
             "winthumbs" => Ok(win::win_thumbs(a)),

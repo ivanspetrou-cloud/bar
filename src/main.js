@@ -315,9 +315,13 @@ ipcMain.handle('ocr-langs', async () => {
   } catch { return []; }
 });
 
-// ---------- медиа-клавиши (постоянный PowerShell, чтобы не ждать запуска) ----------
-let ps = null;
+// ---------- медиа-клавиши: нативный агент; без него — постоянный PowerShell, чтобы не ждать запуска ----------
+let ps = null, keyAgent = null;
 function mediaKey(code) {
+  if (!keyAgent) keyAgent = new (require('./agent-host'))('keys');
+  keyAgent.call('mediakey', code, 3000).catch(() => mediaKeyPs(code)); // без bar-agent.exe команды нет — запасной путь
+}
+function mediaKeyPs(code) {
   if (!ps || ps.exitCode !== null) {
     ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], { windowsHide: true });
     ps.on('error', () => { ps = null; });
@@ -737,5 +741,6 @@ app.on('will-quit', () => {
   if (game) game.stop();
   winwatch.stop();
   if (ps) try { ps.kill(); } catch {}
+  if (keyAgent) keyAgent.stop();
 });
 app.on('window-all-closed', () => app.quit());

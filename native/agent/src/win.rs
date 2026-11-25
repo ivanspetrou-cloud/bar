@@ -8,7 +8,7 @@ use windows::Win32::Globalization::{GetLocaleInfoEx, LCIDToLocaleName};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
-use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, GetKeyboardLayout, GetKeyboardLayoutList, HKL, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP};
+use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, GetKeyboardLayout, GetKeyboardLayoutList, HKL, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP};
 use windows::Win32::UI::Shell::{SHAppBarMessage, SHQueryUserNotificationState, APPBARDATA};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -203,6 +203,11 @@ fn process_exists(pid: u32) -> bool {
     unsafe { match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) { Ok(h) => { let _ = CloseHandle(h); true } Err(_) => false } }
 }
 pub fn start_menu() { key(0x5B, false); key(0x5B, true); }
+// медиа-клавиша (173 — звук вкл/выкл, 174/175 — тише/громче, 176 — следующий, 177 — предыдущий, 179 — пауза/играть)
+pub fn media_key(vk: u8) {
+    if !(173..=179).contains(&vk) { return; }
+    unsafe { keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, 0); keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0); }
+}
 pub fn show_desktop() { key(0x5B, false); key(0x44, false); key(0x44, true); key(0x5B, true); }
 
 // ---------- панель задач Windows ----------
