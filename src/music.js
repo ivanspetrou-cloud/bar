@@ -87,7 +87,7 @@ module.exports = function setupMusic({ send }) {
   function remember(st) {
     if (!st || !st.id) return;
     const changed = !resume || resume.videoId !== st.id;
-    resume = { videoId: st.id, list: st.list || '', time: Math.floor(st.time || 0), title: st.title || '' };
+    resume = { videoId: st.id, list: st.list || '', time: Math.floor(st.time || 0), title: st.title || '', at: Date.now() };
     if (changed || Date.now() - resumeSaved > 15000) { resumeSaved = Date.now(); fs.writeFile(LAST_FILE, JSON.stringify(resume), () => {}); }
   }
   let web = null;       // играющая вкладка музыкального сайта (Media Session): { tabId, host, title, … }

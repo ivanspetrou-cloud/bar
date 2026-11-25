@@ -247,6 +247,16 @@
     app.dispatchEvent(new CustomEvent('yt-navigate', { bubbles: true, composed: true, detail: { endpoint } }));
     return true;
   }
+  // Последний трек хранится и в самой странице (localStorage music.youtube.com, только на этом компьютере):
+  // после перезагрузки уснувшей вкладки «Играть» продолжит его, даже если Bar не успел его запомнить.
+  const LAST = 'bar.lastTrack';
+  function saveLast() {
+    const p = P(); const vd = p && p.getVideoData && p.getVideoData();
+    if (!vd || !vd.video_id) return;
+    try { localStorage.setItem(LAST, JSON.stringify({ videoId: vd.video_id, list: new URLSearchParams(location.search).get('list') || '', time: Math.floor(p.getCurrentTime() || 0), at: Date.now() })); } catch {}
+  }
+  function loadLast() { try { return JSON.parse(localStorage.getItem(LAST) || 'null'); } catch { return null; } }
+  if (!window.__barSaveT) window.__barSaveT = setInterval(saveLast, 5000);
   // включить трек (и его плейлист) и перемотать на место, где остановились
   async function resume(r) {
     go({ watchEndpoint: r.list ? { videoId: r.videoId, playlistId: r.list } : { videoId: r.videoId } });
@@ -268,6 +278,8 @@
     // r — последний игравший трек ({ videoId, list, time }), его помнит Bar. Если плеер пуст (вкладку перезагрузили
     // или открыли заново) — включаем этот трек с того же места, а не «ничего».
     toggle(r) {
+      const own = loadLast();
+      if (own && own.videoId && (!r || !r.videoId || (own.at || 0) > (r.at || 0))) r = own; // что свежее
       const p = P(); if (!p) return r && r.videoId ? resume(r) : false;
       const vd = (p.getVideoData && p.getVideoData()) || {};
       const st = p.getPlayerState();
