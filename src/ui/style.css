@@ -667,8 +667,8 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .upd-ico.pop { animation: pop .45s var(--spring); }
 @keyframes upd-spin { to { transform: rotate(360deg); } }
 @keyframes upd-pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--acc-g) 25%, transparent); } }
-.upd-bar { height: 0; border-radius: 3px; background: var(--track); overflow: hidden; transition: height .25s var(--soft); }
-.upd-bar.on { height: 6px; }
+.upd-bar { height: 0; margin-top: -8px; border-radius: 3px; background: var(--track); overflow: hidden; transition: height .25s var(--soft), margin-top .25s var(--soft); }
+.upd-bar.on { height: 6px; margin-top: 0; }
 .upd-bar b { display: block; height: 100%; width: 0; border-radius: 3px; transition: width .4s var(--soft);
   background: linear-gradient(90deg, var(--acc-g), var(--acc-g) 40%, color-mix(in srgb, var(--acc-g) 55%, #fff) 50%, var(--acc-g) 60%) 0 0 / 200% 100%;
   animation: upd-shine 1.4s linear infinite; }

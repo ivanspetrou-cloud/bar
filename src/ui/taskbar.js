@@ -40,7 +40,20 @@ function matchUwp(fam, exe) {
   const n = fam.slice(0, i).toLowerCase(), hash = fam.slice(i + 1).toLowerCase(), e = exe.toLowerCase();
   return e.includes('\\windowsapps\\' + n + '_') && e.includes('__' + hash);
 }
-const owns = (app, w) => (app.exe && lower(app.exe) === lower(w.exe)) || (app.uwp && matchUwp(app.uwp, w.exe));
+// Закреплённый запускающий файл и exe окна часто разные: Discord, Slack, Teams (Squirrel) закрепляются как …\Update.exe,
+// а окно — из …\app-1.0.9\Discord.exe; Veyra — Veyra.exe и versions\2.2.0\veyra_qml_ui.exe. Считаем это одной программой,
+// если окно лежит в подпапке папки запускающего файла и это Update.exe или имя exe окна начинается с имени запускающего.
+const BS = String.fromCharCode(92);
+const dirOf = (p) => lower(p).slice(0, lower(p).lastIndexOf(BS) + 1);
+function launcherOwns(exe, wexe) {
+  const d = dirOf(exe), we = lower(wexe);
+  if (!d || !we.startsWith(d) || we.slice(d.length).indexOf(BS) < 0) return false;          // только из подпапки
+  const parts = d.split(BS).filter(Boolean);                                                   // не общие папки: «C:\Program Files\», «C:\Windows\»
+  if (parts.length < 2 || (parts.length === 2 && /^(program files( \(x86\))?|programdata|windows|users)$/.test(parts[1]))) return false;
+  const b = lower(base(exe)), wb = lower(base(wexe));
+  return b === 'update' || wb === b || (b.length >= 4 && wb.startsWith(b));
+}
+const owns = (app, w) => (app.exe && (lower(app.exe) === lower(w.exe) || launcherOwns(app.exe, w.exe))) || (app.uwp && matchUwp(app.uwp, w.exe));
 
 // доки на всех мониторах одинаковые: все окна — в каждом (так проще и не путает)
 const here = () => true;
