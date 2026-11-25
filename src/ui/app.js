@@ -2081,7 +2081,7 @@ tool({
         if (animate && !first) anim(repeat, 'spin');
       };
       const repeat = ib('repeat', 'Повтор', () => { setRepeat(REPEAT_NEXT[repeatMode || 'NONE'], true); optimisticT = Date.now(); mcmd('repeat'); });
-      const play = h('button', { class: 'mu-play', 'aria-label': 'Играть / пауза', onclick: () => mcmd('toggle'), html: PP_SVG });
+      const play = h('button', { class: 'mu-play', 'aria-label': 'Играть / пауза', onclick: () => { ppTap(play); mcmd('toggle'); }, html: PP_SVG });
       let playIcon = '', likeOn = null;
       // оценка: подсвечиваем сразу по нажатию, страница потом подтвердит
       let likeMode = '', likeT = 0;
@@ -2141,8 +2141,8 @@ tool({
           const pct = st.duration ? Math.min(100, st.time / st.duration * 100) : 0;
           if (seekDrag === null) { seekFill.style.width = knob.style.left = pct + '%'; t1.textContent = fmtT(st.time); }
           t2.textContent = st.duration ? fmtT(st.duration) : '';
-          const pi = st.state === 1 ? 'pause' : 'play';
-          if (pi !== playIcon) { playIcon = pi; play.classList.toggle('is-playing', pi === 'pause'); }
+          const pi = ppHold(play, st.state === 1 ? 'pause' : 'play');
+          playIcon = pi; play.classList.toggle('is-playing', pi === 'pause');
           node.classList.toggle('paused', st.state !== 1 && !!st.title);
           // пока страница не успела применить нажатие (до 2,5 с), не перебиваем мгновенную подсветку
           if (Date.now() - likeT > 2500) { const lk = st.like === 'LIKE'; if (likeOn !== null && lk && !likeOn) anim(like, 'pop'); likeOn = lk; setLike(st.like || ''); }
@@ -2441,6 +2441,9 @@ tool({
 // ============ главный экран ============
 // Иконка «играть ↔ пауза» с плавным перетеканием формы: две половины треугольника становятся двумя полосками.
 // Состояние задаётся классом .is-playing на кнопке, анимирует CSS (свойство d у path).
+// мгновенный отклик «играть / пауза»: значок меняется сразу по нажатию, реальное состояние плеера догоняет (ждём до 2,5 с)
+function ppTap(btn) { const next = btn.classList.contains('is-playing') ? 'play' : 'pause'; btn.classList.toggle('is-playing', next === 'pause'); btn._hold = { v: next, until: Date.now() + 2500 }; }
+function ppHold(btn, pi) { const h = btn._hold; if (h) { if (pi === h.v || Date.now() > h.until) btn._hold = null; else return h.v; } return pi; }
 const PP_SVG = '<svg class="i pp" viewBox="0 0 24 24" aria-hidden="true"><path class="a" d="M7 4.5 L13 8.25 L13 15.75 L7 19.5 Z"/><path class="b" d="M13 8.25 L19 12 L19 12 L13 15.75 Z"/></svg>';
 
 // одноразовая CSS-анимация на элементе
@@ -2464,6 +2467,7 @@ function nowPlayingCard() {
       e.stopPropagation();
       if (k === 'prev') animOnce(b, 'nudge-l');
       if (k === 'next') animOnce(b, 'nudge-r');
+      if (k === 'toggle') ppTap(b);
       // YouTube Music — через расширение: вкладку, которую браузер усыпил после долгой паузы, оно будит и повторяет команду.
       // Системный медиаплеер Windows в этом случае отвечает «готово», но уснувшая вкладка не играет.
       const m = S.media || {};
@@ -2526,8 +2530,9 @@ function nowPlayingCard() {
       fill.style.width = knob.style.left = pct + '%';
       t1.textContent = fmtT(pos); t2.textContent = fmtT(d);
     }
-    const pi = has && m.playing ? 'pause' : 'play';
-    if (pi !== playIcon) { playIcon = pi; play.classList.toggle('is-playing', pi === 'pause'); play.title = pi === 'pause' ? 'Пауза' : 'Играть'; }
+    const pi = ppHold(play, has && m.playing ? 'pause' : 'play');
+    if (pi !== playIcon) { playIcon = pi; play.title = pi === 'pause' ? 'Пауза' : 'Играть'; }
+    play.classList.toggle('is-playing', pi === 'pause');
     card.classList.toggle('paused', has && !m.playing);
     const norm = (x) => String(x || '').trim().toLowerCase();
     const isYTM = has && MU.ext && MU.tab && MU.st && MU.st.title && norm(m.title) === norm(MU.st.title); // источник с режимом музыки

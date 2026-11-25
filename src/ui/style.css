@@ -631,13 +631,13 @@ img:not([src]) { visibility: hidden; }
 
 /* ---------- «играть ↔ пауза»: форма плавно перетекает ---------- */
 svg.pp { fill: currentColor; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
-svg.pp path { transition: d .32s cubic-bezier(.4, 0, .2, 1); }
+svg.pp path { transition: d .2s cubic-bezier(.4, 0, .2, 1); }
 svg.pp path.a { d: path("M7 4.5 L13 8.25 L13 15.75 L7 19.5 Z"); }
 svg.pp path.b { d: path("M13 8.25 L19 12 L19 12 L13 15.75 Z"); }
 .is-playing svg.pp path.a { d: path("M6 5 L10 5 L10 19 L6 19 Z"); }
 .is-playing svg.pp path.b { d: path("M14 5 L18 5 L18 19 L14 19 Z"); }
 .is-playing svg.pp { transform: none; }
-svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
+svg.pp { transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 .mu-play:not(.is-playing) svg.pp, .np-ctl .ib.big:not(.is-playing) svg.pp { transform: translateX(1px); }
 @media (prefers-reduced-motion: reduce) { svg.pp path, svg.pp { transition: none; } }
 
