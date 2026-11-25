@@ -182,12 +182,38 @@ pub fn win_icon(exe: &str) -> Value {
     Value::Null
 }
 
+// Вывести окно вперёд. Windows не даёт фоновой программе забрать фокус, пока пользователь последним кликал
+// в другом окне (например, на другом мониторе), — поэтому несколько способов по очереди, с проверкой результата.
 pub fn focus(h: i64) -> bool {
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     let h = hwnd(h);
     unsafe {
         if IsIconic(h).as_bool() { let _ = ShowWindow(h, SW_RESTORE); }
-        key(0x12, false); key(0x12, true); // Alt снимает блокировку переднего плана
-        SetForegroundWindow(h).as_bool()
+        let done = || GetForegroundWindow() == h;
+        // 1) Alt снимает блокировку переднего плана
+        key(0x12, false); key(0x12, true);
+        let _ = SetForegroundWindow(h);
+        if done() { return true; }
+        // 2) присоединиться к очереди ввода окна, которое сейчас впереди, — тогда смена фокуса разрешена
+        let me = GetCurrentThreadId();
+        let (fg_tid, _) = pid_of(GetForegroundWindow());
+        let (to_tid, _) = pid_of(h);
+        let a1 = fg_tid != 0 && fg_tid != me && AttachThreadInput(me, fg_tid, true).as_bool();
+        let a2 = to_tid != 0 && to_tid != me && to_tid != fg_tid && AttachThreadInput(me, to_tid, true).as_bool();
+        let _ = BringWindowToTop(h);
+        let _ = SetForegroundWindow(h);
+        if a1 { let _ = AttachThreadInput(me, fg_tid, false); }
+        if a2 { let _ = AttachThreadInput(me, to_tid, false); }
+        if done() { return true; }
+        // 3) так переключает Alt+Tab
+        SwitchToThisWindow(h, true);
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        if done() { return true; }
+        // 4) свернуть и развернуть: развёрнутое окно Windows активирует всегда
+        let _ = ShowWindow(h, SW_MINIMIZE);
+        let _ = ShowWindow(h, SW_RESTORE);
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        done()
     }
 }
 pub fn minimize(h: i64) { unsafe { let _ = ShowWindow(hwnd(h), SW_MINIMIZE); } }
