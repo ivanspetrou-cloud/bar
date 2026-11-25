@@ -2467,6 +2467,8 @@ function nowPlayingCard() {
       e.stopPropagation();
       if (k === 'prev') animOnce(b, 'nudge-l');
       if (k === 'next') animOnce(b, 'nudge-r');
+      // пока вкладка просыпается, повторные нажатия не шлём: иначе второе нажатие ставит только что запущенную музыку на паузу
+      if (k === 'toggle' && b.classList.contains('waking')) return;
       if (k === 'toggle') ppTap(b);
       // YouTube Music — через расширение: вкладку, которую браузер усыпил после долгой паузы, оно будит и повторяет команду.
       // Системный медиаплеер Windows в этом случае отвечает «готово», но уснувшая вкладка не играет.
@@ -2477,9 +2479,15 @@ function nowPlayingCard() {
       const same = !m.title || (MU.st && MU.st.title === m.title);
       const ytm = MU.ext && MU.ytTab && fromBrowser && (same || (k === 'toggle' && !m.playing));
       if (ytm) {
-        const slow = setTimeout(() => flash('Будим вкладку YouTube Music…', 2500), 900); // уснувшая вкладка перезагружается несколько секунд
+        // уснувшая вкладка перезагружается 5–15 с: всё это время кнопка показывает ожидание, подсказка не гаснет
+        const slow = setTimeout(() => { b.classList.add('waking'); if (b._hold) b._hold.until = Date.now() + 60000; flash('Будим YouTube Music — секунду…', 60000); }, 900);
         const r = await bar.musicCmd(k);
         clearTimeout(slow);
+        if (b.classList.contains('waking')) {
+          b.classList.remove('waking');
+          if (b._hold) b._hold.until = Date.now() + 1500;
+          flash(r ? 'YouTube Music играет' : 'YouTube Music не ответил — попробуйте ещё раз', 1800);
+        }
         if (r) return;
       }
       const was = !!m.playing;
