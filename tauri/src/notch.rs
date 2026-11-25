@@ -7,8 +7,8 @@ use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Monitor, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use windows::Win32::Foundation::{HWND, POINT};
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, ShowWindow, SW_SHOWNOACTIVATE};
+use windows::Win32::Foundation::POINT;
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::ctx;
 
@@ -50,7 +50,7 @@ impl Notch {
         std::thread::Builder::new().name("bar-follow".into()).spawn(move || loop { w.follow_tick(); w.idle_tick(); std::thread::sleep(Duration::from_millis(200)); }).ok();
         Ok(n)
     }
-    pub fn show(&self) { if let Ok(h) = self.win.hwnd() { unsafe { let _ = ShowWindow(HWND(h.0 as *mut _), SW_SHOWNOACTIVATE); } } }
+    pub fn show(&self) { let _ = self.win.show(); }
     pub fn hide(&self) { let _ = self.win.hide(); }
 
     /// монитор нотча: основной, выбранный в настройках или тот, где сейчас курсор («за мышью»)

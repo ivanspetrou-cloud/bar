@@ -125,6 +125,19 @@ ${api.join('\n')}
     requestAnimationFrame(zone);
   };
   addEventListener('DOMContentLoaded', () => { if (zoneEl()) requestAnimationFrame(zone); });
+  // док: где сейчас сам док и превью окон (CSS px) — каждый кадр, при любом числе значков и при увеличении
+  let lastTb = '';
+  const tbZone = () => {
+    const sh = document.getElementById('tb-shell');
+    if (!sh) return;
+    const r = sh.getBoundingClientRect();
+    const z = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    for (const p of document.querySelectorAll('.tb-prev:not([hidden]), .tb-tip:not([hidden])')) { const q = p.getBoundingClientRect(); if (q.width) { z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); } }
+    const k = [z.l, z.t, z.r, z.b].map(Math.round).join(',');
+    if (k !== lastTb) { lastTb = k; fire('tb-zone', [z]); }
+    requestAnimationFrame(tbZone);
+  };
+  addEventListener('DOMContentLoaded', () => requestAnimationFrame(tbZone));
 })();
 `;
 fs.writeFileSync(path.join(out, 'bar-tauri.js'), shim);
