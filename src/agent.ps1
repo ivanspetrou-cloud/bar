@@ -498,6 +498,163 @@ namespace Bar {
       return null;
     }
 
+
+    // Logitech (046D): протокол HID++ 2.0 — как в Solaar и драйвере Linux hid-logitech-hidpp.
+    // Длинный отчёт 0x11 (20 байт): [0x11, устройство, номер функции, (метод << 4) | 0x0A, параметры…].
+    // Номер нужной функции узнаём у корневой (0x0000), заряд — из 0x1004 (Unified Battery), 0x1000 (Battery Status),
+    // 0x1F20 (напряжение, гарнитуры G435/G535 и др.) или 0x1001 (напряжение). Только запросы чтения.
+    static byte[] Hpp(System.IO.FileStream fs, byte dev, byte feat, byte func, params byte[] args) { return HppT(fs, 300, dev, feat, func, args); }
+    static byte[] HppT(System.IO.FileStream fs, int ms, byte dev, byte feat, byte func, params byte[] args) {
+      var w = new byte[20]; w[0] = 0x11; w[1] = dev; w[2] = feat; w[3] = (byte)((func << 4) | 0x0A);
+      for (int i = 0; i < args.Length && i < 16; i++) w[4 + i] = args[i];
+      try { fs.Write(w, 0, 20); } catch { return null; }
+      var until = DateTime.Now.AddMilliseconds(ms);
+      while (DateTime.Now < until) {
+        var r = new byte[20];
+        System.Threading.Tasks.Task<int> task;
+        try { task = fs.ReadAsync(r, 0, 20); } catch { return null; }
+        int left = (int)(until - DateTime.Now).TotalMilliseconds;
+        if (left <= 0 || !task.Wait(left)) return null;
+        if (r[0] != 0x11 || r[1] != dev) continue;
+        if (r[2] == 0xFF && r[3] == feat) return null;                      // ошибка HID++ 2.0 (нет функции / устройство не на связи)
+        if (r[2] == feat && r[3] == w[3]) return r;
+      }
+      return null;
+    }
+    static byte HppFeature(System.IO.FileStream fs, byte dev, int id) {
+      var r = Hpp(fs, dev, 0x00, 0, (byte)(id >> 8), (byte)(id & 0xFF));
+      return r == null ? (byte)0 : r[4];
+    }
+    // напряжение Li-ion → проценты (таблица Solaar для 0x1F20 / 0x1001)
+    static int VoltPct(int mv) {
+      int[,] t = { { 4186, 100 }, { 4067, 90 }, { 3989, 80 }, { 3922, 70 }, { 3859, 60 }, { 3811, 50 }, { 3778, 40 }, { 3751, 30 }, { 3717, 20 }, { 3671, 10 }, { 3646, 5 }, { 3579, 2 }, { 3500, 0 } };
+      if (mv >= t[0, 0]) return 100;
+      for (int i = 1; i < t.GetLength(0); i++)
+        if (mv >= t[i, 0]) return t[i, 1] + (int)Math.Round((double)(mv - t[i, 0]) / (t[i - 1, 0] - t[i, 0]) * (t[i - 1, 1] - t[i, 1]));
+      return 0;
+    }
+    static readonly string[] LogiKinds = { "keyboard", "", "keyboard", "mouse", "mouse", "mouse", "", "", "headphones", "", "gamepad", "gamepad", "gamepad", "", "", "" };
+    // ответ: «имя|уровень|подключено|заряжается|тип» для каждого устройства за этим интерфейсом; diag — описание найденного
+    static List<string> Logi(string p, string fallback, List<string> diag) {
+      var res = new List<string>();
+      var h = Open(p, 0xC0000000u, 0x40000000u);
+      if (h.IsInvalid) return res;
+      try {
+        using (var fs = new System.IO.FileStream(h, System.IO.FileAccess.ReadWrite, 20, true)) {
+          // 0xFF — само устройство (гарнитура с донглом, проводное); 1…6 — устройства за приёмником Lightspeed/Unifying
+          foreach (byte dev in new byte[] { 0xFF, 1, 2, 3, 4, 5, 6 }) {
+            // есть ли устройство вообще: корневой запрос «где функция 0x0005» (быстрый тайм-аут — пустые места приёмника молчат)
+            var probe = HppT(fs, 200, dev, 0x00, 0, 0x00, 0x05);
+            if (probe == null) continue;
+            byte fBat = 0, fUni = HppFeature(fs, dev, 0x1004);
+            int kindId = -1; string name = "";
+            byte fName = probe[4];
+            if (fName != 0) {
+              var c = Hpp(fs, dev, fName, 0); int n = c != null ? c[4] : 0; var sb = new StringBuilder();
+              for (int off = 0; off < n && off < 64; off += 16) { var part = Hpp(fs, dev, fName, 1, (byte)off); if (part == null) break; for (int k = 4; k < 20 && sb.Length < n; k++) sb.Append((char)part[k]); }
+              name = sb.ToString().Trim('\0', ' ');
+              var t = Hpp(fs, dev, fName, 2); if (t != null) kindId = t[4];
+            }
+            if (string.IsNullOrEmpty(name)) name = fallback;
+            string kind = kindId >= 0 && kindId < LogiKinds.Length ? LogiKinds[kindId] : (System.Text.RegularExpressions.Regex.IsMatch(name.ToLower(), "headset|g\\d{3}|astro|pro x") ? "headphones" : "");
+            int lvl = -2; bool chg = false; string how = "";
+            if (fUni != 0) {
+              var r = Hpp(fs, dev, fUni, 1);
+              if (r != null) {
+                lvl = r[4] > 0 ? Math.Min((int)r[4], 100) : (r[5] & 8) != 0 ? 100 : (r[5] & 4) != 0 ? 60 : (r[5] & 2) != 0 ? 20 : (r[5] & 1) != 0 ? 5 : -2;
+                chg = r[6] == 1 || r[6] == 2; how = "1004";
+              }
+            }
+            if (how == "" && (fBat = HppFeature(fs, dev, 0x1000)) != 0) {
+              var r = Hpp(fs, dev, fBat, 0);
+              if (r != null) { lvl = r[4] > 0 ? Math.Min((int)r[4], 100) : -2; chg = r[6] >= 1 && r[6] <= 2 || r[6] == 4; how = "1000"; }
+            }
+            if (how == "" && (fBat = HppFeature(fs, dev, 0x1F20)) != 0) {
+              var r = Hpp(fs, dev, fBat, 0);
+              if (r != null) { int mv = (r[4] << 8) | r[5]; if (mv > 0) lvl = VoltPct(mv); chg = (r[6] & 0x02) != 0; how = "1F20 " + mv + "mV f" + r[6].ToString("X2"); }
+            }
+            if (how == "" && (fBat = HppFeature(fs, dev, 0x1001)) != 0) {
+              var r = Hpp(fs, dev, fBat, 0);
+              if (r != null) { int mv = (r[4] << 8) | r[5]; if (mv > 0) lvl = VoltPct(mv); chg = (r[6] & 0x80) != 0; how = "1001 " + mv + "mV f" + r[6].ToString("X2"); }
+            }
+            if (diag != null) diag.Add("  hid++ dev " + dev.ToString("X2") + " \"" + name + "\" type " + kindId + " battery " + (how == "" ? "-" : how) + " -> " + lvl + (chg ? " chg" : ""));
+            if (how == "" && kindId == 7) continue;     // сам приёмник
+            string pn = Pretty(name); if (!pn.ToLower().StartsWith("logi")) pn = "Logitech " + pn;
+            res.Add(pn + "|" + lvl + "|1|" + (chg ? "1" : "0") + "|" + kind);
+            if (dev == 0xFF) break;                      // ответило само устройство — приёмника за ним нет
+          }
+        }
+      } catch { }
+      return res;
+    }
+    // интерфейсы HID++ (длинные отчёты 20 байт на vendor-странице), по одному на приёмник/устройство
+    static List<string> LogiPaths() {
+      var outp = new List<string>(); var seenDev = new HashSet<string>();
+      foreach (var p in Paths("046d")) {
+        HIDP_CAPS c; string name;
+        if (!Caps(p, out c, out name) || c.UsagePage < 0xFF00 || c.OutputReportByteLength != 20) continue;
+        var m = System.Text.RegularExpressions.Regex.Match(p.ToLower(), @"pid_([0-9a-f]{4})(&mi_([0-9a-f]{2}))?");
+        string k = m.Success ? m.Value : p;
+        if (seenDev.Contains(k)) continue;
+        seenDev.Add(k); outp.Add(p);
+      }
+      return outp;
+    }
+
+
+    // Logitech G435, донгл Realtek 046D:0ACB: обычного HID++ нет. Заряд (напряжение) отдаётся только в сервисном режиме донгла —
+    // протокол из fr0styJS/g435-lightspeed-battery и rip-en/wireless-battery-g435. Пока донгл в этом режиме (~1 с), звук гарнитуры
+    // прерывается, поэтому Bar читает редко (раз в час и по кнопке) и не во время игры. Выход из режима — всегда, в finally.
+    public static string G435Present() {
+      foreach (var p in Paths("046d")) {
+        if (!p.ToLower().Contains("pid_0acb")) continue;
+        HIDP_CAPS c; string name;
+        if (Caps(p, out c, out name) && c.UsagePage == 0xFFC0 && c.FeatureReportByteLength == 64) return p + "|" + name;
+      }
+      return "";
+    }
+    static bool G435Set(Microsoft.Win32.SafeHandles.SafeFileHandle h, params byte[] b) {
+      var buf = new byte[64]; Array.Copy(b, buf, Math.Min(b.Length, 64));
+      return HidD_SetFeature(h, buf, 64);
+    }
+    // «имя|мВ» или «имя|0», если гарнитура не ответила (выключена / вне связи)
+    public static string G435Read() {
+      var pn = G435Present(); if (pn == "") return "";
+      int bar = pn.IndexOf('|'); string p = pn.Substring(0, bar), name = pn.Substring(bar + 1);
+      var samples = new List<int>();
+      using (var h = Open(p, 0xC0000000u, 0)) {
+        if (h.IsInvalid) return name + "|0";
+        if (!G435Set(h, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00)) return name + "|0";   // войти в сервисный режим
+        try {
+          Thread.Sleep(250);
+          var rb = new byte[64]; rb[0] = 0x06; HidD_GetFeature(h, rb, 64);                // сбросить старый ответ
+          G435Set(h, 0x06, 0x04, 0x03, 0x00, 0x07, 0x50, 0x41, 0x0E, 0x00, 0x02, 0xE1, 0x01); // удалённый режим
+          Thread.Sleep(150);
+          G435Set(h, 0x06, 0x04, 0x03, 0x00, 0x07, 0x50, 0x41, 0x06, 0x00, 0x01, 0x00, 0x31); // запрос заряда у гарнитуры
+          var until = DateTime.Now.AddMilliseconds(800);
+          while (DateTime.Now < until && samples.Count < 5) {
+            var r = new byte[64]; r[0] = 0x06;
+            if (HidD_GetFeature(h, r, 64)) {
+              for (int i = 0; i + 4 < 64; i++) {
+                if (r[i] != 0x06 || r[i + 1] != 0x80 || r[i + 2] != 0x00) continue;
+                int mv = r[i + 3] | (r[i + 4] << 8);
+                if (mv >= 3000 && mv <= 4500) { samples.Add(mv); break; }
+              }
+            }
+            Thread.Sleep(30);
+          }
+          G435Set(h, 0x06, 0x04, 0x03, 0x00, 0x07, 0x50, 0x41, 0x0E, 0x00, 0x02, 0xE1, 0x00); // обратно в локальный режим
+          Thread.Sleep(50);
+        } finally {
+          G435Set(h, 0x06, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00);                          // выйти из сервисного режима
+          Thread.Sleep(100);
+        }
+      }
+      if (samples.Count == 0) return name + "|0";
+      samples.Sort();
+      return name + "|" + samples[samples.Count / 2];
+    }
+
     // Диагностика: интерфейсы HID с собственной (vendor) страницей — VID:PID, номер интерфейса, страница/использование,
     // размеры отчётов и название. Только чтение описаний устройств, команд им не шлём.
     public static string[] Diag() {
@@ -515,6 +672,12 @@ namespace Bar {
           " page " + c.UsagePage.ToString("X4") + "/" + c.Usage.ToString("X2") + " in " + c.InputReportByteLength + " out " + c.OutputReportByteLength + " feat " + c.FeatureReportByteLength + " " + name);
       }
       outp.Sort();
+      // Logitech: что ответило по HID++ (только запросы чтения)
+      foreach (var p in LogiPaths()) {
+        HIDP_CAPS c; string name; Caps(p, out c, out name);
+        outp.Add("logitech " + name + ":");
+        Logi(p, name, outp);
+      }
       return outp.ToArray();
     }
 
@@ -604,8 +767,16 @@ namespace Bar {
         int lvl = Math.Min((int)r[6], 100);
         outp.Add(nm + "|" + (lvl > 0 ? lvl : -2) + "|1|" + (r[7] == 0x01 ? "1" : "0") + "|" + kind);
       }
+      foreach (var p in LogiPaths()) {
+        HIDP_CAPS c; string name; Caps(p, out c, out name);
+        string nm0 = string.IsNullOrEmpty(name) ? "Logitech" : name;
+        var got = Logi(p, nm0, null);
+        foreach (var line in got) { var key = "lg" + line.Split('|')[0]; if (!seen.Contains(key)) { seen.Add(key); outp.Add(line); } }
+        // гарнитура с донглом выключена — донгл есть, но не отвечает: показываем «нет связи»
+        if (got.Count == 0 && System.Text.RegularExpressions.Regex.IsMatch(nm0.ToLower(), "headset|g\\d{3}") && !seen.Contains("lgoff" + nm0)) { seen.Add("lgoff" + nm0); var pn = Pretty(nm0); if (!pn.ToLower().StartsWith("logi")) pn = "Logitech " + pn; outp.Add(pn + "|-1|0|0|headphones"); }
+      }
       // любые другие устройства: стандартный заряд HID (Battery Strength), если он есть
-      var known = new HashSet<string> { "1532", "1b1c", "0c45", "3554", "1038" };
+      var known = new HashSet<string> { "1532", "1b1c", "0c45", "3554", "1038", "046d" };
       foreach (var p in Paths("")) {
         var m = System.Text.RegularExpressions.Regex.Match(p.ToLower(), @"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})");
         if (!m.Success || known.Contains(m.Groups[1].Value)) continue;
@@ -1069,6 +1240,8 @@ while ($true) {
       'bt'       { @(Get-BtBatteries) }
       'net'      { Get-NetState }
       'hidbat'   { @([Bar.HidBattery]::Read()) }
+      'g435has'  { [Bar.HidBattery]::G435Present() }
+      'g435'     { [Bar.HidBattery]::G435Read() }
       'taskbar'  { [Bar.Taskbar]::AutoHide() }
       'taskwins' { @([Bar.Win]::TaskWindows()) }
       'winthumbs' { @($arg.Split(',') | Where-Object { $_ } | ForEach-Object { $_ + '|' + [Bar.Win]::Thumb([long]$_, 720, 450) }) }

@@ -1490,6 +1490,18 @@ tool({
       body.append(grid, devPick());
     }
 
+    // G435 читается раз в час (чтение на секунду прерывает звук) — здесь можно обновить сразу
+    function g435Btn() {
+      const b = h('button', { class: 'btn sm dev-upd', title: 'Узнать заряд сейчас. Звук в наушниках прервётся примерно на секунду — так устроен донгл G435.' }, I('reset'), 'Обновить');
+      b.onclick = async () => {
+        b.disabled = true; b.classList.add('busy');
+        const r = await bar.g435Read().catch(() => null);
+        b.disabled = false; b.classList.remove('busy');
+        flash(r && r.ok ? `G435 · ${r.level}%` : 'G435 не ответили — включены ли наушники?');
+      };
+      return b;
+    }
+
     // какие устройства показывать: все, что Bar видит сейчас или видел раньше
     function devPick() {
       const box = h('div', { class: 'dev-pick' });
@@ -1508,6 +1520,7 @@ tool({
           const row = h('div', { class: 'sw' + (devHidden.has(n) ? ' dev-off' : ''), 'data-n': n, title: n },
             h('span', { class: 'dev-ic', html: icon(devIcon(n, d && d.kind)) }),
             h('span', { class: 'ind-lbl' }, h('span', {}, n), h('span', { class: 'muted small dev-st' }, st(d))),
+            /G435/i.test(n) ? g435Btn() : null,
             toggle(!devHidden.has(n), (v) => { setDevShown(n, v); row.classList.toggle('dev-off', !v); }));
           row.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 320, delay: i * 30, easing: 'cubic-bezier(.3,1.2,.5,1)', fill: 'backwards' });
           grid.append(row);
