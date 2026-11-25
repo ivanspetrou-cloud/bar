@@ -504,7 +504,8 @@ ipcMain.handle('settings-get', () => ({
 }));
 ipcMain.handle('settings-set', (_e, patch) => {
   if ('autostart' in patch) app.setLoginItemSettings({ openAtLogin: !!patch.autostart, ...loginArgs() });
-  for (const k of ['clipHistory', 'ocrLang', 'idleHide', 'notchOn']) if (k in patch) settings[k] = patch[k];
+  for (const k of ['clipHistory', 'ocrLang', 'idleHide', 'notchOn', 'micDev']) if (k in patch) settings[k] = patch[k];
+  if ('micDev' in patch && sensors) sensors.micChanged();
   if ('notchOn' in patch) { followId = null; if (winMode === 'pill' || winMode === 'full') placeWindow(); startFollow(); }
   if ('idleHide' in patch) startIdleWatch();
   saveSettings();
@@ -659,7 +660,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb(PERMS.includes(perm) && ownPage(wc, details && details.requestingUrl)));
   session.defaultSession.setPermissionCheckHandler((wc, perm, origin) => PERMS.includes(perm) && ownPage(wc, origin));
   createWindow();
-  sensors = setupSensors({ send, getWin: () => win, getStats });
+  sensors = setupSensors({ send, getWin: () => win, getStats, getMicDev: () => settings.micDev });
   music = setupMusic({ send });
   setupUpdater({ send, beforeInstall: async () => { if (taskbar) await taskbar.stop(); quitReady = true; } });
   game = setupGame({ getWin: () => win, send, settings, saveSettings, sensors, win: gameWin, getStats, notchDisplay: () => notchDisplay(), onAuto: () => buildTrayMenu() });

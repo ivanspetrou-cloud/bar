@@ -383,6 +383,56 @@ span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1p
 .qt svg.i { width: 16px; height: 16px; flex: none; }
 .qt:hover { background: var(--ctl-hi); }
 .qt.on { background: var(--acc); color: var(--on-acc); }
+
+/* ---------- Быстрые кнопки: анимированные значки (состояние — классы .on / .light, нажатие — .kick) ---------- */
+.qts .qt { transition: background .3s ease, color .3s ease, transform .15s ease; }
+.qts .qt:active { transform: scale(.96); }
+.qts:not(.anim) .qi, .qts:not(.anim) .qi * { transition: none !important; }
+.qi * { transform-box: view-box; transform-origin: 12px 12px; }
+.qi { overflow: visible; }
+/* Микрофон: выключили — перечёркивается и вздрагивает; включили — подпрыгивает и «звучит» волнами */
+.qi-mic .slash { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .4s cubic-bezier(.3, .7, .3, 1); }
+.qt.on .qi-mic .slash { stroke-dashoffset: 0; }
+.qi-mic .body { transition: opacity .3s ease; }
+.qt.on .qi-mic .body { opacity: .6; }
+.qi-mic .wave { opacity: 0; }
+.qi-mic .w1 { transform-origin: 17px 11px; }
+.qi-mic .w2 { transform-origin: 7px 11px; }
+.qt-mic.kick.on .body { animation: qt-shake .5s ease; }
+.qt-mic.kick:not(.on) .body { animation: qt-pop .45s ease; }
+.qt-mic.kick:not(.on) .wave { animation: qt-wave .8s ease-out; }
+.qt-mic.kick:not(.on) .w2 { animation-delay: .08s; }
+/* Не спать: включили — кофе закипает (пузырьки, чашка подрагивает), пока включено — идёт пар */
+.qi-cup .bub { fill: currentColor; stroke: none; opacity: 0; }
+.qi-cup .steam { opacity: 0; stroke-width: 1.6; }
+.qt.on .qi-cup .steam { animation: qt-steam 2.4s ease-in-out infinite; }
+.qt.on .qi-cup .s2 { animation-delay: .8s; }
+.qt.on .qi-cup .s3 { animation-delay: 1.6s; }
+.qt-cup.kick.on .cup { animation: qt-boil .8s ease; }
+.qt-cup.kick.on .bub { animation: qt-bubble .9s ease-out; }
+.qt-cup.kick.on .b2 { animation-delay: .25s; }
+/* Тема: полумесяц поворачивается и тает, из центра разгорается солнце и вытягиваются лучи (и обратно) */
+.qi-theme .moon, .qi-theme .sun { transition: transform .6s cubic-bezier(.3, 1.35, .5, 1), opacity .45s ease; }
+.qi-theme .sun { opacity: 0; transform: rotate(-90deg) scale(.4); }
+.qt-theme.light .qi-theme .sun { opacity: 1; transform: none; }
+.qt-theme.light .qi-theme .moon { opacity: 0; transform: rotate(120deg) scale(.4); }
+.qi-theme .rays path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .3s ease; }
+.qt-theme.light .qi-theme .rays path { stroke-dashoffset: 0; transition-delay: .25s; }
+.qt-theme.light .qi-theme .rays path:nth-child(even) { transition-delay: .35s; }
+/* Без панели: полоска панели задач уезжает вниз за край экрана и возвращается обратно */
+.qi-tb .strip { transition: transform .45s cubic-bezier(.3, .7, .3, 1), opacity .35s ease; }
+.qt.on .qi-tb .strip { transform: translateY(6px); opacity: 0; }
+.qt-tb.kick:not(.on) .strip { transition-timing-function: cubic-bezier(.3, 1.5, .5, 1), ease; }
+.qt-tb.kick .frame { animation: qt-pop .45s ease; }
+@keyframes qt-shake { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-14deg); } 40% { transform: rotate(11deg); } 60% { transform: rotate(-7deg); } 80% { transform: rotate(4deg); } }
+@keyframes qt-pop { 0% { transform: scale(.82); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes qt-wave { 0% { opacity: 0; transform: scale(.6); } 35% { opacity: 1; } 100% { opacity: 0; transform: scale(1.3); } }
+@keyframes qt-steam { 0% { opacity: 0; transform: translateY(2.5px); } 35% { opacity: .9; } 100% { opacity: 0; transform: translateY(-3px); } }
+@keyframes qt-bubble { 0% { opacity: 0; transform: translateY(0) scale(.5); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-4.5px) scale(1); } }
+@keyframes qt-boil { 0%, 100% { transform: none; } 20% { transform: translateY(-.8px) rotate(-4deg); } 45% { transform: rotate(4deg); } 70% { transform: translateY(-.5px) rotate(-2deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .qi *, .qts .qt { animation: none !important; transition-duration: .01s !important; }
+}
 .devs .dev { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; grid-template-rows: 18px 4px; column-gap: 6px; row-gap: 3px; align-items: center; margin-bottom: 4px; }
 .dev > svg.i { justify-self: center; }
 .dev svg.i { width: 16px; height: 16px; }

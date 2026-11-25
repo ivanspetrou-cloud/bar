@@ -26,9 +26,23 @@ namespace Bar {
     int GetMute(out bool pbMute);
   }
   [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IMMDevice { int Activate(ref Guid id, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object iface); }
+  interface IMMDevice {
+    int Activate(ref Guid id, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object iface);
+    int OpenPropertyStore(int access, out IPropertyStore props);
+    int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+  }
+  [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMMDeviceCollection { int GetCount(out uint n); int Item(uint i, out IMMDevice d); }
+  [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropertyStore { int GetCount(out uint n); int GetAt(uint i, out PKEY k); int GetValue(ref PKEY k, out PVAR v); }
+  [StructLayout(LayoutKind.Sequential)] struct PKEY { public Guid fmtid; public uint pid; }
+  [StructLayout(LayoutKind.Sequential)] struct PVAR { public ushort vt; public ushort r1, r2, r3; public IntPtr p; public IntPtr p2; }
   [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IMMDeviceEnumerator { int f(); int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint); }
+  interface IMMDeviceEnumerator {
+    int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection devices);
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+    int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice dev);
+  }
   [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumeratorComObject { }
 
   public static class Audio {
@@ -45,17 +59,61 @@ namespace Bar {
     public static void SetMute(int flow, bool m) { Marshal.ThrowExceptionForHR(Vol(flow).SetMute(m, Guid.Empty)); }
     public static bool HasMic() { try { Vol(1); return true; } catch { return false; } }
 
+    // ---------- микрофон: выбранное устройство или «как в Windows» (микрофон по умолчанию + микрофон для связи) ----------
+    static IAudioEndpointVolume Act(IMMDevice dev) {
+      Guid iid = typeof(IAudioEndpointVolume).GUID; object o;
+      Marshal.ThrowExceptionForHR(dev.Activate(ref iid, 23, IntPtr.Zero, out o));
+      return (IAudioEndpointVolume)o;
+    }
+    static List<IAudioEndpointVolume> Mics(string id) {
+      var res = new List<IAudioEndpointVolume>();
+      var en = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
+      IMMDevice d;
+      if (!string.IsNullOrEmpty(id)) { try { if (en.GetDevice(id, out d) == 0 && d != null) { res.Add(Act(d)); return res; } } catch { } } // устройство отключили — как в Windows
+      var seen = new HashSet<string>();
+      foreach (int role in new[] { 1, 2 }) {     // мультимедиа и связь (Discord, Teams, звонки)
+        if (en.GetDefaultAudioEndpoint(1, role, out d) != 0 || d == null) continue;
+        string did; d.GetId(out did);
+        if (did != null && !seen.Add(did)) continue;
+        try { res.Add(Act(d)); } catch { }
+      }
+      return res;
+    }
+    // выключен — если выключены все целевые микрофоны
+    public static bool MicMuted(string id) { var l = Mics(id); if (l.Count == 0) return false; foreach (var v in l) { bool m; v.GetMute(out m); if (!m) return false; } return true; }
+    public static bool HasMicDev(string id) { return Mics(id).Count > 0; }
+    public static void SetMicMute(string id, bool m) { foreach (var v in Mics(id)) v.SetMute(m, Guid.Empty); }
+    // активные микрофоны: "id|имя|1 — по умолчанию|1 — для связи"
+    public static string[] MicList() {
+      var outp = new List<string>();
+      var en = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
+      string def1 = "", def2 = ""; IMMDevice d;
+      if (en.GetDefaultAudioEndpoint(1, 1, out d) == 0 && d != null) d.GetId(out def1);
+      if (en.GetDefaultAudioEndpoint(1, 2, out d) == 0 && d != null) d.GetId(out def2);
+      IMMDeviceCollection col; if (en.EnumAudioEndpoints(1, 1, out col) != 0) return outp.ToArray();
+      uint n; col.GetCount(out n);
+      var key = new PKEY { fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), pid = 14 }; // FriendlyName
+      for (uint i = 0; i < n; i++) {
+        if (col.Item(i, out d) != 0 || d == null) continue;
+        string id; d.GetId(out id); string name = "";
+        IPropertyStore ps;
+        if (d.OpenPropertyStore(0, out ps) == 0 && ps != null) { PVAR v; if (ps.GetValue(ref key, out v) == 0 && v.vt == 31) name = Marshal.PtrToStringUni(v.p); }
+        outp.Add(id + "|" + name + "|" + (id == def1 ? 1 : 0) + "|" + (id == def2 ? 1 : 0));
+      }
+      return outp.ToArray();
+    }
+
     // Ожидание изменения громкости / звука / микрофона (для всплывашки в нотче).
     // Цикл внутри процесса: 12 лёгких чтений в секунду, наружу — ответ только при изменении или по таймауту.
-    public static string WaitChange(int vol, int mute, int mic, int timeoutMs) {
+    public static string WaitChange(int vol, int mute, int mic, int timeoutMs, string micId) {
       var sw = Stopwatch.StartNew();
-      IAudioEndpointVolume o = null, i = null; long got = -10000;
+      IAudioEndpointVolume o = null; List<IAudioEndpointVolume> ii = null; IAudioEndpointVolume i = null; long got = -10000;
       while (true) {
         try {
-          if (sw.ElapsedMilliseconds - got > 2000) { o = Vol(0); try { i = Vol(1); } catch { i = null; } got = sw.ElapsedMilliseconds; } // устройство могли сменить
-          float v; bool m, mm = false;
+          if (sw.ElapsedMilliseconds - got > 2000) { o = Vol(0); try { ii = Mics(micId); } catch { ii = null; } i = ii != null && ii.Count > 0 ? ii[0] : null; got = sw.ElapsedMilliseconds; } // устройство могли сменить
+          float v; bool m, mm = i != null;
           o.GetMasterVolumeLevelScalar(out v); o.GetMute(out m);
-          if (i != null) i.GetMute(out mm);
+          if (i != null) foreach (var x in ii) { bool xm; x.GetMute(out xm); if (!xm) { mm = false; break; } }
           int vp = (int)Math.Round(v * 100), mi = m ? 1 : 0, mmi = mm ? 1 : 0;
           if (vp != vol || mi != mute || (i != null && mmi != mic) || sw.ElapsedMilliseconds >= timeoutMs)
             return vp + "|" + mi + "|" + (i != null ? 1 : 0) + "|" + mmi;
@@ -267,6 +325,21 @@ namespace Bar {
       return SetForegroundWindow(h);
     }
     public static void Minimize(long hwnd) { ShowWindow(new IntPtr(hwnd), 6); }
+
+    // Тема Windows (светлая/тёмная): чтение и смена. После смены — то же оповещение, что шлют «Параметры»
+    // (WM_SETTINGCHANGE «ImmersiveColorSet»): иначе программы, в том числе сам Bar, о смене темы не узнают.
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutS(IntPtr h, uint msg, IntPtr w, string l, uint flags, uint timeout, out IntPtr result);
+    const string THEME_KEY = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+    public static object Theme(string arg) {
+      using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(THEME_KEY)) {
+        if (arg != "1" && arg != "0") { var v = k.GetValue("AppsUseLightTheme"); return v == null ? (object)null : (int)v != 0; }
+        int on = arg == "1" ? 1 : 0;
+        k.SetValue("AppsUseLightTheme", on, Microsoft.Win32.RegistryValueKind.DWord);
+        k.SetValue("SystemUsesLightTheme", on, Microsoft.Win32.RegistryValueKind.DWord);
+      }
+      IntPtr r; SendMessageTimeoutS(new IntPtr(0xFFFF), 0x001A, IntPtr.Zero, "ImmersiveColorSet", 2, 1000, out r);
+      return arg == "1";
+    }
 
     // Скрыть / показать окна процесса (окно Edge с музыкой): без окна и без значка на панели задач,
     // звук при этом продолжает играть. Скрытые окна запоминаем, чтобы вернуть ровно их.
@@ -1271,16 +1344,18 @@ while ($true) {
   $id = $parts[0]; $cmd = $parts[1]; $arg = if ($parts.Count -gt 2) { $parts[2] } else { '' }
   try {
     $data = switch ($cmd) {
-      'audio'    { [ordered]@{ volume = [Math]::Round([Bar.Audio]::GetVolume() * 100); muted = [Bar.Audio]::GetMute(0); mic = [Bar.Audio]::HasMic(); micMuted = $(if ([Bar.Audio]::HasMic()) { [Bar.Audio]::GetMute(1) } else { $false }) } }
-      'waitaudio' { $w = $arg.Split(' '); [Bar.Audio]::WaitChange([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3]) }
+      'audio'    { $hm = [Bar.Audio]::HasMicDev($arg.Trim()); [ordered]@{ volume = [Math]::Round([Bar.Audio]::GetVolume() * 100); muted = [Bar.Audio]::GetMute(0); mic = $hm; micMuted = $(if ($hm) { [Bar.Audio]::MicMuted($arg.Trim()) } else { $false }) } }
+      'waitaudio' { $w = $arg.Split(' '); [Bar.Audio]::WaitChange([int]$w[0], [int]$w[1], [int]$w[2], [int]$w[3], $(if ($w.Count -gt 4) { $w[4] } else { '' })) }
+      'mics'     { @([Bar.Audio]::MicList()) }
       'setvol'   { [Bar.Audio]::SetVolume([float]$arg / 100); $true }
       'mute'     { [Bar.Audio]::SetMute(0, $arg -eq '1'); $true }
-      'micmute'  { [Bar.Audio]::SetMute(1, $arg -eq '1'); $true }
+      'micmute'  { $w = $arg.Trim().Split(' ', 2); [Bar.Audio]::SetMicMute($(if ($w.Count -gt 1) { $w[1] } else { '' }), $w[0] -eq '1'); $true }
       'layout'   { [Bar.Win]::Layout() }
       'layouts'  { @([Bar.Win]::Layouts()) }
       'fg'       { [Bar.Win]::Foreground() }
       'gamestate' { [Bar.Win]::GameState() }
       'fgmax'    { [Bar.Win]::FgMaximized() }
+      'wintheme' { [Bar.Win]::Theme($arg.Trim()) }
       'gpu'      { [Bar.Gpu]::Usage() }
       'appicon'  { [Bar.ShellIcon]::Png($arg, 64) }
       'fileicon' { [Bar.ShellIcon]::Png($arg, 96) }   # иконка файла в высоком разрешении (как в Проводнике)

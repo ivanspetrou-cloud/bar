@@ -6,7 +6,8 @@ const path = require('path');
 const { spawn, execFile } = require('child_process');
 const Agent = require('./agent-host');
 
-module.exports = function setupSensors({ send, getWin, getStats }) {
+module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () => '' }) {
+  const micDev = () => String(getMicDev() || '').replace(/\s/g, ''); // выбранный микрофон (id устройства) или '' — как в Windows
   const fast = new Agent('fast'); // быстрые запросы: раскладка, звук, трек, окна
   const slow = new Agent('slow');
   const finder = new Agent('search'); // поиск файлов: свой процесс, чтобы не ждать опрос Bluetooth // медленные: Bluetooth (~9 с), сеть, список приложений
@@ -28,7 +29,7 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   let lastNet = null;
   const poll = {
     layout: async () => { const v = await safe(fast.call('layout', '', 3000)); if (v !== undefined) send('sensors', { layout: v }); },
-    audio: async () => { const v = await safe(fast.call('audio', '', 4000)); if (v) send('sensors', { audio: v }); },
+    audio: async () => { const v = await safe(fast.call('audio', micDev(), 4000)); if (v) send('sensors', { audio: v }); },
     media: async () => { const v = await safe(fast.call('media', '', 6000)); if (v !== undefined) send('sensors', { media: v || null }); },
     net: async () => {
       const n = await safe(slow.call('net', '', 10000)); if (!n) return;
@@ -70,7 +71,7 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     aw.on = true;
     while (aw.on && need.osd) {
       let r;
-      try { r = await watcher.call('waitaudio', `${aw.v} ${aw.m} ${aw.mm} 25000`, 30000); }
+      try { r = await watcher.call('waitaudio', `${aw.v} ${aw.m} ${aw.mm} 25000 ${micDev()}`.trim(), 30000); }
       catch { await new Promise((res) => setTimeout(res, 2000)); continue; }
       if (!r || !aw.on) continue;
       const [v, m, hasMic, mm] = String(r).split('|').map(Number);
@@ -112,11 +113,13 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.on('sensors-refresh', (_e, key) => poll[key] && poll[key]());
 
   // ---------- звук и медиа ----------
+  // микрофоны для выбора в настройках: { id, name, def, comm }
+  ipcMain.handle('mic-list', async () => Agent.list(await safe(fast.call('mics', '', 4000))).map((r) => { const [id, name, def, comm] = String(r).split('|'); return { id, name, def: def === '1', comm: comm === '1' }; }));
   ipcMain.handle('audio-set', async (_e, p) => {
     try {
       if ('volume' in p) await fast.call('setvol', Math.round(p.volume));
       if ('mute' in p) await fast.call('mute', p.mute ? 1 : 0);
-      if ('mic' in p) await fast.call('micmute', p.mic ? 1 : 0);
+      if ('mic' in p) await fast.call('micmute', `${p.mic ? 1 : 0} ${micDev()}`.trim());
     } catch {}
     poll.audio();
   });
@@ -548,22 +551,16 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
     if (!on && awakeId !== null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
     return awakeId !== null;
   });
-  const THEME_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize';
-  ipcMain.handle('win-theme', (_e, light) => new Promise((resolve) => {
-    if (light === undefined) {
-      execFile('reg', ['query', THEME_KEY, '/v', 'AppsUseLightTheme'], { windowsHide: true }, (err, out) => {
-        resolve(err ? null : /0x1\s*$/m.test(out));
-      });
-      return;
-    }
-    const v = light ? '1' : '0';
-    execFile('reg', ['add', THEME_KEY, '/v', 'AppsUseLightTheme', '/t', 'REG_DWORD', '/d', v, '/f'], { windowsHide: true }, () => {
-      execFile('reg', ['add', THEME_KEY, '/v', 'SystemUsesLightTheme', '/t', 'REG_DWORD', '/d', v, '/f'], { windowsHide: true }, () => resolve(light));
-    });
-  }));
+  // тема Windows: без аргумента — прочитать (true — светлая), иначе сменить; агент оповещает систему, как «Параметры»
+  ipcMain.handle('win-theme', async (_e, light) => {
+    const v = await safe(fast.call('wintheme', light === undefined ? '' : light ? '1' : '0', 4000));
+    return v === undefined ? null : v;
+  });
 
   return {
     call: (cmd, arg, ms) => fast.call(cmd, arg, ms),
+    // сменили микрофон в настройках: перечитать звук и перезапустить ожидание изменений с новым устройством
+    micChanged() { poll.audio(); if (aw.on) watcher.stop(); }, // цикл ожидания сам перезапустит агента и спросит уже новый микрофон
     noteExe,
     listApps,
     stop() { clearInterval(fgT); clearInterval(fgSave); try { fs.writeFileSync(FG_FILE, JSON.stringify(fg)); } catch {} Object.values(timers).forEach(clearInterval); fast.stop(); slow.stop(); finder.stop(); gpuAgent.stop(); watchSet(false); meterStop(); if (awakeId !== null) powerSaveBlocker.stop(awakeId); },

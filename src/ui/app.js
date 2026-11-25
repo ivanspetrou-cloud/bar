@@ -1450,6 +1450,10 @@ tool({
         idleSel.value = String(s.idleHide ?? 60);
         idleSel.onchange = () => bar.settingsSet({ idleHide: +idleSel.value });
         lang.onchange = () => bar.settingsSet({ ocrLang: lang.value });
+        // какой микрофон выключает кнопка «Микрофон»: по умолчанию — оба микрофона Windows (обычный и для связи)
+        const micSel = h('select', { class: 'field', 'aria-label': 'Микрофон для кнопки' }, h('option', { value: '' }, 'Как в Windows'));
+        micSel.onchange = () => bar.settingsSet({ micDev: micSel.value });
+        bar.micList().then((ms) => { for (const m of ms || []) micSel.append(h('option', { value: m.id }, (m.name || 'Микрофон').replace(/^Микрофон\s*\((.+)\)$/i, '$1') + (m.def ? ' · по умолчанию' : '') + (m.comm ? ' · для связи' : ''))); micSel.value = s.micDev && (ms || []).some((m) => m.id === s.micDev) ? s.micDev : ''; });
         const upd = updateRow();
         const prevClean = body._cleanup; body._cleanup = () => { upd._cleanup(); if (prevClean) prevClean(); };
         body.append(h('div', { class: 'split' },
@@ -1457,6 +1461,7 @@ tool({
             h('div', { class: 'sw' }, 'Запускать вместе с Windows', toggle(s.autostart, (v) => bar.settingsSet({ autostart: v }))),
             h('div', { class: 'sw' }, 'История буфера обмена', toggle(s.clipHistory, (v) => bar.settingsSet({ clipHistory: v }))),
             h('div', { class: 'sw' }, 'Язык распознавания', lang),
+            h('div', { class: 'sw', title: 'Какой микрофон выключает кнопка «Микрофон». «Как в Windows» — микрофон по умолчанию и микрофон для связи (Discord, звонки) сразу' }, 'Микрофон для кнопки', micSel),
             h('div', { class: 'sw', title: 'Если мышь не двигается на мониторе с нотчем, он уезжает за край экрана и возвращается при первом движении' }, 'Прятать нотч без мыши', idleSel),
             musicRow(),
             h('span', { class: 'grow' }),
@@ -2544,22 +2549,61 @@ function soundCard() {
   slider.addEventListener('change', () => { dragging = false; });
   slider.addEventListener('wheel', (e) => { e.preventDefault(); slider.value = Math.max(0, Math.min(100, +slider.value + (e.deltaY < 0 ? 2 : -2))); slider.dispatchEvent(new Event('input')); setTimeout(() => (dragging = false), 300); }, { passive: false });
   muteBtn.onclick = () => S.audio && bar.audioSet({ mute: !S.audio.muted });
-  const chip = (label, ic, on, fn, title) => h('button', { class: 'qt' + (on ? ' on' : ''), title: title || label, 'aria-pressed': String(!!on), onclick: fn }, I(ic), label);
+  // Быстрые кнопки: создаются один раз, draw() меняет только состояние — поэтому переходы значков (CSS, «Быстрые кнопки»
+  // в style.css) успевают проиграться. kick — короткая анимация в момент нажатия.
   const chips = h('div', { class: 'qts' });
+  const kick = (b) => { b.classList.remove('kick'); void b.offsetWidth; b.classList.add('kick'); clearTimeout(b._kt); b._kt = setTimeout(() => b.classList.remove('kick'), 1000); };
+  const mkChip = (key, svg, fn) => {
+    const b = h('button', { class: 'qt qt-' + key, onclick: () => { kick(b); fn(); } }, h('span', { html: svg, style: { display: 'contents' } }), h('span', { class: 'qt-l' }));
+    chips.append(b);
+    return b;
+  };
+  const setChip = (b, on, label, title) => {
+    b.classList.toggle('on', !!on); b.setAttribute('aria-pressed', String(!!on));
+    b.lastChild.textContent = label; b.title = title || label;
+  };
+  const rays = [[12, 5.5, 12, 2.5], [12, 18.5, 12, 21.5], [5.5, 12, 2.5, 12], [18.5, 12, 21.5, 12], [7.4, 7.4, 5.3, 5.3], [16.6, 16.6, 18.7, 18.7], [7.4, 16.6, 5.3, 18.7], [16.6, 7.4, 18.7, 5.3]]
+    .map(([x1, y1, x2, y2]) => `<path pathLength="1" d="M${x1} ${y1}L${x2} ${y2}"/>`).join('');
+  const micB = mkChip('mic', '<svg class="i qi qi-mic" viewBox="0 0 24 24" aria-hidden="true"><g class="body"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></g>'
+    + '<path class="wave w1" d="M20.5 7.5a6 6 0 0 1 0 7"/><path class="wave w2" d="M3.5 7.5a6 6 0 0 0 0 7"/><path class="slash" pathLength="1" d="M4 4l16 16"/></svg>',
+    () => { const a = S.audio; if (a && a.mic) bar.audioSet({ mic: !a.micMuted }); });
+  const awakeB = mkChip('cup', '<svg class="i qi qi-cup" viewBox="0 0 24 24" aria-hidden="true"><g class="cup"><path d="M5 10h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/></g>'
+    + '<circle class="bub b1" cx="8.5" cy="15" r="1"/><circle class="bub b2" cx="12.5" cy="15.5" r=".8"/>'
+    + '<path class="steam s1" d="M8 8c-1-1.2 1-2 0-4"/><path class="steam s2" d="M10.5 8c-1-1.2 1-2 0-4"/><path class="steam s3" d="M13 8c-1-1.2 1-2 0-4"/></svg>',
+    async () => { Toggles.awake = await bar.keepAwake(!Toggles.awake); draw(); renderBar(); });
+  const themeB = mkChip('theme', '<svg class="i qi qi-theme" viewBox="0 0 24 24" aria-hidden="true"><g class="moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5"/></g>'
+    + `<g class="sun"><circle cx="12" cy="12" r="4"/><g class="rays">${rays}</g></g></svg>`,
+    async () => {
+      if (winLight === null) return;
+      // оформление Bar следует теме Windows — иначе нотч и док остались бы прежними
+      const cfg = BarTheme.load();
+      if (cfg.theme !== 'auto') { cfg.theme = 'auto'; BarTheme.save(cfg); }
+      const v = await bar.winTheme(!winLight);
+      if (v !== null && v !== undefined) winLight = v;
+      draw();
+    });
+  const tbB = mkChip('tb', '<svg class="i qi qi-tb" viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="qtb-clip"><rect x="3" y="4" width="18" height="16" rx="2"/></clipPath></defs>'
+    + '<rect class="frame" x="3" y="4" width="18" height="16" rx="2"/><g clip-path="url(#qtb-clip)"><g class="strip"><path d="M3 15.5h18"/><path d="M7 18h.01M10 18h.01M13 18h.01"/></g></g></svg>',
+    async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); });
   let winLight = null, tbHide = null;
   bar.winTheme().then((v) => { winLight = v; draw(); });
   bar.taskbar().then((v) => { tbHide = v === undefined ? null : !!v; draw(); });
+  // тему Windows сменили в «Параметрах» — значок тоже меняется (луна ↔ солнце)
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => { winLight = !e.matches; draw(); });
+  setTimeout(() => chips.classList.add('anim'), 1200); // при открытии — без переходов, сразу в нужном состоянии
   const draw = () => {
     const a = S.audio;
     if (a && !dragging) { slider.value = a.volume; val.textContent = a.muted ? 'выкл.' : a.volume + '%'; }
     slider.disabled = !a;
     muteBtn.innerHTML = icon(a && a.muted ? 'mute' : 'volup');
     muteBtn.classList.toggle('on', !!(a && a.muted));
-    chips.replaceChildren(
-      chip(a && a.micMuted ? 'Микр. выкл.' : 'Микрофон', a && a.micMuted ? 'micoff' : 'mic', a && a.micMuted, () => a && a.mic && bar.audioSet({ mic: !a.micMuted }), 'Выключить / включить микрофон для всех программ'),
-      chip('Не спать', 'coffee', Toggles.awake, async () => { Toggles.awake = await bar.keepAwake(!Toggles.awake); draw(); renderBar(); }, 'Экран не гаснет и компьютер не засыпает'),
-      chip('Тема', winLight ? 'sun' : 'moon', false, async () => { if (winLight === null) return; winLight = await bar.winTheme(!winLight); draw(); }, 'Тема Windows: светлая / тёмная'),
-      chip('Без панели', 'taskbar', !!tbHide, async () => { if (tbHide === null) return; const v = await bar.taskbar(!tbHide); tbHide = v === undefined ? !tbHide : !!v; draw(); }, tbHide ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows'));
+    const f = window.__qtForce || {}; // только для самопроверки снимками: подставить состояние, не трогая систему
+    const micOff = f.mic ?? (a && a.micMuted), awake = f.awake ?? Toggles.awake, light = f.light ?? winLight, tbOn = f.tb ?? tbHide;
+    setChip(micB, micOff, micOff ? 'Микр. выкл.' : 'Микрофон', 'Выключить / включить микрофон (какой — в настройках)');
+    setChip(awakeB, awake, 'Не спать', awake ? 'Экран не гаснет — нажмите, чтобы разрешить сон' : 'Экран не гаснет и компьютер не засыпает');
+    setChip(themeB, false, 'Тема', light ? 'Тема Windows светлая — сделать тёмной' : 'Тема Windows тёмная — сделать светлой');
+    themeB.classList.toggle('light', !!light);
+    setChip(tbB, !!tbOn, 'Без панели', tbOn ? 'Панель задач Windows скрывается — нажмите, чтобы закрепить' : 'Автоматически скрывать панель задач Windows');
   };
   card.append(h('h4', {}, 'Звук и система'), h('div', { class: 'vol-row' }, muteBtn, slider, val), chips);
   draw();
