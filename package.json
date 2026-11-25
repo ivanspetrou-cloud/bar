@@ -68,6 +68,13 @@
           "bridge.js",
           "web.js"
         ]
+      },
+      {
+        "from": "native/target/release",
+        "to": "native",
+        "filter": [
+          "bar-agent.exe"
+        ]
       }
     ],
     "win": {
