@@ -196,7 +196,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       const b = d.display.bounds;
       const g = !!(gm && gm.x < b.x + b.width && gm.x + gm.width > b.x && gm.y < b.y + b.height && gm.y + gm.height > b.y);
       const f = fullId === d.display.id;
-      if (g !== d.gameOn || f !== d.fullscreen) { d.gameOn = g; d.fullscreen = f; if (!g && !f) d.peek = false; visibleSync(d); }
+      if (g !== d.gameOn || f !== d.fullscreen) { d.gameOn = g; d.fullscreen = f; if (!g && !f) { d.peek = false; d.forced = false; } visibleSync(d); }
     }
     peekWatch();
   }
@@ -207,7 +207,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   function peekWatch() {
     const delay = +(cfg().gamePeek ?? 500);
     const need = delay > 0 && [...docks.values()].some((d) => d.gameOn || d.fullscreen);
-    if (!need) { clearInterval(peekT); peekT = 0; for (const d of docks.values()) if (d.peek) { d.peek = false; visibleSync(d); } return; }
+    if (!need) { clearInterval(peekT); peekT = 0; for (const d of docks.values()) { if (d.forced && !d.win.isDestroyed()) { d.forced = false; d.win.setIgnoreMouseEvents(true, { forward: true }); } if (d.peek) { d.peek = false; visibleSync(d); } } return; }
     if (peekT) return;
     peekT = setInterval(() => {
       const ms = +(cfg().gamePeek ?? 500);
@@ -222,10 +222,15 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
           if (d.edgeAt && Date.now() - d.edgeAt >= ms) { d.peek = true; d.edgeAt = 0; d.leaveAt = 0; visibleSync(d); d.win.webContents.send('tb-peek'); }
         } else {
           const w = d.win.getBounds();
+          // Игра (Dota 2 и др.) съедает события мыши — док сам их не получит. Поэтому, пока курсор над доком или превью,
+          // делаем окно кликабельным сами, а уведут — снова прозрачным для мыши.
+          const z = d.zone, m = 6;
+          const inZone = !!z && c.x >= w.x + z.l - m && c.x < w.x + z.r + m && c.y >= w.y + z.t - m && c.y < w.y + z.b + m;
+          if (inZone && !d.forced) { d.forced = true; d.hover = true; d.win.setIgnoreMouseEvents(false); d.win.webContents.send('tb-hover', true); }
+          else if (!inZone && d.forced) { d.forced = false; d.hover = false; d.win.setIgnoreMouseEvents(true, { forward: true }); d.win.webContents.send('tb-hover', false); }
           const near = inX && c.y >= b.y + b.height - (sizePx(d) + EDGE + 40);
-          const inside = c.x >= w.x && c.x < w.x + w.width && c.y >= w.y && c.y < w.y + w.height;
-          d.leaveAt = near || (inside && d.hover) ? 0 : d.leaveAt || Date.now();
-          if (d.leaveAt && Date.now() - d.leaveAt > 700) { d.peek = false; d.leaveAt = 0; visibleSync(d); }
+          d.leaveAt = near || inZone ? 0 : d.leaveAt || Date.now();
+          if (d.leaveAt && Date.now() - d.leaveAt > 700) { d.peek = false; d.leaveAt = 0; if (d.forced) { d.forced = false; d.win.setIgnoreMouseEvents(true, { forward: true }); } visibleSync(d); }
         }
       }
     }, 80);
@@ -261,8 +266,10 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     else for (const d of docks.values()) { applyZoom(d); visibleSync(d); if (!d.win.isDestroyed()) d.win.webContents.send('tb-cfg', cfgFor(d)); }
     return { ...now, displays: displays() };
   });
-  ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) { d.hover = !!on; d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); } });
+  ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d && !on && d.forced) return; /* в игре кликабельностью управляет проверка курсора */ if (d) { d.hover = !!on; d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); } });
   ipcMain.on('tb-refresh', () => refreshSoon());
+  // где на окне док и превью (CSS px = DIP): по этому прямоугольнику таскбар становится кликабельным в играх
+  ipcMain.on('tb-zone', (e, z) => { const d = dockOf(e); if (d && z && [z.l, z.t, z.r, z.b].every(Number.isFinite)) d.zone = z; });
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику
   ipcMain.on('tb-apps', () => openApps && openApps());              // все приложения — в нотче, в стиле Bar
   ipcMain.on('tb-tool', (_e, id) => { if (/^[a-z]{2,16}$/.test(String(id)) && openApps) openApps(String(id)); }); // инструмент Bar / настройки таскбара

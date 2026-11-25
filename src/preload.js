@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('bar', {
   onTbWins: on('tb-wins'),
   onTbCfg: on('tb-cfg'),
   tbInteractive: (v) => ipcRenderer.send('tb-interactive', !!v),
+  tbZone: (z) => ipcRenderer.send('tb-zone', z),
+  onTbHover: on('tb-hover'),
   tbRefresh: () => ipcRenderer.send('tb-refresh'),
   tbStart: () => ipcRenderer.send('tb-start'),
   tbApps: () => ipcRenderer.send('tb-apps'),

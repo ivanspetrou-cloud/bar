@@ -495,6 +495,19 @@ bar.onTbWins((list) => {
 });
 bar.onTbCfg(applyCfg);
 // в игре: док выехал по задержке у края — показать (и спрятать, если мышь на него не зашла)
-bar.onTbPeek(() => { show(); hideSoon(2500); });
+bar.onTbPeek(() => { show(); hideSoon(2500); sendZone(); });
+// прямоугольник дока (и превью, если открыто) — главному процессу, чтобы в играх он сам делал док кликабельным
+function sendZone() {
+  const r = shell.getBoundingClientRect();
+  const z = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+  if (!prev.hidden) { const p = prev.getBoundingClientRect(); z.l = Math.min(z.l, p.left); z.t = Math.min(z.t, p.top); z.r = Math.max(z.r, p.right); z.b = Math.max(z.b, p.bottom); }
+  bar.tbZone(z);
+}
+setInterval(() => { if (shown) sendZone(); }, 250);
+// в игре наведение сообщает главный процесс (сама игра события мыши не отдаёт)
+bar.onTbHover((on) => {
+  if (on) { over = true; show(); document.body.classList.add('mag'); sendZone(); }
+  else { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); prevLeave(); hideSoon(); }
+});
 window.addEventListener('storage', (e) => { if (e.key === 'bar.dock') { pins = store.get('dock', []) || []; render(); } });
 bar.taskbarGet().then((c) => { applyCfg(c); show(); hideSoon(2500); }); // при запуске — показаться и уехать
