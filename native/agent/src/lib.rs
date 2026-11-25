@@ -3,8 +3,8 @@
 pub mod events;
 mod hid;
 pub mod img;
-mod sys;
+pub mod sys;
 mod tools;
-mod win;
+pub mod win;
 mod core;
 pub use crate::core::{Core, CMDS};

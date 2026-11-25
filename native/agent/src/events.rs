@@ -17,7 +17,12 @@ use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetAncestor, Get
 
 use crate::img;
 
+// Куда идут строки событий: по умолчанию — в stdout (отдельный bar-agent.exe, канал закрыт — выходим);
+// Tauri-версия Bar подставляет свою функцию и получает события прямо в своём процессе.
+type Sink = Box<dyn Fn(&str) + Send + Sync>;
+static SINK: std::sync::OnceLock<Sink> = std::sync::OnceLock::new();
 fn out(line: &str) {
+    if let Some(f) = SINK.get() { f(line); return; }
     let mut o = std::io::stdout().lock();
     if writeln!(o, "{}", line).and_then(|_| o.flush()).is_err() { std::process::exit(0); }
 }
@@ -33,10 +38,13 @@ fn meters() -> Vec<IAudioMeterInformation> {
     }
     res
 }
-pub fn meter() {
+pub fn meter() { meter_until(&std::sync::atomic::AtomicBool::new(false), &|l: &str| out(l)); }
+/// уровень звука ~20 раз в секунду, пока stop не станет true (для Tauri-версии: f получает строки «M <пик>»)
+pub fn meter_until(stop: &std::sync::atomic::AtomicBool, f: &dyn Fn(&str)) {
+    let out = f;
     let mut ms: Vec<IAudioMeterInformation> = Vec::new();
     let mut at: Option<Instant> = None;
-    loop {
+    while !stop.load(Ordering::Relaxed) {
         if at.map_or(true, |t| t.elapsed() > Duration::from_secs(3)) { ms = meters(); at = Some(Instant::now()); } // устройства могли сменить
         let best = ms.iter().filter_map(|m| unsafe { m.GetPeakValue().ok() }).fold(0f32, f32::max);
         let s = format!("{:.3}", best);
@@ -64,6 +72,8 @@ unsafe extern "system" fn on_event(_: HWINEVENTHOOK, ev: u32, h: HWND, id_obj: i
         out("E");
     }
 }
+/// события окон в свою функцию (Tauri-версия); вызывать в отдельном потоке — он крутит очередь сообщений Windows
+pub fn winevents_with(f: Sink) { let _ = SINK.set(f); winevents(); }
 pub fn winevents() {
     unsafe {
         for (a, b) in [(0x0003, 0x0003), (0x0016, 0x0017), (0x8001, 0x8003), (0x800C, 0x800C), (0x800B, 0x800B)] {

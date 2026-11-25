@@ -42,12 +42,12 @@ impl Key {
             Some((t.0, b))
         }
     }
-    fn str(&self, name: &str) -> Option<String> {
+    pub fn str(&self, name: &str) -> Option<String> {
         let (_, b) = self.raw(name)?;
         let u: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         Some(s16(&u))
     }
-    fn num(&self, name: &str) -> Option<i64> {
+    pub fn num(&self, name: &str) -> Option<i64> {
         let (t, b) = self.raw(name)?;
         match (t, b.len()) { (_, 8) => Some(i64::from_le_bytes(b[..8].try_into().ok()?)), (_, 4) => Some(u32::from_le_bytes(b[..4].try_into().ok()?) as i64), (1, _) => self.str(name)?.trim().parse().ok(), _ => None }
     }
@@ -329,7 +329,11 @@ pub fn monsizes() -> Value {
                 let o = 54 + b * 18;
                 if e[o] == 0 && e[o + 1] == 0 && e[o + 3] == 0xFC { name = e[o + 5..o + 18].iter().take_while(|&&c| c != 0x0A).map(|&c| c as char).collect::<String>().trim().to_string(); }
             }
-            if !name.is_empty() && e[21] > 0 { out.push(format!("{}|{}|{}", name, e[21], e[22])); }
+            // код модели из EDID (производитель + номер, как в пути устройства: GSM5B7F) — чтобы сопоставить с монитором Windows
+            let m = ((e[8] as u16) << 8) | e[9] as u16;
+            let mfg: String = [(m >> 10) & 31, (m >> 5) & 31, m & 31].iter().map(|c| (b'@' + *c as u8) as char).collect();
+            let id = format!("{}{:04X}", mfg, u16::from_le_bytes([e[10], e[11]]));
+            if !name.is_empty() && e[21] > 0 { out.push(format!("{}|{}|{}|{}", name, e[21], e[22], id)); }
         }
         let _ = SetupDiDestroyDeviceInfoList(set);
     }
