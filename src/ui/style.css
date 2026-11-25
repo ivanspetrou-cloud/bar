@@ -385,6 +385,12 @@ span.eq i { width: 3px; height: 12px; background: var(--hi-g); border-radius: 1p
 .qt.on { background: var(--acc); color: var(--on-acc); }
 
 /* ---------- Быстрые кнопки: анимированные значки (состояние — классы .on / .light, нажатие — .kick) ---------- */
+/* кнопки занимают всё свободное место карточки «Звук и система» (её высоту задают соседние карточки) */
+.card.sound { display: flex; flex-direction: column; }
+.card.sound .qts { flex: 1; grid-auto-rows: minmax(40px, 1fr); gap: 6px; }
+.card.sound .qt { height: auto; min-height: 40px; flex-direction: column; justify-content: center; align-items: center; gap: 2px; padding: 2px 6px; font-size: var(--fs-cap); line-height: 1.2; }
+.card.sound .qt svg.i { width: 20px; height: 20px; }
+.card.sound .qt .qt-l { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .qts .qt { transition: background .3s ease, color .3s ease, transform .15s ease; }
 .qts .qt:active { transform: scale(.96); }
 .qts:not(.anim) .qi, .qts:not(.anim) .qi * { transition: none !important; }
