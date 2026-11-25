@@ -123,6 +123,23 @@ ipcMain.handle('win-size', (_e, mode) => {
   if (win && mode !== winMode) { winMode = mode; placeWindow(); }
   return winMode;
 });
+// Курсор над плашкой в игре. События мыши окну, прозрачному для мыши, Windows пересылает не во всех играх
+// (Dota 2 и другие с raw input их съедают) — поэтому положение курсора проверяем сами и сообщаем плашке.
+let hudT = 0, hudIn = false;
+function hudWatch(on) {
+  clearInterval(hudT); hudT = 0;
+  if (hudIn && win) win.webContents.send('hud-hover', false);
+  hudIn = false;
+  if (!on) return;
+  // курсор уже над плашкой (например, только что закрыли панель) — ждём, пока его уведут и наведут снова
+  { const c = screen.getCursorScreenPoint(), b = win.getBounds(); hudIn = c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height; }
+  hudT = setInterval(() => {
+    if (!win || win.isDestroyed() || winMode !== 'hud') { clearInterval(hudT); hudT = 0; hudIn = false; return; }
+    const c = screen.getCursorScreenPoint(), b = win.getBounds();
+    const inside = c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height;
+    if (inside !== hudIn) { hudIn = inside; win.webContents.send('hud-hover', inside); }
+  }, 60);
+}
 // Окно в игровом режиме: «сцена» — весь монитор игры на время анимации перелёта, «плашка» — ровно размер плашки в углу.
 // В обоих случаях окно полностью прозрачно для мыши: в игре оно ничего не перехватывает.
 const gameWin = {
@@ -131,7 +148,7 @@ const gameWin = {
   stage(mon, box) { if (!win) return; winMode = 'stage'; win.setIgnoreMouseEvents(true);
     const b = box && box.w > 0 ? box : { x: 0, y: 0, w: mon.width, h: mon.height };
     win.setBounds({ x: Math.round(mon.x + b.x), y: Math.round(mon.y + b.y), width: Math.ceil(b.w), height: Math.ceil(b.h) }); },
-  hud(mon, r, hover) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true, hover ? { forward: true } : undefined); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); },
+  hud(mon, r, hover) { if (!win) return; winMode = 'hud'; win.setIgnoreMouseEvents(true, hover ? { forward: true } : undefined); win.setBounds({ x: Math.round(mon.x + r.x), y: Math.round(mon.y + r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }); hudWatch(hover); },
   pill() { if (!win) return; winMode = 'pill'; placeWindow(); win.setIgnoreMouseEvents(true, { forward: true }); },
 };
 

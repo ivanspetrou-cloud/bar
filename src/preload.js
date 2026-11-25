@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('bar', {
   setInteractive: (v) => ipcRenderer.send('interactive', !!v),
   focus: () => ipcRenderer.send('focus'),
   onGame: on('game'),
+  onHudHover: on('hud-hover'),
   onGameStats: on('game-stats'),
   gameDock: (r) => ipcRenderer.invoke('game-dock', r),
   gameExitDone: () => ipcRenderer.invoke('game-exit-done'),
