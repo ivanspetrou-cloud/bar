@@ -20,7 +20,7 @@ pub const CMDS: &[&str] = &[
     "media", "mediactl", "gpu", "appicon", "fileicon", "winicon", "windows", "focus", "minimize", "hidepid", "showpid", "close",
     "bt", "net", "hidbat", "g435has", "g435", "hiddiag", "taskbar", "settaskbar", "hidetaskbar", "taskwins", "winthumbs",
     "monsizes", "exeinfo", "camlist", "camset", "closewin", "startmenu", "showdesktop", "appbar", "appbarnew", "appbaroff",
-    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey", "ocr", "ocrlangs", "fpsperm", "fpsgrant", "killedge", "mics", "wintheme",
+    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey", "ocr", "ocrlangs", "fpsperm", "fpsgrant", "killedge", "mics", "wintheme", "audiobusy",
 ];
 
 type R<T> = windows::core::Result<T>;
@@ -252,6 +252,7 @@ impl Core {
             "hidbat" => Ok(json!(self.hid.read())),
             "g435has" => Ok(json!(hid::g435_present())),
             "g435" => Ok(json!(hid::g435_read())),
+            "audiobusy" => Ok(json!(crate::events::audio_busy())),
             "hiddiag" => Ok(json!(hid::diag())),
             "monsizes" => Ok(sys::monsizes()),
             "exeinfo" => Ok(sys::exeinfo(a)),

@@ -174,10 +174,13 @@ module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () 
   async function g435Line() {
     if (Date.now() - g435HasT > 5 * 60e3) { g435HasT = Date.now(); g435Has = !!(await safe(fast.call('g435has', '', 4000))); }
     if (!g435Has) return null;
-    const due = !g435.tried || Date.now() - g435.tried > (g435.ok ? 60 * 60e3 : 5 * 60e3);
+    // Чтение заряда на секунду прерывает звук гарнитуры, поэтому само по себе — раз в час (после неудачи — раз в 30 минут)
+    // и только в тишине: не в игре, ничего не играет и никто не пишет с микрофона (звонок, Discord). Занято — ещё через 5 минут.
+    const due = Date.now() >= (g435.retryAt || 0) && (!g435.tried || Date.now() - g435.tried > (g435.ok ? 60 * 60e3 : 30 * 60e3));
     if (due) {
       const full = String((await safe(fast.call('gamestate', '', 2000))) || '').split('|')[0] === '1';
-      if (!full) await g435Read();
+      const busy = full || (await safe(fast.call('audiobusy', '', 3000))) !== false;
+      if (busy) g435.retryAt = Date.now() + 5 * 60e3; else await g435Read();
     }
     const name = 'Logitech ' + String(g435.name || 'G435').replace(/\b(wireless|gaming)\b/gi, '').replace(/\s+/g, ' ').trim();
     // последнее удачное чтение моложе 2 часов — гарнитура на связи с этим зарядом; иначе «нет связи» (с последним зарядом)

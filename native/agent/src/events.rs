@@ -73,3 +73,28 @@ pub fn winevents() {
         while GetMessageW(&mut m, None, 0, 0).0 > 0 { DispatchMessageW(&m); }
     }
 }
+
+// Занят ли звук прямо сейчас: что-то играет (пик на любом устройстве вывода за ~0,3 с) или какая-то программа
+// пишет с микрофона (звонок, Discord, запись). Нужно, чтобы чтение заряда G435 (донгл на секунду прерывает звук)
+// не происходило посреди музыки или разговора.
+pub fn audio_busy() -> bool {
+    use windows::Win32::Media::Audio::{eCapture, AudioSessionStateActive, IAudioSessionControl, IAudioSessionManager2};
+    let ms = meters();
+    for _ in 0..6 {
+        if ms.iter().any(|m| unsafe { m.GetPeakValue().map_or(false, |p| p > 0.002) }) { return true; }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    unsafe {
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return false };
+        let Ok(col) = en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else { return false };
+        for i in 0..col.GetCount().unwrap_or(0) {
+            let Ok(sm) = col.Item(i).and_then(|d| d.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)) else { continue };
+            let Ok(se) = sm.GetSessionEnumerator() else { continue };
+            for k in 0..se.GetCount().unwrap_or(0) {
+                let st = se.GetSession(k).and_then(|s: IAudioSessionControl| s.GetState());
+                if st.map_or(false, |s| s == AudioSessionStateActive) { return true; }
+            }
+        }
+    }
+    false
+}
