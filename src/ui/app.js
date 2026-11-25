@@ -2471,7 +2471,11 @@ function nowPlayingCard() {
       // YouTube Music — через расширение: вкладку, которую браузер усыпил после долгой паузы, оно будит и повторяет команду.
       // Системный медиаплеер Windows в этом случае отвечает «готово», но уснувшая вкладка не играет.
       const m = S.media || {};
-      const ytm = MU.ext && MU.ytTab && (!m.title || (MU.st && MU.st.title === m.title)) && (!m.app || /msedge|chrome|brave|opera|vivaldi|yandex|browser/i.test(m.app));
+      // Трек из браузера — это YouTube Music, если названия совпадают. После долгой паузы Windows показывает устаревший трек
+      // (название другое), поэтому «Играть», когда в Windows ничего не играет, тоже отдаём YouTube Music: он продолжит свой трек.
+      const fromBrowser = !m.app || /msedge|chrome|brave|opera|vivaldi|yandex|browser/i.test(m.app);
+      const same = !m.title || (MU.st && MU.st.title === m.title);
+      const ytm = MU.ext && MU.ytTab && fromBrowser && (same || (k === 'toggle' && !m.playing));
       if (ytm) {
         const slow = setTimeout(() => flash('Будим вкладку YouTube Music…', 2500), 900); // уснувшая вкладка перезагружается несколько секунд
         const r = await bar.musicCmd(k);
