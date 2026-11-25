@@ -318,11 +318,29 @@ namespace Bar {
     public static void StartMenu() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
     public static void ShowDesktop() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 0, UIntPtr.Zero); keybd_event(0x44, 0, 2, UIntPtr.Zero); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
 
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    // Вывести окно вперёд. Windows не даёт фоновой программе забрать фокус, пока пользователь последним кликал
+    // в другом окне (например, на другом мониторе), — поэтому несколько способов по очереди, с проверкой результата.
     public static bool Focus(long hwnd) {
       var h = new IntPtr(hwnd);
       if (IsIconic(h)) ShowWindow(h, 9);
       keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); // Alt снимает блокировку переднего плана
-      return SetForegroundWindow(h);
+      SetForegroundWindow(h);
+      if (GetForegroundWindow() == h) return true;
+      uint me = GetCurrentThreadId(), p;
+      uint fg = GetWindowThreadProcessId(GetForegroundWindow(), out p), to = GetWindowThreadProcessId(h, out p);
+      bool a1 = fg != 0 && fg != me && AttachThreadInput(me, fg, true), a2 = to != 0 && to != me && to != fg && AttachThreadInput(me, to, true);
+      BringWindowToTop(h); SetForegroundWindow(h);
+      if (a1) AttachThreadInput(me, fg, false);
+      if (a2) AttachThreadInput(me, to, false);
+      if (GetForegroundWindow() == h) return true;
+      SwitchToThisWindow(h, true); Thread.Sleep(60);                      // так переключает Alt+Tab
+      if (GetForegroundWindow() == h) return true;
+      ShowWindow(h, 6); ShowWindow(h, 9); Thread.Sleep(60);               // свернуть и развернуть: развёрнутое окно активируется всегда
+      return GetForegroundWindow() == h;
     }
     public static void Minimize(long hwnd) { ShowWindow(new IntPtr(hwnd), 6); }
 
