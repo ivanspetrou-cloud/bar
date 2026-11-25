@@ -93,8 +93,7 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   ipcMain.on('meter', (_e, on) => {
     if (!on) return meterStop();
     if (meterPs) return;
-    const script = path.join(__dirname, 'meter.ps1').replace('app.asar', 'app.asar.unpacked');
-    meterPs = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    meterPs = Agent.spawnHelper('meter', 'meter.ps1');
     let buf = '';
     meterPs.stdout.setEncoding('utf8');
     meterPs.stdout.on('data', (d) => {

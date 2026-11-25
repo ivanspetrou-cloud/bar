@@ -1,5 +1,5 @@
-// Обёртка над постоянным PowerShell-процессом (src/agent.ps1): call('audio') → Promise.
-// Запускается лениво, перезапускается при падении, у каждого вызова свой таймаут.
+// Агент системных данных: call('audio') → Promise. Сначала нативный bar-agent.exe (Rust, native/agent) — он умеет все команды;
+// без него — прежний постоянный PowerShell-процесс (src/agent.ps1). Запуск ленивый, перезапуск при падении, у вызова свой таймаут.
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -124,5 +124,13 @@ class Agent {
 
 // PowerShell сворачивает массив из одного элемента в объект — возвращаем всегда массив
 Agent.list = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
+
+// Отдельный фоновый процесс: нативный (bar-agent.exe <mode>: meter — уровень звука, winevents — события окон)
+// или, если нативного нет, прежний PowerShell-скрипт.
+Agent.spawnHelper = (mode, psScript) => {
+  if (NATIVE && !NATIVE_OFF) return spawn(NATIVE, [mode], { windowsHide: true });
+  const script = path.join(__dirname, psScript).replace('app.asar', 'app.asar.unpacked');
+  return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+};
 
 module.exports = Agent;
