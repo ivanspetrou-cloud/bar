@@ -79,11 +79,52 @@ async function handle(msg) {
   if (!ALLOWED.includes(msg.fn)) return { error: 'not allowed' };
   const tab = await musicTab();
   if (!tab) return { error: 'no-tab' };
-  try {
-    return await chrome.tabs.sendMessage(tab.id, { type: 'bar', fn: msg.fn, args: msg.args || [] });
-  } catch {
-    return { error: 'tab-not-ready' };
+  keepAwake(tab);
+  const ask = (id, ms) => Promise.race([
+    chrome.tabs.sendMessage(id, { type: 'bar', fn: msg.fn, args: msg.args || [] }).catch(() => ({ error: 'tab-not-ready' })),
+    new Promise((res) => setTimeout(() => res({ error: 'tab-asleep' }), ms)),
+  ]);
+  // опрос состояния — быстро и без побочных действий: уснувшую вкладку не трогаем
+  if (msg.fn === 'state' || msg.fn === 'queue' || msg.fn === 'lyrics') return tab.discarded ? { error: 'tab-asleep' } : ask(tab.id, 3500);
+  if (!tab.discarded) {
+    const r = await ask(tab.id, 3500);
+    if (!r || r.error !== 'tab-asleep' && r.error !== 'tab-not-ready') return r;
   }
+  // Браузер усыпил вкладку (спящие вкладки Edge / экономия памяти Chrome) — код страницы не выполняется.
+  // Нажали кнопку в Bar: будим вкладку (перезагрузка без переключения на неё; YouTube Music вспомнит трек и очередь) и повторяем команду.
+  return wakeAndRetry(tab.id, ask);
+}
+
+// не давать браузеру выгружать вкладку музыки, пока она открыта (её ждёт нотч)
+function keepAwake(tab) {
+  if (tab && tab.autoDiscardable !== false) chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
+}
+let waking = null;
+async function wakeAndRetry(tabId, ask) {
+  if (!waking) {
+    waking = (async () => {
+      await chrome.tabs.reload(tabId).catch(() => {});
+      // ждём, пока страница загрузится и код расширения в ней оживёт
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const t = await chrome.tabs.get(tabId).catch(() => null);
+        if (!t) return false;
+        if (t.status === 'complete') {
+          const ping = await Promise.race([chrome.tabs.sendMessage(tabId, { type: 'bar', fn: 'state', args: [] }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 1500))]);
+          if (ping && !ping.error) return true;
+        }
+      }
+      return false;
+    })().finally(() => setTimeout(() => { waking = null; }, 0));
+  }
+  if (!(await waking)) return { error: 'tab-not-ready' };
+  // плеер появляется чуть позже страницы — несколько попыток
+  for (let i = 0; i < 6; i++) {
+    const r = await ask(tabId, 3000);
+    if (r && !r.error) return r;
+    await new Promise((res) => setTimeout(res, 700));
+  }
+  return { error: 'tab-not-ready' };
 }
 
 async function connect() {
@@ -121,7 +162,9 @@ async function connect() {
 
 // раз в 30 секунд: если Bar запустили позже браузера — подключиться
 chrome.alarms.create('bar-reconnect', { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener(() => connect());
+chrome.alarms.onAlarm.addListener(() => { connect(); chrome.tabs.query({ url: 'https://music.youtube.com/*' }).then((ts) => ts.forEach(keepAwake)).catch(() => {}); });
+// новая вкладка YouTube Music — сразу просим браузер её не усыплять
+chrome.tabs.onUpdated.addListener((id, info, t) => { if (info.status === 'complete' && /^https:\/\/music\.youtube\.com\//.test(t.url || '')) keepAwake(t); });
 chrome.runtime.onStartup.addListener(connect);
 // после установки/обновления — вставить свежий код в уже открытые вкладки YouTube Music (без перезагрузки, музыка не прерывается)
 chrome.runtime.onInstalled.addListener(async () => {
