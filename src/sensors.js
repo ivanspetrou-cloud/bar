@@ -60,8 +60,6 @@ module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () 
     every('hid', need.bt || open ? 60000 : 0, poll.hid);
     every('bt', need.bt || open ? 120000 : 0, poll.bt);
     every('stats', need.stats || open ? (open ? 2000 : 6000) : 0, poll.stats);
-    // агенты PowerShell раз в 5 минут возвращают Windows неиспользуемую память (рабочий набор ~200 → ~20 МБ)
-    every('trim', 5 * 60e3, trimAgents);
   }
   // ---------- всплывашка громкости: отдельный агент ждёт изменения звука внутри своего процесса ----------
   const watcher = new Agent('watch');
@@ -88,14 +86,14 @@ module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () 
     aw.on = false; aw.v = -1; watcher.stop();
   }
 
-  // ---------- «живой» эквалайзер: отдельный маленький процесс (meter.ps1) печатает уровень звука ----------
+  // ---------- «живой» эквалайзер: отдельный маленький процесс (bar-agent.exe meter) печатает уровень звука ----------
   let meterPs = null, meterBuf = [], meterT = 0;
   function meterStop() { clearInterval(meterT); meterBuf = []; if (meterPs) { try { meterPs.kill(); } catch {} meterPs = null; } }
   ipcMain.on('meter', (_e, on) => {
     if (!on) return meterStop();
     if (meterPs) return;
-    const script = path.join(__dirname, 'meter.ps1').replace('app.asar', 'app.asar.unpacked');
-    meterPs = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    meterPs = Agent.spawnHelper('meter');
+    if (!meterPs) return;
     let buf = '';
     meterPs.stdout.setEncoding('utf8');
     meterPs.stdout.on('data', (d) => {
@@ -108,7 +106,6 @@ module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () 
     meterT = setInterval(() => { if (meterBuf.length) { send('meter', meterBuf); meterBuf = []; } }, 90);
   });
 
-  function trimAgents() { for (const ag of [fast, slow, finder]) if (ag.ps) safe(ag.call('trim', '', 5000)); }
   ipcMain.on('sensors-need', (_e, n) => { need = n || {}; schedule(); watchSet(!!need.osd); });
   ipcMain.on('sensors-refresh', (_e, key) => poll[key] && poll[key]());
 
@@ -377,7 +374,6 @@ module.exports = function setupSensors({ send, getWin, getStats, getMicDev = () 
     }
     out.sort((x, y) => y.score - x.score);
     usageCache = out.slice(0, 24); usageAt = Date.now();
-    setTimeout(trimAgents, 2000);
     return usageCache;
   });
 

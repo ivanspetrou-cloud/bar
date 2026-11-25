@@ -52,11 +52,6 @@
       }
     ],
     "asar": true,
-    "asarUnpack": [
-      "src/agent.ps1",
-      "src/meter.ps1",
-      "src/winevents.ps1"
-    ],
     "extraResources": [
       {
         "from": "vendor/presentmon",
@@ -74,6 +69,13 @@
           "sw.js",
           "bridge.js",
           "web.js"
+        ]
+      },
+      {
+        "from": "native/target/release",
+        "to": "native",
+        "filter": [
+          "bar-agent.exe"
         ]
       }
     ],

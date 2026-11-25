@@ -1,16 +1,14 @@
-// Общий наблюдатель за окнами Windows (winevents.ps1): один процесс на весь Bar.
+// Общий наблюдатель за окнами Windows (bar-agent.exe winevents): один процесс на весь Bar.
 // "E" — открыли, закрыли, сменили активное, свернули окно; "L" — активное окно поменяло размер или место
 // (развернули на весь экран, перетащили). Подписчики получают только нужные им буквы.
-const { spawn } = require('child_process');
-const path = require('path');
 
 const subs = new Set();
 let ps = null, buf = '';
 
 function start() {
   if (ps) return;
-  const script = path.join(__dirname, 'winevents.ps1').replace('app.asar', 'app.asar.unpacked');
-  ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+  ps = require('./agent-host').spawnHelper('winevents');
+  if (!ps) return;
   ps.stdout.setEncoding('utf8');
   ps.stdout.on('data', (d) => {
     buf += d;

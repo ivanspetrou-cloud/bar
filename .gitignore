@@ -1,6 +1,7 @@
 # зависимости и сборки
 node_modules/
 dist/
+native/target/
 out/
 
 # расширение: секретный ключ пары создаётся на каждом компьютере, page.js собирается из src/music-page.js
