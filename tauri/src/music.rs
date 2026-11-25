@@ -318,7 +318,7 @@ pub fn image(path: &str) -> (u16, String, Vec<u8>) {
     let url = percent_decode(raw);
     let host = url.strip_prefix("https://").and_then(|r| r.split(['/', '?', ':']).next()).unwrap_or("").to_lowercase();
     if host.is_empty() || !host_ok(&host) { return (403, "text/plain".into(), vec![]); }
-    match ureq::get(&url).timeout(Duration::from_secs(15)).call() {
+    match ctx::http().get(&url).timeout(Duration::from_secs(15)).call() {
         Ok(r) => {
             let ct = r.header("content-type").unwrap_or("image/jpeg").to_string();
             let mut b = Vec::new();

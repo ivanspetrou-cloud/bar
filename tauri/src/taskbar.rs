@@ -81,11 +81,11 @@ fn place(d: &Dock) {
     let (x, y, mw, mh) = (d.mon.position().x, d.mon.position().y, d.mon.size().width as i32, d.mon.size().height as i32);
     unsafe { let _ = SetWindowPos(hw(d), None, x, y + mh - h, mw, h, SWP_NOZORDER | SWP_NOACTIVATE); }
 }
-// прозрачность для мыши: то же, что делает Tauri (WS_EX_TRANSPARENT), только сразу
+// прозрачность для мыши: то же, что делает Tauri (WS_EX_TRANSPARENT + WS_EX_LAYERED), только сразу
 fn set_click(d: &Dock, on: bool) {
     unsafe {
         let ex = GetWindowLongPtrW(hw(d), GWL_EXSTYLE);
-        let t = WS_EX_TRANSPARENT.0 as isize;
+        let t = (WS_EX_TRANSPARENT.0 | WS_EX_LAYERED.0) as isize; // оба флага, как set_ignore_cursor_events у Tauri: «многослойное» окно без прозрачности ловит мышь только местами
         let nx = if on { ex & !t } else { ex | t };
         if nx != ex { SetWindowLongPtrW(hw(d), GWL_EXSTYLE, nx); }
     }
@@ -306,6 +306,7 @@ pub fn handle(label: &str, ch: &str, a: &[Value]) -> Value {
         }
         "tb-interactive" => { with(|s| if let Some(d) = s.docks.iter_mut().find(|d| d.label == label) { d.page = arg(0).as_bool().unwrap_or(false); }); Value::Null }
         "tb-zone" => { let z = arg(0); if let (Some(l), Some(t), Some(r), Some(b)) = (z["l"].as_f64(), z["t"].as_f64(), z["r"].as_f64(), z["b"].as_f64()) { with(|s| if let Some(d) = s.docks.iter_mut().find(|d| d.label == label) { d.zone = Some((l, t, r, b)); }); } Value::Null }
+        "tb-debug" => with(|s| json!(s.docks.iter().map(|d| json!({ "label": d.label, "zone": d.zone.map(|z| vec![z.0, z.1, z.2, z.3]), "clickable": d.clickable, "hover": d.hover, "page": d.page, "k": d.mon.scale_factor(), "mon": [d.mon.position().x, d.mon.position().y, d.mon.size().width, d.mon.size().height] })).collect::<Vec<_>>())),
         "tb-refresh" => { std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(120)); refresh(); }); Value::Null }
         "tb-start" => { act("startmenu", ""); Value::Null }
         "tb-desktop" => { act("showdesktop", ""); Value::Null }

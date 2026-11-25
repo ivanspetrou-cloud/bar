@@ -143,7 +143,7 @@ ${api.join('\n')}
 fs.writeFileSync(path.join(out, 'bar-tauri.js'), shim);
 
 // ---------- страницы ----------
-const CSP_CONNECT = "connect-src 'self' data: ipc: http://ipc.localhost http://barcap.localhost";
+const CSP_CONNECT = "connect-src 'self' data: ipc: http://ipc.localhost http://barcap.localhost http://barimg.localhost";
 for (const page of ['index.html', 'taskbar.html', 'overlay.html']) {
   let html = fs.readFileSync(path.join(out, page), 'utf8');
   html = html.replace(/connect-src [^;"]+/, CSP_CONNECT);

@@ -46,7 +46,7 @@ pub fn check() {
     let st = get()["state"].as_str().unwrap_or("").to_string();
     if st == "downloading" || st == "ready" || st == "checking" { return; }
     set(json!({ "state": "checking", "error": "" }));
-    match ureq::get(LATEST).timeout(Duration::from_secs(20)).call().ok().and_then(|r| r.into_string().ok()).and_then(|t| parse(&t)) {
+    match ctx::http().get(LATEST).timeout(Duration::from_secs(20)).call().ok().and_then(|r| r.into_string().ok()).and_then(|t| parse(&t)) {
         Some(i) if newer(&i.version, &version()) => { set(json!({ "state": "available", "next": i.version })); *NEXT.lock().unwrap() = Some(i); }
         Some(_) => set(json!({ "state": "latest", "checkedAt": ctx::now_ms() })),
         None => set(json!({ "state": "error", "error": "Нет связи с GitHub" })),
@@ -59,7 +59,7 @@ fn download() {
     let _ = std::fs::create_dir_all(&dir);
     let dest = dir.join(&file);
     let r = (|| -> Result<(), String> {
-        let resp = ureq::get(&format!("{}/v{}/{}", DL, ver, file)).timeout(Duration::from_secs(600)).call().map_err(|e| e.to_string())?;
+        let resp = ctx::http().get(&format!("{}/v{}/{}", DL, ver, file)).timeout(Duration::from_secs(600)).call().map_err(|e| e.to_string())?;
         let total = resp.header("content-length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(size);
         let mut rd = resp.into_reader();
         let mut out = std::fs::File::create(&dest).map_err(|e| e.to_string())?;

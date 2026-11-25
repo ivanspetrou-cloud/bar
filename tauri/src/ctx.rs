@@ -47,3 +47,12 @@ static SETTINGS: OnceLock<crate::settings::Settings> = OnceLock::new();
 pub fn set_settings(s: crate::settings::Settings) { let _ = SETTINGS.set(s); }
 pub fn sh_settings() -> &'static crate::settings::Settings { SETTINGS.get().expect("settings") }
 pub fn try_sh() -> Option<&'static Arc<Shared>> { SH.get() }
+
+/// HTTPS-клиент (обложки музыки, проверка обновлений): TLS средствами Windows (SChannel)
+pub fn http() -> ureq::Agent {
+    static A: OnceLock<ureq::Agent> = OnceLock::new();
+    A.get_or_init(|| {
+        let b = ureq::AgentBuilder::new().user_agent("Bar");
+        match native_tls::TlsConnector::new() { Ok(t) => b.tls_connector(Arc::new(t)).build(), Err(_) => b.build() }
+    }).clone()
+}
