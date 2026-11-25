@@ -3061,13 +3061,17 @@ function holdCancel(animated) {
   a.cancel();
   holdBar.animate([{ transform: cur, opacity: 1 }, { transform: 'scaleX(0)', opacity: 0 }], { duration: 180, easing: 'ease-out', fill: 'forwards' });
 }
-island.addEventListener('mouseenter', () => {
-  if (!Game.on || Game.busy || !(Game.hold > 0)) return;
+let hudHover = false;
+function holdStart() {
+  if (!Game.on || Game.busy || !(Game.hold > 0) || holdAnim) return;
   holdCancel();
   holdAnim = holdBar.animate([{ transform: 'scaleX(0)', opacity: 1 }, { transform: 'scaleX(1)', opacity: 1 }], { duration: Game.hold, easing: 'linear', fill: 'forwards' });
   holdT = setTimeout(() => { holdCancel(); bar.gameOpenPanel(); }, Game.hold);
-});
-island.addEventListener('mouseleave', () => { if (Game.on) holdCancel(true); });
+}
+// наведение приходит двумя путями: событием мыши (обычно) и от главного процесса по положению курсора (в играх, которые съедают мышь)
+island.addEventListener('mouseenter', holdStart);
+island.addEventListener('mouseleave', () => { if (Game.on && !hudHover) holdCancel(true); });
+bar.onHudHover((on) => { hudHover = !!on; if (on) holdStart(); else if (Game.on) holdCancel(true); });
 
 // Главная: панель приложений можно убрать (Настройки → Дополнительно), плитки инструментов — свернуть стрелкой.
 // Высота нотча считается под то, что видно: свёрнутые плитки — нотч ниже, с анимацией.
