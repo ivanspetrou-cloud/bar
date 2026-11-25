@@ -1969,7 +1969,7 @@ function updateRow() {
         : set('x', 'Не удалось проверить обновления', s.error || 'Нет связи с GitHub', 'Ещё раз', () => bar.updateCheck(), 'err'); break;
       default: set('redo', `Bar ${v}`, 'Обновления из GitHub', 'Проверить', () => bar.updateCheck());
     }
-    barEl2.classList.toggle('on', s.state === 'downloading' || s.state === 'ready');
+    barEl2.classList.toggle('on', s.state === 'downloading');   // загрузка закончилась — полоса плавно уходит, карточка ниже
     last = s.state;
   };
   Upd.hooks.add(draw);
