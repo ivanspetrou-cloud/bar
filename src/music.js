@@ -78,7 +78,18 @@ module.exports = function setupMusic({ send }) {
   const sign = (text) => crypto.createHmac('sha256', pairKey).update(text).digest('base64');
   let sock = null;
   let ext = null;       // { version, tab }
+  const updAsked = new Set();
   let last = null;      // состояние плеера
+  // последний игравший трек — чтобы «Играть» включал его, даже если вкладку перезагрузили, закрыли или перезапустили Bar
+  const LAST_FILE = path.join(app.getPath('userData'), 'music-last.json');
+  let resume = null, resumeSaved = 0;
+  try { resume = JSON.parse(fs.readFileSync(LAST_FILE, 'utf8')); } catch {}
+  function remember(st) {
+    if (!st || !st.id) return;
+    const changed = !resume || resume.videoId !== st.id;
+    resume = { videoId: st.id, list: st.list || '', time: Math.floor(st.time || 0), title: st.title || '' };
+    if (changed || Date.now() - resumeSaved > 15000) { resumeSaved = Date.now(); fs.writeFile(LAST_FILE, JSON.stringify(resume), () => {}); }
+  }
   let web = null;       // играющая вкладка музыкального сайта (Media Session): { tabId, host, title, … }
   let tab = false;
   let watching = false;
@@ -136,7 +147,11 @@ module.exports = function setupMusic({ send }) {
               ext = h; tab = !!(h && h.tab); push();
               let want = null;
               try { want = JSON.parse(fs.readFileSync(path.join(EXT_DIR, 'manifest.json'), 'utf8')).version; } catch {}
-              if (want && h && h.version && h.version !== want) { try { buildExt(EXT_DIR, EXT_TEMPLATE); } catch {} call('update').catch(() => {}); }
+              if (want && h && h.version && h.version !== want && !updAsked.has(want)) {
+                updAsked.add(want); // одна попытка на версию — без бесконечных перезагрузок, если файлы не дошли
+                for (const d of [EXT_DIR, ...browserExtDirs()]) { try { if (fs.existsSync(path.join(d, 'pair.json'))) buildExt(d, EXT_TEMPLATE); } catch {} }
+                call('update').catch(() => {});
+              }
             }).catch(() => {});
             schedule();
           }
@@ -170,7 +185,7 @@ module.exports = function setupMusic({ send }) {
       if (!sock) return;
       try {
         const st = await call('state', [], 4000);
-        tab = true; last = st;
+        tab = true; last = st; remember(st);
       } catch (e) {
         if (/no-tab/.test(e.message)) { tab = false; last = null; }
       }
@@ -208,8 +223,10 @@ module.exports = function setupMusic({ send }) {
   ipcMain.handle('music-cmd', async (_e, cmd, arg) => {
     const ok = ['toggle', 'next', 'prev', 'seek', 'volume', 'like', 'dislike', 'shuffle', 'repeat', 'playQueue', 'play'];
     if (!ok.includes(cmd)) return false;
-    const r = await safe(call(cmd, arg === undefined ? [] : [arg]), false);
-    setTimeout(async () => { const st = await safe(call('state', [], 3000)); if (st) { last = st; tab = true; push(); } }, 300);
+    // «Играть» берёт с собой последний трек: если плеер пуст или вкладки нет, расширение включит его (пробуждение — до ~25 с)
+    const args = cmd === 'toggle' ? (resume ? [resume] : []) : arg === undefined ? [] : [arg];
+    const r = await safe(call(cmd, args, cmd === 'toggle' ? 40000 : 15000), false);
+    setTimeout(async () => { const st = await safe(call('state', [], 3000)); if (st) { last = st; tab = true; remember(st); push(); } }, 300);
     return r;
   });
   // команды вкладке музыкального сайта (плеер через Media Session)
