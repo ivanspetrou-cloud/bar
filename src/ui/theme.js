@@ -6,6 +6,8 @@
   'use strict';
 
   const THEMES = {
+    // «Как в Windows»: светлая или тёмная — вслед за темой системы (меняется сама, с плавным переходом)
+    auto: { name: 'Авто' },
     dark: {
       name: 'Тёмная',
       bg: '#08080a', card: '#141419', cardHi: '#1c1c23', ctl: '#22222a', ctlHi: '#2b2b35',
@@ -41,7 +43,7 @@
     ['#ff6fae', 'Фуксия'], ['#f4f4f7', 'Белый'],
   ];
   const RADII = { strict: ['Строгое', 8], normal: ['Обычное', 14], soft: ['Мягкое', 20] };
-  const DEFAULTS = { theme: 'dark', acc: '#6c5cff', hi: '#d7ff3e', radius: 'normal', pillBlack: false };
+  const DEFAULTS = { theme: 'auto', acc: '#6c5cff', hi: '#d7ff3e', radius: 'normal', pillBlack: false };
   // свёрнутый нотч по умолчанию следует теме; чёрный «вырез» при светлой теме — по желанию (старый ключ blackPill больше не читается)
   const RED = '#ff4d61';
 
@@ -87,8 +89,12 @@
   function save(cfg) { try { localStorage.setItem('bar.theme', JSON.stringify(cfg)); } catch {} }
 
   // ---------- применение ----------
+  const sysDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  // настоящая тема: для «Как в Windows» — тёмная или светлая по системе
+  const resolve = (cfg) => (cfg.theme === 'auto' ? (sysDark && !sysDark.matches ? 'light' : 'dark') : THEMES[cfg.theme] ? cfg.theme : 'dark');
+
   function tokens(cfg) {
-    const t = THEMES[cfg.theme] || THEMES.dark;
+    const t = THEMES[resolve(cfg)];
     const surfaces = [t.bg, t.card, t.cardHi, t.ctl, t.ctlHi]; // текст встречается на всех поверхностях, включая кнопки
     const card = RADII[cfg.radius] ? RADII[cfg.radius][1] : 14;
     const DARK = ['#000000', '#08080a']; // свёрнутый «чёрный нотч»
@@ -117,17 +123,31 @@
     };
   }
 
+  // плавная смена темы: цвета всех элементов перетекают ~0,5 с, а не переключаются рывком
+  const fadeCss = document.createElement('style');
+  fadeCss.textContent = ':root.theme-fade, :root.theme-fade *, :root.theme-fade *::before, :root.theme-fade *::after {'
+    + 'transition: background-color .5s ease, color .5s ease, border-color .5s ease, fill .5s ease, stroke .5s ease, box-shadow .5s ease, outline-color .5s ease !important; }';
+  (document.head || document.documentElement).appendChild(fadeCss);
+  let fadeT = 0;
+
   function apply(cfg = load()) {
     const root = document.documentElement;
+    const theme = resolve(cfg);
+    if (root.dataset.theme && root.dataset.theme !== theme) {
+      root.classList.add('theme-fade');
+      clearTimeout(fadeT); fadeT = setTimeout(() => root.classList.remove('theme-fade'), 650);
+    }
     for (const [k, v] of Object.entries(tokens(cfg))) root.style.setProperty(k, v);
-    root.dataset.theme = cfg.theme;
-    root.dataset.pill = cfg.pillBlack && cfg.theme === 'light' ? 'black' : 'theme';
-    root.style.colorScheme = cfg.theme === 'light' ? 'light' : 'dark';
+    root.dataset.theme = theme;
+    root.dataset.pill = cfg.pillBlack && theme === 'light' ? 'black' : 'theme';
+    root.style.colorScheme = theme === 'light' ? 'light' : 'dark';
     return cfg;
   }
 
-  window.BarTheme = { THEMES, ACCENTS, HIGHLIGHTS, RADII, DEFAULTS, load, save, apply, tokens, contrast, ensure };
+  window.BarTheme = { THEMES, ACCENTS, HIGHLIGHTS, RADII, DEFAULTS, load, save, apply, tokens, contrast, ensure, resolve };
   apply();
   // другие окна (оверлей) подхватывают смену оформления сразу
   window.addEventListener('storage', (e) => { if (e.key === 'bar.theme') apply(); });
+  // тема Windows сменилась (в Параметрах или кнопкой «Тема») — нотч, док и оверлей меняются вместе с ней
+  if (sysDark) sysDark.addEventListener('change', () => { if (load().theme === 'auto') apply(); });
 })();

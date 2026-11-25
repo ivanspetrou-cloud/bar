@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('bar', {
   sensorsNeed: (n) => ipcRenderer.send('sensors-need', n),
   sensorsRefresh: (k) => ipcRenderer.send('sensors-refresh', k),
   audioSet: (p) => ipcRenderer.invoke('audio-set', p),
+  micList: () => ipcRenderer.invoke('mic-list'),
   mediaCtl: (k) => ipcRenderer.invoke('media-ctl', k),
   updateGet: () => ipcRenderer.invoke('update-get'),
   updateCheck: () => ipcRenderer.invoke('update-check'),
