@@ -18,7 +18,7 @@ const PILL_H: f64 = 44.0;
 
 #[derive(Default)]
 struct St {
-    hud_track: bool,
+    hud_track: bool, hud_rect: (i32, i32, i32, i32), band: i32,
     mode: String, interactive: bool, zone: (i32, i32, i32, i32), pos: (i32, i32), size: (i32, i32), clickable: bool,
     follow: Option<(i32, i32)>, cand: Option<((i32, i32), Instant)>, hud_hover: bool,
     idle_last: Option<Instant>, idle_pt: (i32, i32), idle_hidden: bool, tucked: Option<bool>,
@@ -68,10 +68,12 @@ impl Notch {
         let Some(m) = self.display() else { return };
         let k = m.scale_factor();
         let mode = self.st.lock().unwrap().mode.clone();
-        let (w, h) = ((WIN_W * k).round() as i32, ((if mode == "full" { WIN_H } else { PILL_H }) * k).round() as i32);
-        let x = m.position().x + (m.size().width as i32 - w) / 2;
-        let y = m.position().y;
-        self.set_bounds(x, y, w, h);
+        // окно — во всю ширину монитора, от его левого верхнего угла: переходы (раскрытие, игровой режим)
+        // меняют только высоту окна, а не его положение — WebView2 не показывает кадр «картинка со сдвигом»
+        let (w, h) = (m.size().width as i32, ((if mode == "full" { WIN_H } else { PILL_H }) * k).round() as i32);
+        self.st.lock().unwrap().band = (WIN_W * k).round() as i32;
+        self.clip(None);
+        self.set_bounds(m.position().x, m.position().y, w, h);
     }
     // положение и размер — одной командой Windows: без промежуточного кадра «новый размер, старое место» (перелёты в игре)
     fn set_bounds(&self, x: i32, y: i32, w: i32, h: i32) {
@@ -82,6 +84,18 @@ impl Notch {
         }
         let mut st = self.st.lock().unwrap();
         st.pos = (x, y); st.size = (w, h);
+    }
+    /// видимая часть окна (регион Windows): применяется мгновенно, без перерисовки страницы; None — всё окно
+    fn clip(&self, r: Option<(i32, i32, i32, i32)>) {
+        use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn, HRGN};
+        let Ok(hw) = self.win.hwnd() else { return };
+        let h = windows::Win32::Foundation::HWND(hw.0 as *mut _);
+        unsafe {
+            match r {
+                Some((x, y, w, ht)) => { let rg = CreateRectRgn(x, y, x + w, y + ht); let _ = SetWindowRgn(h, Some(rg), true); } // регион теперь принадлежит окну
+                None => { let _ = SetWindowRgn(h, Some(HRGN::default()), true); }
+            }
+        }
     }
     pub fn mode(&self) -> String { self.st.lock().unwrap().mode.clone() }
     pub fn set_mode(&self, mode: &str) -> String {
@@ -97,16 +111,24 @@ impl Notch {
         self.st.lock().unwrap().mode = "stage".into();
         let _ = self.win.set_ignore_cursor_events(true);
         self.st.lock().unwrap().clickable = false;
-        let (bx, by, bw, bh) = if b.2 > 0.0 { b } else { (0.0, 0.0, mon.2 as f64 / k, mon.3 as f64 / k) };
-        self.set_bounds(mon.0 + (bx * k).round() as i32, mon.1 + (by * k).round() as i32, (bw * k).ceil() as i32, (bh * k).ceil() as i32);
+        // сцена — весь монитор игры; окно нотча и так стоит в его левом верхнем углу, поэтому оно только растёт вниз
+        let _ = (b, k);
+        self.clip(None);
+        let st = self.bounds();
+        if st != (mon.0, mon.1, mon.2, mon.3) { self.set_bounds(mon.0, mon.1, mon.2, mon.3); }
     }
     pub fn hud(&self, mon: (i32, i32, i32, i32), r: (f64, f64, f64, f64), k: f64, hover: bool) {
         { let mut st = self.st.lock().unwrap(); st.mode = "hud".into(); st.hud_track = hover; st.clickable = false; }
         let _ = self.win.set_ignore_cursor_events(true);
-        self.set_bounds(mon.0 + (r.0 * k).round() as i32, mon.1 + (r.1 * k).round() as i32, (r.2 * k).ceil() as i32, (r.3 * k).ceil() as i32);
+        // окно не двигается: видимой остаётся только плашка (регион), остальной монитор — свободен для игры
+        if self.bounds() != (mon.0, mon.1, mon.2, mon.3) { self.set_bounds(mon.0, mon.1, mon.2, mon.3); }
+        let hr = ((r.0 * k).floor() as i32, (r.1 * k).floor() as i32, (r.2 * k).ceil() as i32 + 1, (r.3 * k).ceil() as i32 + 1);
+        self.clip(Some(hr));
         let (cx, cy) = cursor();
         let mut st = self.st.lock().unwrap();
-        st.hud_hover = cx >= st.pos.0 && cy >= st.pos.1 && cx < st.pos.0 + st.size.0 && cy < st.pos.1 + st.size.1;
+        st.hud_rect = (mon.0 + hr.0, mon.1 + hr.1, hr.2, hr.3);
+        let h = st.hud_rect;
+        st.hud_hover = cx >= h.0 && cy >= h.1 && cx < h.0 + h.2 && cy < h.1 + h.3;
     }
     pub fn pill(&self) { self.st.lock().unwrap().mode = "pill".into(); self.place(); let _ = self.win.set_ignore_cursor_events(true); self.st.lock().unwrap().clickable = false; }
 
@@ -126,6 +148,8 @@ impl Notch {
         let inside_win = cx >= 0 && cy >= 0 && cx < st.size.0 && cy < st.size.1;
         if st.mode == "hud" {
             if !st.hud_track { return; }
+            let h = st.hud_rect;
+            let inside_win = px >= h.0 && py >= h.1 && px < h.0 + h.2 && py < h.1 + h.3;
             // курсор над плашкой в игре: события мыши игры её не достигают — сообщаем сами
             if inside_win != st.hud_hover { st.hud_hover = inside_win; drop(st); ctx::emit("hud-hover", inside_win); }
             return;
@@ -134,7 +158,10 @@ impl Notch {
         let (l, t, r, b) = st.zone;
         // + полоска у верхнего края над нотчем (#hot): мышь у края экрана раскрывает его
         let over = inside_win && ((cx >= l && cx < r && cy >= t && cy < b) || (cy < 6 && cx >= l - 60 && cx < r + 60));
-        let want = over || (st.interactive && inside_win);
+        // раскрытая панель ловит клики только в своей полосе по центру (как прежнее окно шириной 820), а не по всей ширине монитора
+        let half = st.band / 2;
+        let in_band = cx >= st.size.0 / 2 - half && cx < st.size.0 / 2 + half;
+        let want = over || (st.interactive && inside_win && in_band);
         if want != st.clickable {
             st.clickable = want;
             let _ = self.win.set_ignore_cursor_events(!want);
