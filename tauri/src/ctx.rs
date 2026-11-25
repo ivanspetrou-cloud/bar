@@ -6,10 +6,11 @@ use tauri::{AppHandle, Emitter};
 
 use crate::Shared;
 
-/// Папка данных Bar в %APPDATA% (та же, что у Electron-версии, — настройки переходят как есть)
-pub const DATA: &str = "Bar Tauri";
+/// Папка данных Bar в %APPDATA% (та же, что у Electron-версии, — настройки переходят как есть).
+/// Тестовая сборка (BAR_DATA="Bar Tauri" при сборке) живёт в своей папке и не обновляется из релизов.
+pub const DATA: &str = match option_env!("BAR_DATA") { Some(d) => d, None => "Bar" };
 /// Папка с файлами пользователя в «Документах» (скриншоты, диктофон, файлы с телефона)
-pub const DOCS: &str = "Bar Tauri";
+pub const DOCS: &str = DATA;
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static SH: OnceLock<Arc<Shared>> = OnceLock::new();
