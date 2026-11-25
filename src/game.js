@@ -198,21 +198,11 @@ module.exports = function setupGame({ getWin, send, settings, saveSettings, sens
   });
   // FPS: Windows разрешает читать кадры чужих программ администраторам и группе «Пользователи журналов производительности» (S-1-5-32-559)
   function fpsPermission() {
-    // группы текущего входа (токен): есть S-1-5-32-559 — доступ работает; только в списке группы — нужна перезагрузка
-    const ps = "$me=[Security.Principal.WindowsIdentity]::GetCurrent(); if ($me.Groups | Where-Object { $_.Value -eq 'S-1-5-32-559' }) { 'ok' } " +
-      "elseif (Get-LocalGroupMember -SID S-1-5-32-559 -ErrorAction SilentlyContinue | Where-Object { $_.SID -eq $me.User }) { 'relogin' } else { 'no' }";
-    return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 10000 },
-      (e, out) => { const m = String(out || '').match(/ok|relogin|no/); resolve(m ? m[0] : 'no'); }));
+    // группы текущего входа: есть S-1-5-32-559 — доступ работает; только в списке группы — нужен повторный вход
+    return gpuAgent.call('fpsperm', '', 10000).then((r) => (/^(ok|relogin|no)$/.test(r) ? r : 'no'), () => 'no');
   }
-  ipcMain.handle('game-perm', () => new Promise((resolve) => {
-    // Один раз: Windows спросит подтверждение (UAC). Добавляем именно текущую учётную запись по её SID.
-    const sid = require('child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { windowsHide: true, encoding: 'utf8' }).trim();
-    if (!/^S-1-5-[\d-]+$/.test(sid)) return resolve('error');
-    const inner = `Add-LocalGroupMember -SID S-1-5-32-559 -Member '${sid}'`;
-    const enc = Buffer.from(inner, 'utf16le').toString('base64');
-    const outer = `Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','${enc}'`;
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', outer], { windowsHide: true }, async () => resolve(await fpsPermission()));
-  }));
+  // Один раз: Windows спросит подтверждение (UAC); в группу добавляется именно текущая учётная запись
+  ipcMain.handle('game-perm', () => gpuAgent.call('fpsgrant', '', 130000).then((r) => r || 'error', () => 'error'));
 
   schedule();
   return {

@@ -265,72 +265,30 @@ ipcMain.on('ov-done', async (_e, res) => {
   }
 });
 
-// Встроенный OCR Windows (Windows.Media.Ocr) через PowerShell — без интернета и без моделей.
-const OCR_PS = `
-$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
-[Console]::OutputEncoding=[Text.Encoding]::UTF8
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$null=[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
-$null=[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
-$null=[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics,ContentType=WindowsRuntime]
-$null=[Windows.Globalization.Language,Windows.Globalization,ContentType=WindowsRuntime]
-$m=([System.WindowsRuntimeSystemExtensions].GetMethods()|?{$_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1'})[0]
-function Aw($t,$r){$n=$m.MakeGenericMethod($r).Invoke($null,@($t));$n.Wait(-1)|Out-Null;$n.Result}
-if($env:BAR_LIST){[Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages|%{$_.LanguageTag+'|'+$_.DisplayName};exit}
-$f=Aw ([Windows.Storage.StorageFile]::GetFileFromPathAsync($env:BAR_IMG)) ([Windows.Storage.StorageFile])
-$s=Aw ($f.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-$d=Aw ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($s)) ([Windows.Graphics.Imaging.BitmapDecoder])
-$b=Aw ($d.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-if($env:BAR_LANG){$e=[Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language $env:BAR_LANG))}
-if(-not $e){$e=[Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()}
-$r=Aw ($e.RecognizeAsync($b)) ([Windows.Media.Ocr.OcrResult])
-$r.Lines|%{$_.Text}
-`;
-const OCR_B64 = Buffer.from(OCR_PS, 'utf16le').toString('base64');
-
-function runPs(env) {
-  return new Promise((resolve, reject) => {
-    execFile('powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', OCR_B64],
-      { env: { ...process.env, ...env }, windowsHide: true, timeout: 30000, encoding: 'utf8', maxBuffer: 8 << 20 },
-      (err, stdout, stderr) => err ? reject(new Error(stderr || err.message)) : resolve(stdout));
-  });
-}
+// Встроенный OCR Windows (Windows.Media.Ocr) — в нативном агенте, без интернета и без моделей.
+// Тот же агент нажимает медиа-клавиши.
+let tools = null;
+const toolAgent = () => tools || (tools = new (require('./agent-host'))('tools'));
 
 async function runOcr(pngDataUrl) {
   const file = path.join(os.tmpdir(), `bar-ocr-${process.pid}.png`);
   fs.writeFileSync(file, Buffer.from(pngDataUrl.split(',')[1], 'base64'));
   try {
-    const out = await runPs({ BAR_IMG: file, BAR_LANG: settings.ocrLang || '' });
-    return out.replace(/\r/g, '').trim();
+    const lines = await toolAgent().call('ocr', Buffer.from(file + '|' + (settings.ocrLang || ''), 'utf8').toString('base64'), 30000);
+    return (Array.isArray(lines) ? lines : []).join('\n').trim();
   } finally { fs.rm(file, () => {}); }
 }
 
 ipcMain.handle('ocr-langs', async () => {
   try {
-    const out = await runPs({ BAR_LIST: '1' });
-    return out.replace(/\r/g, '').split('\n').filter(Boolean).map(l => {
-      const [tag, name] = l.split('|'); return { tag, name };
-    });
+    const out = await toolAgent().call('ocrlangs', '', 10000);
+    return (Array.isArray(out) ? out : []).map((l) => { const [tag, name] = String(l).split('|'); return { tag, name }; });
   } catch { return []; }
 });
 
-// ---------- медиа-клавиши: нативный агент; без него — постоянный PowerShell, чтобы не ждать запуска ----------
-let ps = null, keyAgent = null;
-function mediaKey(code) {
-  if (!keyAgent) keyAgent = new (require('./agent-host'))('keys');
-  keyAgent.call('mediakey', code, 3000).catch(() => mediaKeyPs(code)); // без bar-agent.exe команды нет — запасной путь
-}
-function mediaKeyPs(code) {
-  if (!ps || ps.exitCode !== null) {
-    ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], { windowsHide: true });
-    ps.on('error', () => { ps = null; });
-    ps.stdin.write('$w=New-Object -ComObject WScript.Shell\n');
-  }
-  ps.stdin.write(`$w.SendKeys([char]${code})\n`);
-}
+// ---------- медиа-клавиши ----------
 const MEDIA = { play: 179, next: 176, prev: 177, volup: 175, voldown: 174, mute: 173 };
-ipcMain.on('media', (_e, k) => MEDIA[k] && mediaKey(MEDIA[k]));
+ipcMain.on('media', (_e, k) => MEDIA[k] && toolAgent().call('mediakey', MEDIA[k], 3000).catch(() => {}));
 
 // ---------- система ----------
 let lastCpu = os.cpus();
@@ -740,7 +698,6 @@ app.on('will-quit', () => {
   if (music) music.stop();
   if (game) game.stop();
   winwatch.stop();
-  if (ps) try { ps.kill(); } catch {}
-  if (keyAgent) keyAgent.stop();
+  if (tools) tools.stop();
 });
 app.on('window-all-closed', () => app.quit());

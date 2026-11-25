@@ -1,13 +1,14 @@
-// Bar: нативный агент Windows на Rust — замена PowerShell-агента (src/agent.ps1) для частых запросов.
-// Протокол тот же: на вход строки «id команда аргумент», на выход по строке JSON {"id","ok","data"}.
-// Первая строка — {"id":0,"ok":true,"data":"ready","cmds":[…]}: Bar узнаёт, какие команды здесь есть,
-// остальные по-прежнему выполняет PowerShell. Только чтение состояния и те же действия, что и раньше (громкость, плеер).
+// Bar: нативный агент Windows на Rust — все системные данные и действия Bar (PowerShell не используется).
+// Протокол: на вход строки «id команда аргумент», на выход по строке JSON {"id","ok","data"}.
+// Первая строка — {"id":0,"ok":true,"data":"ready","cmds":[…]}. Режимы meter и winevents — отдельные фоновые процессы.
+// Только чтение состояния Windows и действия, которые Bar делал и раньше (громкость, плеер, окна); наружу ничего не уходит.
 #![windows_subsystem = "windows"] // без консоли и conhost: stdin/stdout — каналы от Bar
 
 mod events;
 mod hid;
 mod img;
 mod sys;
+mod tools;
 mod win;
 
 use serde_json::{json, Value};
@@ -29,7 +30,7 @@ const CMDS: &[&str] = &[
     "media", "mediactl", "gpu", "appicon", "fileicon", "winicon", "windows", "focus", "minimize", "hidepid", "showpid", "close",
     "bt", "net", "hidbat", "g435has", "g435", "hiddiag", "taskbar", "settaskbar", "hidetaskbar", "taskwins", "winthumbs",
     "monsizes", "exeinfo", "camlist", "camset", "closewin", "startmenu", "showdesktop", "appbar", "appbarnew", "appbaroff",
-    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey",
+    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey", "ocr", "ocrlangs", "fpsperm", "fpsgrant", "killedge",
 ];
 
 type R<T> = windows::core::Result<T>;
@@ -227,6 +228,11 @@ fn main() {
             "trim" => Ok(sys::trim()),
             "startapps" => Ok(sta(sys::startapps).unwrap_or(json!([]))),
             "findfiles" => search.find(a),
+            "ocr" => tools::ocr(a),
+            "ocrlangs" => Ok(tools::ocr_langs()),
+            "fpsperm" => Ok(tools::fps_perm()),
+            "fpsgrant" => Ok(tools::fps_grant()),
+            "killedge" => Ok(tools::kill_edge(&mut wmi, a)),
             _ => Err(format!("unknown command {}", cmd)),
         };
         match res {

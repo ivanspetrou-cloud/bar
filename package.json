@@ -1,7 +1,7 @@
 {
   "name": "bar-lab",
   "productName": "Bar Lab",
-  "version": "0.2.0-lab.4",
+  "version": "0.2.0-lab.5",
   "description": "Нотч для Windows: плеер YouTube Music, показатели, 16 инструментов сверху экрана",
   "main": "src/main.js",
   "author": "ivanspetrou-cloud",
@@ -45,11 +45,6 @@
     ],
     "publish": null,
     "asar": true,
-    "asarUnpack": [
-      "src/agent.ps1",
-      "src/meter.ps1",
-      "src/winevents.ps1"
-    ],
     "extraResources": [
       {
         "from": "vendor/presentmon",

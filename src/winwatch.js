@@ -1,4 +1,4 @@
-// Общий наблюдатель за окнами Windows (bar-agent.exe winevents, без него — winevents.ps1): один процесс на весь Bar.
+// Общий наблюдатель за окнами Windows (bar-agent.exe winevents): один процесс на весь Bar.
 // "E" — открыли, закрыли, сменили активное, свернули окно; "L" — активное окно поменяло размер или место
 // (развернули на весь экран, перетащили). Подписчики получают только нужные им буквы.
 
@@ -7,7 +7,8 @@ let ps = null, buf = '';
 
 function start() {
   if (ps) return;
-  ps = require('./agent-host').spawnHelper('winevents', 'winevents.ps1');
+  ps = require('./agent-host').spawnHelper('winevents');
+  if (!ps) return;
   ps.stdout.setEncoding('utf8');
   ps.stdout.on('data', (d) => {
     buf += d;

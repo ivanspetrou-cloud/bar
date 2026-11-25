@@ -195,9 +195,9 @@ module.exports = function setupMusic({ send }) {
 
   // Прежний вариант (отдельный Edge от Bar) больше не используется — закрыть его, если остался запущенным
   try {
-    const dir = path.join(app.getPath('userData'), 'edge-music').replace(/'/g, "''");
-    const ps = `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${dir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 15000 }, () => {});
+    const dir = path.join(app.getPath('userData'), 'edge-music');
+    const once = new (require('./agent-host'))('cleanup');
+    once.call('killedge', Buffer.from(dir, 'utf8').toString('base64'), 15000).catch(() => {}).finally(() => once.stop());
   } catch {}
 
   // ---------- IPC ----------

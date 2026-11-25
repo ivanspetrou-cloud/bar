@@ -11,6 +11,13 @@ serde_json = { version = "1", features = ["preserve_order"] }
 version = "0.62"
 features = [
   "Foundation",
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage",
+  "Win32_NetworkManagement_NetManagement",
+  "Win32_Security_Authorization",
   "Media_Control",
   "Storage_Streams",
   "Win32_Foundation",
