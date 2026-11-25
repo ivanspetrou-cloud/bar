@@ -2464,8 +2464,21 @@ function nowPlayingCard() {
       e.stopPropagation();
       if (k === 'prev') animOnce(b, 'nudge-l');
       if (k === 'next') animOnce(b, 'nudge-r');
+      // YouTube Music — через расширение: вкладку, которую браузер усыпил после долгой паузы, оно будит и повторяет команду.
+      // Системный медиаплеер Windows в этом случае отвечает «готово», но уснувшая вкладка не играет.
+      const m = S.media || {};
+      const ytm = MU.ext && MU.ytTab && (!m.title || (MU.st && MU.st.title === m.title)) && (!m.app || /msedge|chrome|brave|opera|vivaldi|yandex|browser/i.test(m.app));
+      if (ytm) {
+        const slow = setTimeout(() => flash('Будим вкладку YouTube Music…', 2500), 900); // уснувшая вкладка перезагружается несколько секунд
+        const r = await bar.musicCmd(k);
+        clearTimeout(slow);
+        if (r) return;
+      }
+      const was = !!m.playing;
       const ok = await bar.mediaCtl(k);
-      if (!ok) bar.media(k === 'toggle' ? 'play' : k);
+      if (!ok) { bar.media(k === 'toggle' ? 'play' : k); return; }
+      // «играть» не сработало (трек так и стоит) — повторить через расширение, если оно на связи
+      if (k === 'toggle' && !was && MU.ext && MU.ytTab) setTimeout(() => { if (S.media && !S.media.playing) bar.musicCmd('toggle'); }, 1500);
     };
     return b;
   };
