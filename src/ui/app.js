@@ -3066,7 +3066,7 @@ async function gameExit(m) {
   barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
   const a = await fly(loc(from), loc(to), Game.corner, 'pill');
   bar.animBoost(false);
-  winFull = false;
+  winFull = !!m.open; // сразу откроется панель — окно не ужимаем до полоски, чтобы тут же не растить обратно
   // посадка: игровые стили снимаются в тот же кадр и без CSS-переходов — нотч уже стоит ровно на своём месте
   await settleNoTransition(() => {
     Game.on = false; Game.rect = null;
@@ -3080,11 +3080,39 @@ async function gameExit(m) {
   Game.busy = false;
   pushNeed(); renderBar();
 }
+// показатели плашки: элементы обновляются на месте (без пересоздания), а то, что появилось впервые
+// (значение вместо «…», новый показатель), — мягко проявляется
+const HUD_EMPTY = /^(…|—)?$/;
+const hudKey = (el) => el.getAttribute('title') || el.className;
+function hudFadeIn(el, i = 0) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el.animate([{ opacity: 0, transform: 'translateY(3px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }],
+    { duration: 320, delay: i * 40, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'backwards' });
+}
+function hudPatch(html) {
+  const tmp = document.createElement('div'); tmp.innerHTML = html;
+  const old = [...hudEl.children], nw = [...tmp.children];
+  const same = old.length === nw.length && old.every((el, i) => hudKey(el) === hudKey(nw[i]));
+  if (!same) {
+    const had = new Set(old.map(hudKey));
+    hudEl.innerHTML = html;
+    [...hudEl.children].forEach((el, i) => { if (!had.has(hudKey(el))) hudFadeIn(el, i); });
+    return;
+  }
+  old.forEach((el, i) => {
+    if (el.innerHTML === nw[i].innerHTML) return;
+    const ov = el.querySelector('.hud-v'), nv = nw[i].querySelector('.hud-v');
+    const was = ov ? ov.textContent.trim() : '';
+    if (ov && nv && el.childElementCount === nw[i].childElementCount) ov.textContent = nv.textContent; // только цифры — без перерисовки значков
+    else el.innerHTML = nw[i].innerHTML;
+    if (HUD_EMPTY.test(was) && !HUD_EMPTY.test((nv || nw[i]).textContent.trim())) hudFadeIn(ov || el);
+  });
+}
 function drawHud() {
   if (!Game.on || Game.busy) return;
   const html = hudHtml();
   if (html === hudEl._h) return;
-  hudEl.innerHTML = hudEl._h = html;
+  hudPatch(html); hudEl._h = html;
   // плашка подстраивается под содержимое (например, появилось предупреждение о батарее)
   const w = Math.ceil(hudEl.offsetWidth);
   if (Game.rect && Math.abs(w - Game.rect.w) > 1) resizeHud(w);

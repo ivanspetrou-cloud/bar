@@ -130,6 +130,7 @@ impl Notch {
         let h = st.hud_rect;
         st.hud_hover = cx >= h.0 && cy >= h.1 && cx < h.0 + h.2 && cy < h.1 + h.3;
     }
+    pub fn to_full(&self) { self.st.lock().unwrap().mode = "full".into(); self.place(); let _ = self.win.set_ignore_cursor_events(true); self.st.lock().unwrap().clickable = false; crate::webview::low_memory(&self.win, false); }
     pub fn pill(&self) { self.st.lock().unwrap().mode = "pill".into(); self.place(); let _ = self.win.set_ignore_cursor_events(true); self.st.lock().unwrap().clickable = false; }
 
     pub fn set_interactive(&self, on: bool) { self.st.lock().unwrap().interactive = on; self.track(); }

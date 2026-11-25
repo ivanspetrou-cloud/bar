@@ -86,7 +86,7 @@ fn exit(after_open: bool) {
     stop_stats();
     with(|s| { s.last_mon = Some((gm.mon.0, gm.mon.1, gm.mon.2, gm.mon.3, gm.k)); s.exit_done = after_open; });
     let gv = g();
-    ctx::emit("game", json!({ "phase": "exit", "corner": gv["corner"], "w": gm.mon.2 as f64 / gm.k, "h": gm.mon.3 as f64 / gm.k }));
+    ctx::emit("game", json!({ "phase": "exit", "open": after_open, "corner": gv["corner"], "w": gm.mon.2 as f64 / gm.k, "h": gm.mon.3 as f64 / gm.k }));
 }
 fn open_after() { ctx::emit("toggle", Value::Null); ctx::sh().notch.focus(); }
 
@@ -201,8 +201,10 @@ pub fn handle(ch: &str, a: &[Value]) -> Value {
             if let Some((x, y, w, h, k)) = m { ctx::sh().notch.stage((x, y, w, h), rect(&arg(0)), k); json!(true) } else { json!(false) }
         }
         "game-exit-done" => {
-            ctx::sh().notch.pill();
-            if with(|s| std::mem::take(&mut s.exit_done)) { std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(30)); open_after(); }); }
+            // после удержания сразу откроется панель: окно из «сцены» становится окном панели (только высота меньше),
+            // а не ужимается до полоски и тут же растёт — иначе панель на кадр обрезана и «дёргается вниз»
+            if with(|s| std::mem::take(&mut s.exit_done)) { ctx::sh().notch.to_full(); open_after(); }
+            else { ctx::sh().notch.pill(); }
             json!(true)
         }
         "game-get" => {
