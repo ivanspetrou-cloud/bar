@@ -258,3 +258,31 @@ pub fn appbar_new(arg: &str) {
     unsafe { SHAppBarMessage(0, &mut d) };
 }
 pub fn appbar_off(h: i64) { let mut d = abd(h); unsafe { SHAppBarMessage(1 /* ABM_REMOVE */, &mut d) }; }
+
+// ---------- тема Windows: '' — прочитать (true — светлая, null — неизвестно), '1' / '0' — сменить ----------
+// После смены — то же оповещение, что шлют «Параметры» (WM_SETTINGCHANGE «ImmersiveColorSet»): иначе программы,
+// в том числе сам Bar, о смене темы не узнают.
+pub fn win_theme(arg: &str) -> Value {
+    use windows::Win32::System::Registry::{RegCloseKey, RegCreateKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE};
+    let path = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let mut k = HKEY::default();
+    unsafe {
+        if RegCreateKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), None, PCWSTR::null(), REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, None, &mut k, None).is_err() { return Value::Null; }
+        let res = if arg != "1" && arg != "0" {
+            let name = wide("AppsUseLightTheme");
+            let mut v = 0u32; let mut n = 4u32;
+            if RegQueryValueExW(k, PCWSTR(name.as_ptr()), None, None, Some(&mut v as *mut u32 as *mut u8), Some(&mut n)).is_ok() { json!(v != 0) } else { Value::Null }
+        } else {
+            let v: u32 = if arg == "1" { 1 } else { 0 };
+            for name in ["AppsUseLightTheme", "SystemUsesLightTheme"] {
+                let w = wide(name);
+                let _ = RegSetValueExW(k, PCWSTR(w.as_ptr()), None, REG_DWORD, Some(&v.to_le_bytes()));
+            }
+            let msg = wide("ImmersiveColorSet");
+            SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, WPARAM(0), LPARAM(msg.as_ptr() as isize), SMTO_ABORTIFHUNG, 1000, None);
+            json!(arg == "1")
+        };
+        let _ = RegCloseKey(k);
+        res
+    }
+}

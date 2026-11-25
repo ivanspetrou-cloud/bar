@@ -27,6 +27,8 @@ features = [
   "Win32_Media_DirectShow",
   "Win32_Media_MediaFoundation",
   "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_UI_Shell_PropertiesSystem",
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Devices_Properties",
   "Win32_Graphics_Dwm",

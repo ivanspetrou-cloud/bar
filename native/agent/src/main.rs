@@ -21,7 +21,7 @@ use windows::Media::Control::{
 };
 use windows::Storage::Streams::DataReader;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-use windows::Win32::Media::Audio::{eCapture, eMultimedia, eRender, EDataFlow, IMMDeviceEnumerator, MMDeviceEnumerator};
+use windows::Win32::Media::Audio::{eCapture, eCommunications, eMultimedia, eRender, EDataFlow, IMMDeviceEnumerator, MMDeviceEnumerator};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED};
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 
@@ -30,7 +30,7 @@ const CMDS: &[&str] = &[
     "media", "mediactl", "gpu", "appicon", "fileicon", "winicon", "windows", "focus", "minimize", "hidepid", "showpid", "close",
     "bt", "net", "hidbat", "g435has", "g435", "hiddiag", "taskbar", "settaskbar", "hidetaskbar", "taskwins", "winthumbs",
     "monsizes", "exeinfo", "camlist", "camset", "closewin", "startmenu", "showdesktop", "appbar", "appbarnew", "appbaroff",
-    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey", "ocr", "ocrlangs", "fpsperm", "fpsgrant", "killedge",
+    "appxlogo", "usage", "hwinfo", "trim", "startapps", "findfiles", "mediakey", "ocr", "ocrlangs", "fpsperm", "fpsgrant", "killedge", "mics", "wintheme",
 ];
 
 type R<T> = windows::core::Result<T>;
@@ -46,28 +46,71 @@ fn endpoint(flow: EDataFlow) -> R<IAudioEndpointVolume> {
 fn vol_of(e: &IAudioEndpointVolume) -> R<(i64, bool)> {
     unsafe { Ok(((e.GetMasterVolumeLevelScalar()? * 100.0).round() as i64, e.GetMute()?.as_bool())) }
 }
-fn audio() -> R<Value> {
+// микрофоны, которые выключает кнопка: выбранный (id устройства) или «как в Windows» — по умолчанию и для связи
+fn mics(id: &str) -> Vec<IAudioEndpointVolume> {
+    let mut res = Vec::new();
+    unsafe {
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return res };
+        if !id.is_empty() {
+            let w: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+            if let Ok(v) = en.GetDevice(windows::core::PCWSTR(w.as_ptr())).and_then(|d| d.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)) { res.push(v); return res; }
+        } // устройство отключили — как в Windows
+        let mut seen: Vec<String> = Vec::new();
+        for role in [eMultimedia, eCommunications] {
+            let Ok(d) = en.GetDefaultAudioEndpoint(eCapture, role) else { continue };
+            let did = d.GetId().ok().map(|p| { let s = p.to_string().unwrap_or_default(); windows::Win32::System::Com::CoTaskMemFree(Some(p.0 as *const _)); s }).unwrap_or_default();
+            if seen.contains(&did) { continue; }
+            seen.push(did);
+            if let Ok(v) = d.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) { res.push(v); }
+        }
+    }
+    res
+}
+// выключен — если выключены все целевые микрофоны
+fn mics_muted(l: &[IAudioEndpointVolume]) -> bool { !l.is_empty() && l.iter().all(|v| unsafe { v.GetMute().map_or(false, |b| b.as_bool()) }) }
+fn audio(id: &str) -> R<Value> {
     let (volume, muted) = vol_of(&endpoint(eRender)?)?;
-    let mic = endpoint(eCapture).ok();
-    let mic_muted = match &mic { Some(m) => unsafe { m.GetMute().map(|b| b.as_bool()).unwrap_or(false) }, None => false };
-    Ok(json!({ "volume": volume, "muted": muted, "mic": mic.is_some(), "micMuted": mic_muted }))
+    let m = mics(id.trim());
+    Ok(json!({ "volume": volume, "muted": muted, "mic": !m.is_empty(), "micMuted": mics_muted(&m) }))
+}
+// активные микрофоны: "id|имя|1 — по умолчанию|1 — для связи"
+fn mic_list() -> Value {
+    use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+    use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+    use windows::Win32::System::Com::STGM_READ;
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return json!(out) };
+        let idof = |d: &windows::Win32::Media::Audio::IMMDevice| d.GetId().ok().map(|p| { let s = p.to_string().unwrap_or_default(); windows::Win32::System::Com::CoTaskMemFree(Some(p.0 as *const _)); s }).unwrap_or_default();
+        let def1 = en.GetDefaultAudioEndpoint(eCapture, eMultimedia).map(|d| idof(&d)).unwrap_or_default();
+        let def2 = en.GetDefaultAudioEndpoint(eCapture, eCommunications).map(|d| idof(&d)).unwrap_or_default();
+        let Ok(col) = en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else { return json!(out) };
+        for i in 0..col.GetCount().unwrap_or(0) {
+            let Ok(d) = col.Item(i) else { continue };
+            let id = idof(&d);
+            let name = d.OpenPropertyStore(STGM_READ).and_then(|ps| ps.GetValue(&PKEY_Device_FriendlyName)).map(|v| v.to_string()).unwrap_or_default();
+            out.push(format!("{}|{}|{}|{}", id, name, (id == def1) as i32, (id == def2) as i32));
+        }
+    }
+    json!(out)
 }
 // ждать изменения громкости / звука / микрофона: 12 чтений в секунду, ответ — при изменении или по таймауту
 fn wait_audio(arg: &str) -> Value {
-    let w: Vec<i64> = arg.split(' ').map(|x| x.parse().unwrap_or(0)).collect();
+    let parts: Vec<&str> = arg.split(' ').collect();
+    let w: Vec<i64> = parts.iter().take(4).map(|x| x.parse().unwrap_or(0)).collect();
+    let mic_id = parts.get(4).copied().unwrap_or("");
     let (vol, mute, mic, timeout) = (w.first().copied().unwrap_or(0), w.get(1).copied().unwrap_or(0), w.get(2).copied().unwrap_or(0), w.get(3).copied().unwrap_or(0));
     let start = Instant::now();
-    let (mut o, mut i): (Option<IAudioEndpointVolume>, Option<IAudioEndpointVolume>) = (None, None);
+    let (mut o, mut i): (Option<IAudioEndpointVolume>, Vec<IAudioEndpointVolume>) = (None, Vec::new());
     let mut got: Option<Instant> = None;
     loop {
         let elapsed = start.elapsed().as_millis() as i64;
-        if got.map_or(true, |g| g.elapsed() > Duration::from_secs(2)) { o = endpoint(eRender).ok(); i = endpoint(eCapture).ok(); got = Some(Instant::now()); } // устройство могли сменить
+        if got.map_or(true, |g| g.elapsed() > Duration::from_secs(2)) { o = endpoint(eRender).ok(); i = mics(mic_id); got = Some(Instant::now()); } // устройство могли сменить
         match o.as_ref().map(vol_of) {
             Some(Ok((vp, m))) => {
-                let mm = i.as_ref().and_then(|x| unsafe { x.GetMute().ok() }).map_or(false, |b| b.as_bool());
-                let (mi, mmi) = (m as i64, mm as i64);
-                if vp != vol || mi != mute || (i.is_some() && mmi != mic) || elapsed >= timeout {
-                    return json!(format!("{}|{}|{}|{}", vp, mi, i.is_some() as i64, mmi));
+                let (mi, mmi, has) = (m as i64, mics_muted(&i) as i64, !i.is_empty());
+                if vp != vol || mi != mute || (has && mmi != mic) || elapsed >= timeout {
+                    return json!(format!("{}|{}|{}|{}", vp, mi, has as i64, mmi));
                 }
             }
             _ => { got = None; if elapsed >= timeout { return json!(""); } }
@@ -82,6 +125,14 @@ fn set_vol(arg: &str) -> R<Value> {
 }
 fn set_mute(flow: EDataFlow, arg: &str) -> R<Value> {
     unsafe { endpoint(flow)?.SetMute(arg.trim() == "1", std::ptr::null())?; }
+    Ok(json!(true))
+}
+// «1 [id]» — выключить микрофон(ы), «0 [id]» — включить
+fn set_mic_mute(arg: &str) -> R<Value> {
+    let (on, id) = arg.trim().split_once(' ').unwrap_or((arg.trim(), ""));
+    let l = mics(id.trim());
+    if l.is_empty() { return Err(windows::core::Error::from_hresult(windows::core::HRESULT(0x80070490u32 as i32))); }
+    for v in &l { unsafe { v.SetMute(on == "1", std::ptr::null())?; } }
     Ok(json!(true))
 }
 
@@ -177,11 +228,13 @@ fn main() {
         let a = arg.as_str();
         let icon = |p: String, size: i32| sta(move || img::shell_icon(&p, size)).flatten().map(|b| json!(img::b64(&b))).unwrap_or(json!(""));
         let res: Result<Value, String> = match cmd {
-            "audio" => audio().map_err(|e| e.message()),
+            "audio" => audio(a).map_err(|e| e.message()),
             "waitaudio" => Ok(wait_audio(a)),
             "setvol" => set_vol(a).map_err(|e| e.message()),
             "mute" => set_mute(eRender, a).map_err(|e| e.message()),
-            "micmute" => set_mute(eCapture, a).map_err(|e| e.message()),
+            "micmute" => set_mic_mute(a).map_err(|e| e.message()),
+            "mics" => Ok(mic_list()),
+            "wintheme" => Ok(win::win_theme(a.trim())),
             "layout" => Ok(win.layout()),
             "layouts" => Ok(win.layouts()),
             "setlayout" => Ok(win.set_layout(a)),
