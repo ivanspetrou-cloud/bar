@@ -655,6 +655,68 @@ namespace Bar {
       return name + "|" + samples[samples.Count / 2];
     }
 
+
+    // Redragon на приёмниках Areson (25A7): заряд не присылается сам, его спрашивают командой GetPower.
+    // Запрос — feature-отчёт 0x08 на коллекцию FF02:0002: [08, 04, 00…, контрольная сумма = 0x55 − сумма];
+    // ответ — входной отчёт 0x09 на FF01:0000: [09, 04, статус, адрес(2), длина, заряд, зарядка…]; весь кадр в сумме = 0x55.
+    // У мышей (FA07/FA08) кадр 17 байт и заряд 0..10 (×10 %); у других приёмников кадр может быть 8 байт.
+    // Протокол — из открытых драйверов Redragon M913/M915 (Qehbr/m913-ctl, Doomguy-BFG9000/redragon-m913-battery-tray). Только чтение.
+    static byte[] AresonPower(string featPath, string inPath, int len, List<string> diag) {
+      var rh = Open(inPath, 0xC0000000u, 0x40000000u);
+      if (rh.IsInvalid) return null;
+      using (var fs = new System.IO.FileStream(rh, System.IO.FileAccess.ReadWrite, len, true))
+      using (var fh = Open(featPath, 0, 0)) {
+        if (fh.IsInvalid) return null;
+        var req = new byte[len]; req[0] = 0x08; req[1] = 0x04;
+        int sum = 0; for (int i = 0; i < len - 1; i++) sum += req[i];
+        req[len - 1] = (byte)((0x55 - sum) & 0xFF);
+        for (int attempt = 0; attempt < 2; attempt++) {
+          if (attempt > 0) Thread.Sleep(200);
+          if (!HidD_SetFeature(fh, req, len)) { if (diag != null) diag.Add("  areson: запрос не принят"); return null; }
+          var until = DateTime.Now.AddMilliseconds(1200);
+          while (DateTime.Now < until) {
+            var r = new byte[len];
+            var task = fs.ReadAsync(r, 0, len);
+            int left = (int)(until - DateTime.Now).TotalMilliseconds;
+            if (left <= 0 || !task.Wait(left)) break;
+            if (diag != null) diag.Add("  areson ответ: " + BitConverter.ToString(r, 0, Math.Min(len, task.Result)));
+            int tot = 0; foreach (var b in r) tot += b;
+            if (r[0] == 0x09 && r[1] == 0x04 && r[2] == 0x00 && (tot & 0xFF) == 0x55) return r;
+          }
+        }
+      }
+      return null;
+    }
+    // «имя|уровень|подключено|заряжается|тип» для каждого приёмника 25A7
+    static List<string> Areson(List<string> diag) {
+      var res = new List<string>();
+      var feats = new Dictionary<string, string>(); var ins = new Dictionary<string, string>(); var lens = new Dictionary<string, int>(); var names = new Dictionary<string, string>();
+      foreach (var p in Paths("25a7")) {
+        HIDP_CAPS c; string name;
+        if (!Caps(p, out c, out name)) continue;
+        var m = System.Text.RegularExpressions.Regex.Match(p.ToLower(), @"pid_([0-9a-f]{4})&mi_([0-9a-f]{2})");
+        if (!m.Success) continue;
+        string k = m.Groups[1].Value + m.Groups[2].Value;
+        if (c.UsagePage == 0xFF02 && c.Usage == 0x02 && c.FeatureReportByteLength >= 8) { feats[k] = p; lens[k] = c.FeatureReportByteLength; names[k] = name; }
+        else if (c.UsagePage == 0xFF01 && c.InputReportByteLength >= 8) ins[k] = p;
+      }
+      foreach (var k in feats.Keys) {
+        if (!ins.ContainsKey(k)) continue;
+        string pid = k.Substring(0, 4);
+        if (diag != null) diag.Add("redragon/areson 25A7:" + pid.ToUpper() + " кадр " + lens[k]);
+        var r = AresonPower(feats[k], ins[k], lens[k], diag);
+        string nm = "Redragon 2.4G";
+        string kind = pid == "fa07" || pid == "fa08" || pid == "fa7b" || pid == "fa7c" ? "mouse" : "keyboard";
+        if (r == null) { res.Add(nm + "|-1|0|0|" + kind); continue; }   // приёмник есть, устройство спит или вне связи
+        int raw = r[6];
+        // FA07/FA08 — шаг 10 %; FA7B/FA7C — сразу проценты; остальные: 0..10 считаем шагами по 10 %
+        int lvl = pid == "fa7b" || pid == "fa7c" ? raw : (pid == "fa07" || pid == "fa08" || raw <= 10) ? raw * 10 : raw;
+        bool chg = r.Length > 8 && r[7] != 0;   // в 8-байтовом кадре байт 7 — контрольная сумма, зарядку он не сообщает
+        res.Add(nm + "|" + (lvl > 0 ? Math.Min(lvl, 100) : -2) + "|1|" + (chg ? "1" : "0") + "|" + kind);
+      }
+      return res;
+    }
+
     // Диагностика: интерфейсы HID с собственной (vendor) страницей — VID:PID, номер интерфейса, страница/использование,
     // размеры отчётов и название. Только чтение описаний устройств, команд им не шлём.
     public static string[] Diag() {
@@ -672,6 +734,8 @@ namespace Bar {
           " page " + c.UsagePage.ToString("X4") + "/" + c.Usage.ToString("X2") + " in " + c.InputReportByteLength + " out " + c.OutputReportByteLength + " feat " + c.FeatureReportByteLength + " " + name);
       }
       outp.Sort();
+      // Redragon (Areson 25A7): сырые ответы на запрос заряда
+      Areson(outp);
       // Logitech: что ответило по HID++ (только запросы чтения)
       foreach (var p in LogiPaths()) {
         HIDP_CAPS c; string name; Caps(p, out c, out name);
@@ -775,8 +839,9 @@ namespace Bar {
         // гарнитура с донглом выключена — донгл есть, но не отвечает: показываем «нет связи»
         if (got.Count == 0 && System.Text.RegularExpressions.Regex.IsMatch(nm0.ToLower(), "headset|g\\d{3}") && !seen.Contains("lgoff" + nm0)) { seen.Add("lgoff" + nm0); var pn = Pretty(nm0); if (!pn.ToLower().StartsWith("logi")) pn = "Logitech " + pn; outp.Add(pn + "|-1|0|0|headphones"); }
       }
+      foreach (var line in Areson(null)) { var key = "ar" + line.Split('|')[0]; if (!seen.Contains(key)) { seen.Add(key); outp.Add(line); } }
       // любые другие устройства: стандартный заряд HID (Battery Strength), если он есть
-      var known = new HashSet<string> { "1532", "1b1c", "0c45", "3554", "1038", "046d" };
+      var known = new HashSet<string> { "1532", "1b1c", "0c45", "3554", "1038", "046d", "25a7" };
       foreach (var p in Paths("")) {
         var m = System.Text.RegularExpressions.Regex.Match(p.ToLower(), @"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})");
         if (!m.Success || known.Contains(m.Groups[1].Value)) continue;
