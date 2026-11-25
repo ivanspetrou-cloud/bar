@@ -18,6 +18,7 @@ const PILL_H: f64 = 44.0;
 
 #[derive(Default)]
 struct St {
+    hud_track: bool,
     mode: String, interactive: bool, zone: (i32, i32, i32, i32), pos: (i32, i32), size: (i32, i32), clickable: bool,
     follow: Option<(i32, i32)>, cand: Option<((i32, i32), Instant)>, hud_hover: bool,
     idle_last: Option<Instant>, idle_pt: (i32, i32), idle_hidden: bool, tucked: Option<bool>,
@@ -72,9 +73,13 @@ impl Notch {
         let y = m.position().y;
         self.set_bounds(x, y, w, h);
     }
+    // положение и размер — одной командой Windows: без промежуточного кадра «новый размер, старое место» (перелёты в игре)
     fn set_bounds(&self, x: i32, y: i32, w: i32, h: i32) {
-        let _ = self.win.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
-        let _ = self.win.set_position(PhysicalPosition::new(x, y));
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        match self.win.hwnd() {
+            Ok(hw) => unsafe { let _ = SetWindowPos(windows::Win32::Foundation::HWND(hw.0 as *mut _), None, x, y, w.max(1), h.max(1), SWP_NOZORDER | SWP_NOACTIVATE); },
+            Err(_) => { let _ = self.win.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32)); let _ = self.win.set_position(PhysicalPosition::new(x, y)); }
+        }
         let mut st = self.st.lock().unwrap();
         st.pos = (x, y); st.size = (w, h);
     }
@@ -96,7 +101,7 @@ impl Notch {
         self.set_bounds(mon.0 + (bx * k).round() as i32, mon.1 + (by * k).round() as i32, (bw * k).ceil() as i32, (bh * k).ceil() as i32);
     }
     pub fn hud(&self, mon: (i32, i32, i32, i32), r: (f64, f64, f64, f64), k: f64, hover: bool) {
-        { let mut st = self.st.lock().unwrap(); st.mode = if hover { "hud" } else { "hud-nohover" }.into(); st.clickable = false; }
+        { let mut st = self.st.lock().unwrap(); st.mode = "hud".into(); st.hud_track = hover; st.clickable = false; }
         let _ = self.win.set_ignore_cursor_events(true);
         self.set_bounds(mon.0 + (r.0 * k).round() as i32, mon.1 + (r.1 * k).round() as i32, (r.2 * k).ceil() as i32, (r.3 * k).ceil() as i32);
         let (cx, cy) = cursor();
@@ -120,6 +125,7 @@ impl Notch {
         let (cx, cy) = (px - st.pos.0, py - st.pos.1);
         let inside_win = cx >= 0 && cy >= 0 && cx < st.size.0 && cy < st.size.1;
         if st.mode == "hud" {
+            if !st.hud_track { return; }
             // курсор над плашкой в игре: события мыши игры её не достигают — сообщаем сами
             if inside_win != st.hud_hover { st.hud_hover = inside_win; drop(st); ctx::emit("hud-hover", inside_win); }
             return;

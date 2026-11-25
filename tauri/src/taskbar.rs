@@ -265,7 +265,7 @@ fn cursor_tick() {
         let (mx, my, mw, mh) = (d.mon.position().x, d.mon.position().y, d.mon.size().width as i32, d.mon.size().height as i32);
         let k = d.mon.scale_factor();
         let in_x = cx >= mx && cx < mx + mw;
-        let at_edge = in_x && cy >= my + mh - 3 && cy < my + mh;
+        let at_edge = in_x && cy >= my + mh - 2 && cy < my + mh; // только самый нижний край экрана
         let wy = my + mh - (WIN_H * k).round() as i32;
         let in_zone = d.zone.map_or(false, |(l, t, r, b)| { let m = 6.0; let (x, y) = ((cx - mx) as f64 / k, (cy - wy) as f64 / k); x >= l - m && x < r + m && y >= t - m && y < b + m });
         if d.game || d.full {
@@ -279,9 +279,15 @@ fn cursor_tick() {
             let near = in_x && cy >= my + mh - ((size_px(&d.id) * d.zoom + EDGE + 40.0) * k) as i32;
             d.leave_at = if near || in_zone { None } else { Some(d.leave_at.unwrap_or_else(Instant::now)) };
             if d.leave_at.map_or(false, |t| t.elapsed() > Duration::from_millis(700)) { d.peek = false; d.leave_at = None; visible_sync(d); }
-        } else if hide_mode && at_edge && !d.hover { ev.push((d.label.clone(), "tb-peek", Value::Null)); }
+        } else if hide_mode && !d.hover {
+            // выезжает, если курсор задержался у самого края (не просто проскочил), — один раз на касание
+            if at_edge { let t = *d.edge_at.get_or_insert_with(Instant::now); if !d.peek && t.elapsed() >= Duration::from_millis(120) { d.peek = true; ev.push((d.label.clone(), "tb-peek", Value::Null)); } }
+            else { d.edge_at = None; d.peek = false; }
+        }
         // над доком (и превью) — окно кликабельно, страница узнаёт о наведении
-        let want = in_zone || (d.page && in_x && cy >= wy);
+        // кликабелен только сам док (и его превью); страница сама больше не держит окно кликабельным
+        if !in_zone { d.page = false; }
+        let want = in_zone;
         if want != d.clickable {
             d.clickable = want;
             set_click(d, want);
