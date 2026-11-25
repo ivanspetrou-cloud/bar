@@ -77,7 +77,16 @@ async function handle(msg) {
     return { result: true };
   }
   if (!ALLOWED.includes(msg.fn)) return { error: 'not allowed' };
-  const tab = await musicTab();
+  let tab = await musicTab();
+  // «Играть», а вкладки YouTube Music нет: открыть её в фоне сразу на последнем треке
+  const resume = msg.fn === 'toggle' && msg.args && msg.args[0] && msg.args[0].videoId ? msg.args[0] : null;
+  let created = false;
+  if (!tab && resume) {
+    const id = String(resume.videoId).replace(/[^\w-]/g, ''), list = String(resume.list || '').replace(/[^\w-]/g, '');
+    tab = await chrome.tabs.create({ url: `https://music.youtube.com/watch?v=${id}${list ? '&list=' + list : ''}`, active: false }).catch(() => null);
+    if (!tab) return { error: 'no-tab' };
+    created = true;
+  }
   if (!tab) return { error: 'no-tab' };
   keepAwake(tab);
   const ask = (id, ms) => Promise.race([
@@ -86,13 +95,15 @@ async function handle(msg) {
   ]);
   // опрос состояния — быстро и без побочных действий: уснувшую вкладку не трогаем
   if (msg.fn === 'state' || msg.fn === 'queue' || msg.fn === 'lyrics') return tab.discarded ? { error: 'tab-asleep' } : ask(tab.id, 3500);
-  if (!tab.discarded) {
-    const r = await ask(tab.id, 3500);
+  const waitMs = resume ? 12000 : 3500; // включение последнего трека: переход и перемотка — до ~10 с
+  if (!tab.discarded && tab.status === 'complete') {
+    const r = await ask(tab.id, waitMs);
     if (!r || r.error !== 'tab-asleep' && r.error !== 'tab-not-ready') return r;
   }
   // Браузер усыпил вкладку (спящие вкладки Edge / экономия памяти Chrome) — код страницы не выполняется.
   // Нажали кнопку в Bar: будим вкладку (перезагрузка без переключения на неё; YouTube Music вспомнит трек и очередь) и повторяем команду.
-  return wakeAndRetry(tab.id, ask);
+  // только что открытую вкладку не перезагружаем — просто ждём, пока загрузится
+  return wakeAndRetry(tab.id, ask, !created, resume ? 12000 : 3000);
 }
 
 // не давать браузеру выгружать вкладку музыки, пока она открыта (её ждёт нотч)
@@ -100,10 +111,10 @@ function keepAwake(tab) {
   if (tab && tab.autoDiscardable !== false) chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
 }
 let waking = null;
-async function wakeAndRetry(tabId, ask) {
+async function wakeAndRetry(tabId, ask, reload = true, ms = 3000) {
   if (!waking) {
     waking = (async () => {
-      await chrome.tabs.reload(tabId).catch(() => {});
+      if (reload) await chrome.tabs.reload(tabId).catch(() => {});
       // ждём, пока страница загрузится и код расширения в ней оживёт
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 500));
@@ -120,7 +131,7 @@ async function wakeAndRetry(tabId, ask) {
   if (!(await waking)) return { error: 'tab-not-ready' };
   // плеер появляется чуть позже страницы — несколько попыток
   for (let i = 0; i < 6; i++) {
-    const r = await ask(tabId, 3000);
+    const r = await ask(tabId, ms);
     if (r && !r.error) return r;
     await new Promise((res) => setTimeout(res, 700));
   }

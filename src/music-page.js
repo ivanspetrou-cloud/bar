@@ -208,7 +208,7 @@
     const byline = b && b.querySelector('.byline');
     return {
       ready: true, signedIn: /(?:^|;\s*)SAPISID=/.test(document.cookie),
-      id: vd.video_id || '', title: vd.title || '', artist: (byline ? byline.textContent : vd.author || '').trim().replace(/\s+/g, ' '),
+      id: vd.video_id || '', list: new URLSearchParams(location.search).get('list') || '', title: vd.title || '', artist: (byline ? byline.textContent : vd.author || '').trim().replace(/\s+/g, ' '),
       art: big(art), state: p.getPlayerState(), time: p.getCurrentTime() || 0, duration: p.getDuration() || 0,
       volume: p.getVolume(), muted: p.isMuted(), like: likeState(),
       repeat: repeatState(),
@@ -247,12 +247,37 @@
     app.dispatchEvent(new CustomEvent('yt-navigate', { bubbles: true, composed: true, detail: { endpoint } }));
     return true;
   }
+  // включить трек (и его плейлист) и перемотать на место, где остановились
+  async function resume(r) {
+    go({ watchEndpoint: r.list ? { videoId: r.videoId, playlistId: r.list } : { videoId: r.videoId } });
+    for (let i = 0; i < 40; i++) {
+      await new Promise((res) => setTimeout(res, 250));
+      const p = P(); const vd = p && p.getVideoData && p.getVideoData();
+      if (!vd || vd.video_id !== r.videoId || !(p.getDuration() > 0)) continue;
+      if (r.time > 5 && r.time < p.getDuration() - 5) p.seekTo(r.time, true);
+      if (p.getPlayerState() !== 1) p.playVideo();
+      return true;
+    }
+    return false;
+  }
   function click(sel) { const el = BAR() && BAR().querySelector(sel); if (el) { el.click(); return true; } return false; }
 
   window.__bar = {
     v: BAR_PAGE_V,
     state, queue,
-    toggle() { const p = P(); if (!p) return false; if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); return true; },
+    // r — последний игравший трек ({ videoId, list, time }), его помнит Bar. Если плеер пуст (вкладку перезагрузили
+    // или открыли заново) — включаем этот трек с того же места, а не «ничего».
+    toggle(r) {
+      const p = P(); if (!p) return r && r.videoId ? resume(r) : false;
+      const vd = (p.getVideoData && p.getVideoData()) || {};
+      const st = p.getPlayerState();
+      if (st === 1) { p.pauseVideo(); return true; }
+      if (r && r.videoId) {
+        if (!vd.video_id || (vd.video_id !== r.videoId && (st === -1 || st === 5))) return resume(r);
+        if (vd.video_id === r.videoId && (p.getCurrentTime() || 0) < 1 && r.time > 5) p.seekTo(r.time, true); // страница загрузила трек с начала
+      }
+      p.playVideo(); return true;
+    },
     next() { const p = P(); p && p.nextVideo(); return true; },
     prev() { const p = P(); if (!p) return false; if (p.getCurrentTime() > 4) p.seekTo(0, true); else p.previousVideo(); return true; },
     seek(s) { const p = P(); p && p.seekTo(Number(s), true); return true; },
