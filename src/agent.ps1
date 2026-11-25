@@ -1083,6 +1083,7 @@ $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
 function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $null = $task.Wait(4000); $task.Result }
 $script:smtc = $null
 $script:artKey = ''
+$script:artAt = [DateTime]::MinValue
 $script:artData = $null
 function Get-Session {
   if (-not $script:smtc) { $script:smtc = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]) }
@@ -1095,8 +1096,11 @@ function Get-NowPlaying {
   $info = $s.GetPlaybackInfo()
   $tl = $s.GetTimelineProperties()
   $key = "$($p.Title)|$($p.Artist)"
-  if ($key -ne $script:artKey) {
-    $script:artKey = $key; $script:artData = $null
+  # Браузер при смене трека сначала меняет название, а обложку — чуть позже (а иногда ещё отдаёт старую).
+  # Поэтому после смены трека 12 с перечитываем обложку, а если её так и нет — до 40 с.
+  if ($key -ne $script:artKey) { $script:artKey = $key; $script:artData = $null; $script:artAt = [DateTime]::Now }
+  $age = ([DateTime]::Now - $script:artAt).TotalSeconds
+  if ($age -lt 12 -or (-not $script:artData -and $age -lt 40)) {
     if ($p.Thumbnail) {
       try {
         $st = Await ($p.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
@@ -1108,7 +1112,7 @@ function Get-NowPlaying {
           $mime = if ($bytes[0] -eq 0x89) { 'image/png' } elseif ($bytes[0] -eq 0xFF) { 'image/jpeg' } else { 'image/png' }
           $script:artData = 'data:' + $mime + ';base64,' + [Convert]::ToBase64String($bytes)
         }
-      } catch { $script:artData = $null }
+      } catch { }
     }
   }
   $app = $s.SourceAppUserModelId
