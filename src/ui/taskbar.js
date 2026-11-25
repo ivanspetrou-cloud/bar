@@ -441,16 +441,20 @@ function magnify(x) {
 
 // ---------- показ / скрытие ----------
 let shown = false, hideT = 0, over = false, menuOpen = false;
-function show() { clearTimeout(hideT); if (shown) return; shown = true; document.body.classList.add('shown'); }
+function show() { clearTimeout(hideT); hideT = 0; if (shown) return; shown = true; document.body.classList.add('shown'); }
 function hideSoon(ms = 650) {
   clearTimeout(hideT);
   if (cfg.mode !== 'hide') return;
-  hideT = setTimeout(() => { if (over || menuOpen) return; shown = false; document.body.classList.remove('shown'); hideTip(); }, ms);
+  hideT = setTimeout(() => { hideT = 0; if (over || menuOpen) return; shown = false; document.body.classList.remove('shown'); hideTip(); }, ms);
 }
 document.addEventListener('mousemove', (e) => {
   // окно таскбара прозрачно для мыши, но получает движение: у нижнего края — выезжаем
-  if (cfg.mode === 'hide' && !shown && e.clientY >= window.innerHeight - 3) show();
+  if (cfg.mode === 'hide' && !shown && e.clientY >= window.innerHeight - 3) { show(); if (!over) hideSoon(900); }
+  // курсор у края, но не на доке (сбоку или ушёл выше) — убрать, не дожидаясь события «ушёл с дока»: его не будет
+  else if (cfg.mode === 'hide' && shown && !over && !menuOpen && e.clientY < window.innerHeight - 3 && !hideT) hideSoon(450);
 });
+// курсор ушёл с этого монитора совсем — событий больше не придёт, прячемся по таймеру
+document.addEventListener('mouseleave', () => { if (cfg.mode === 'hide' && !over && !menuOpen) hideSoon(450); });
 shell.addEventListener('mouseenter', () => { over = true; show(); document.body.classList.add('mag'); bar.tbInteractive(true); });
 shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); prevLeave(); hideSoon(); });
 shell.addEventListener('mousemove', (e) => { lastX = e.clientX; magnify(e.clientX); });
