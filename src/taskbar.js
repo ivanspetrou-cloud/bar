@@ -140,7 +140,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
   }
   function visibleSync(d) {
     if (d.win.isDestroyed()) return;
-    const hide = d.gameOn || d.fullscreen;
+    const hide = (d.gameOn || d.fullscreen) && !d.peek;
     if (hide && d.win.isVisible()) d.win.hide();
     else if (!hide && !d.win.isVisible()) d.win.showInactive();
   }
@@ -196,9 +196,41 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
       const b = d.display.bounds;
       const g = !!(gm && gm.x < b.x + b.width && gm.x + gm.width > b.x && gm.y < b.y + b.height && gm.y + gm.height > b.y);
       const f = fullId === d.display.id;
-      if (g !== d.gameOn || f !== d.fullscreen) { d.gameOn = g; d.fullscreen = f; visibleSync(d); }
+      if (g !== d.gameOn || f !== d.fullscreen) { d.gameOn = g; d.fullscreen = f; if (!g && !f) d.peek = false; visibleSync(d); }
     }
+    peekWatch();
   }
+
+  // В игре и полноэкранном видео док спрятан. Задержите мышь у нижнего края — выедет (задержка — в настройках, 0 = никогда);
+  // уведёте мышь с дока — снова спрячется.
+  let peekT = 0;
+  function peekWatch() {
+    const delay = +(cfg().gamePeek ?? 500);
+    const need = delay > 0 && [...docks.values()].some((d) => d.gameOn || d.fullscreen);
+    if (!need) { clearInterval(peekT); peekT = 0; for (const d of docks.values()) if (d.peek) { d.peek = false; visibleSync(d); } return; }
+    if (peekT) return;
+    peekT = setInterval(() => {
+      const ms = +(cfg().gamePeek ?? 500);
+      const c = screen.getCursorScreenPoint();
+      for (const d of docks.values()) {
+        if (!(d.gameOn || d.fullscreen) || d.win.isDestroyed()) { d.edgeAt = 0; continue; }
+        const b = d.display.bounds;
+        const inX = c.x >= b.x && c.x < b.x + b.width;
+        if (!d.peek) {
+          const atEdge = inX && c.y >= b.y + b.height - 3 && c.y < b.y + b.height;
+          d.edgeAt = atEdge ? d.edgeAt || Date.now() : 0;
+          if (d.edgeAt && Date.now() - d.edgeAt >= ms) { d.peek = true; d.edgeAt = 0; d.leaveAt = 0; visibleSync(d); d.win.webContents.send('tb-peek'); }
+        } else {
+          const w = d.win.getBounds();
+          const near = inX && c.y >= b.y + b.height - (sizePx(d) + EDGE + 40);
+          const inside = c.x >= w.x && c.x < w.x + w.width && c.y >= w.y && c.y < w.y + w.height;
+          d.leaveAt = near || (inside && d.hover) ? 0 : d.leaveAt || Date.now();
+          if (d.leaveAt && Date.now() - d.leaveAt > 700) { d.peek = false; d.leaveAt = 0; visibleSync(d); }
+        }
+      }
+    }, 80);
+  }
+  const sizePx = (d) => Math.round((SIZES[sizeOf(d.display)] || SIZES.m) * (d.zoom || 1));
 
   async function enable() {
     syncDisplays();
@@ -210,7 +242,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     clearInterval(gameT); gameT = setInterval(fullCheck, 2000);
   }
   async function disable() {
-    clearInterval(keepT); clearInterval(gameT); clearInterval(fgT); stopEvents(); thumbs.clear();
+    clearInterval(keepT); clearInterval(gameT); clearInterval(fgT); clearInterval(peekT); peekT = 0; stopEvents(); thumbs.clear();
     for (const d of docks.values()) { await unreserve(d); d.win.destroy(); }
     docks.clear();
     await restoreWinTaskbar();
@@ -229,7 +261,7 @@ module.exports = function setupTaskbar({ settings, saveSettings, sensors, isGame
     else for (const d of docks.values()) { applyZoom(d); visibleSync(d); if (!d.win.isDestroyed()) d.win.webContents.send('tb-cfg', cfgFor(d)); }
     return { ...now, displays: displays() };
   });
-  ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); });
+  ipcMain.on('tb-interactive', (e, on) => { const d = dockOf(e); if (d) { d.hover = !!on; d.win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true }); } });
   ipcMain.on('tb-refresh', () => refreshSoon());
   ipcMain.on('tb-start', () => call('startmenu'));                 // «Пуск» Windows — по правому клику
   ipcMain.on('tb-apps', () => openApps && openApps());              // все приложения — в нотче, в стиле Bar

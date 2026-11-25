@@ -997,3 +997,10 @@ svg.pp { transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
 .dev-pick .ind-lbl { flex: 1; }
 .dev-pick .dev-ic, .dev-pick .ind-lbl { transition: opacity .25s ease; }
 .dev-pick .dev-off .dev-ic, .dev-pick .dev-off .ind-lbl { opacity: .45; }
+
+.dev-pick .dev-upd { flex: none; }
+.dev-pick .dev-upd.busy svg.i { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tb-line .seg button { white-space: nowrap; }
+.tb-line .tb-lbl { flex: none; }

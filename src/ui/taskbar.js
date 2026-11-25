@@ -481,5 +481,7 @@ bar.onTbWins((list) => {
   render();
 });
 bar.onTbCfg(applyCfg);
+// в игре: док выехал по задержке у края — показать (и спрятать, если мышь на него не зашла)
+bar.onTbPeek(() => { show(); hideSoon(2500); });
 window.addEventListener('storage', (e) => { if (e.key === 'bar.dock') { pins = store.get('dock', []) || []; render(); } });
 bar.taskbarGet().then((c) => { applyCfg(c); show(); hideSoon(2500); }); // при запуске — показаться и уехать

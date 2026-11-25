@@ -39,7 +39,13 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
       send('sensors', { net: { ...n, rxs, txs } });
     },
     bt: async () => { const v = await safe(slow.call('bt', '', 40000)); if (v !== undefined) send('sensors', { bt: Agent.list(v) }); },
-    hid: async () => { const v = await safe(slow.call('hidbat', '', 15000)); if (v !== undefined) send('sensors', { hid: Agent.list(v) }); },
+    hid: async () => {
+      const v = await safe(slow.call('hidbat', '', 15000)); if (v === undefined) return;
+      const list = Agent.list(v);
+      const g = await g435Line();
+      if (g) list.push(g);
+      send('sensors', { hid: list });
+    },
     stats: async () => { send('sensors', { stats: await getStats() }); },
   };
 
@@ -136,6 +142,54 @@ module.exports = function setupSensors({ send, getWin, getStats }) {
   });
 
   // ---------- диагностика устройств (для поддержки новых мышей и клавиатур) ----------
+  // ---------- Logitech G435 (донгл 046D:0ACB): чтение заряда на ~1 с прерывает звук гарнитуры ----------
+  // Поэтому: раз в час (после неудачи — через 5 мин), не во время игры или полноэкранного видео, и по кнопке в настройках.
+  const G435_FILE = path.join(app.getPath('userData'), 'g435.json');
+  let g435 = (() => { try { return JSON.parse(fs.readFileSync(G435_FILE, 'utf8')); } catch { return {}; } })(); // { name, mv, t, ok, tried }
+  let g435Busy = null;
+  const g435Pct = (mv) => {
+    const T = [[4200, 100], [4100, 90], [4000, 80], [3900, 65], [3800, 50], [3750, 40], [3700, 30], [3650, 20], [3600, 10], [3500, 5], [3300, 0]];
+    if (mv >= T[0][0]) return 100;
+    for (let i = 1; i < T.length; i++) if (mv >= T[i][0]) return Math.round(T[i][1] + (mv - T[i][0]) / (T[i - 1][0] - T[i][0]) * (T[i - 1][1] - T[i][1]));
+    return 0;
+  };
+  async function g435Read() {
+    if (g435Busy) return g435Busy;
+    g435Busy = (async () => {
+      g435.tried = Date.now();
+      const r = String((await safe(slow.call('g435', '', 8000))) || '');
+      const i = r.lastIndexOf('|');
+      if (i > 0) {
+        const mv = +r.slice(i + 1);
+        g435.name = r.slice(0, i);
+        if (mv > 0) { g435.mv = mv; g435.t = Date.now(); g435.ok = true; } else g435.ok = false;
+        try { fs.writeFileSync(G435_FILE, JSON.stringify(g435)); } catch {}
+      }
+      g435Busy = null;
+      return g435;
+    })();
+    return g435Busy;
+  }
+  let g435Has = null, g435HasT = 0;
+  async function g435Line() {
+    if (Date.now() - g435HasT > 5 * 60e3) { g435HasT = Date.now(); g435Has = !!(await safe(fast.call('g435has', '', 4000))); }
+    if (!g435Has) return null;
+    const due = !g435.tried || Date.now() - g435.tried > (g435.ok ? 60 * 60e3 : 5 * 60e3);
+    if (due) {
+      const full = String((await safe(fast.call('gamestate', '', 2000))) || '').split('|')[0] === '1';
+      if (!full) await g435Read();
+    }
+    const name = 'Logitech ' + String(g435.name || 'G435').replace(/\b(wireless|gaming)\b/gi, '').replace(/\s+/g, ' ').trim();
+    // последнее удачное чтение моложе 2 часов — гарнитура на связи с этим зарядом; иначе «нет связи» (с последним зарядом)
+    if (g435.ok && g435.mv && Date.now() - g435.t < 2 * 60 * 60e3) return `${name}|${g435Pct(g435.mv)}|1|0|headphones`;
+    return `${name}|-1|0|0|headphones`;
+  }
+  ipcMain.handle('g435-read', async () => { await g435Read(); g435HasT = 0; poll.hid(); return { ok: !!g435.ok, level: g435.mv ? g435Pct(g435.mv) : null, has: true }; });
+  ipcMain.handle('g435-info', async () => {
+    if (g435Has === null) g435Has = !!(await safe(fast.call('g435has', '', 4000)));
+    return { has: !!g435Has, t: g435.t || 0, ok: !!g435.ok, level: g435.mv ? g435Pct(g435.mv) : null };
+  });
+
   ipcMain.handle('dev-diag', async () => {
     const [hid, bat] = await Promise.all([safe(slow.call('hiddiag', '', 20000)), safe(slow.call('hidbat', '', 20000))]);
     return ['Bar ' + app.getVersion() + ' — сведения об устройствах', '', '== Заряд ==', ...Agent.list(bat).map(String), '', '== Интерфейсы ==', ...Agent.list(hid).map(String)].join('\n');
