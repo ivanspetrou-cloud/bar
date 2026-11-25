@@ -1261,8 +1261,11 @@ function Get-NetState {
   $wifi = $null
   $w = netsh wlan show interfaces 2>$null
   if ($w) {
-    $ssid = ($w | Select-String '^\s*SSID\s*:\s*(.+)$' | Select-Object -First 1).Matches.Groups[1].Value
-    $sig = ($w | Select-String ':\s*(\d+)%\s*$' | Select-Object -First 1).Matches.Groups[1].Value
+    # без Wi-Fi netsh печатает сообщение без строки SSID — тогда совпадений нет (раньше здесь падало «индексировать в массив NULL»)
+    $m1 = $w | Select-String '^\s*SSID\s*:\s*(.+)$' | Select-Object -First 1
+    $m2 = $w | Select-String ':\s*(\d+)%\s*$' | Select-Object -First 1
+    $ssid = if ($m1) { $m1.Matches[0].Groups[1].Value } else { '' }
+    $sig = if ($m2) { $m2.Matches[0].Groups[1].Value } else { 0 }
     if ($ssid) { $wifi = [ordered]@{ ssid = $ssid.Trim(); signal = [int]$sig } }
   }
   $eth = $up | Where-Object { $_.MediaType -eq '802.3' } | Select-Object -First 1
