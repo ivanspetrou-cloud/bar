@@ -523,19 +523,23 @@ function trayDraw() {
   trayPop.style.setProperty('--tt-cols', Math.max(1, Math.min(6, trayList.length || 1)));
   trayPlace();
 }
-function trayPlace() {
+function trayPlace(jump) {
   if (trayPop.hidden) return;
   const btn = els.get('sys:tray'); if (!btn) return;
   const r = btn.getBoundingClientRect(), sh = shell.getBoundingClientRect();
   const x = Math.max(8, Math.min(window.innerWidth - trayPop.offsetWidth - 8, Math.round(r.left + r.width / 2 - trayPop.offsetWidth / 2)));
   const y = Math.round(sh.top - trayPop.offsetHeight - 10);
-  trayPop.style.translate = `${x}px ${y}px`;
+  // при открытии — сразу на место (иначе панель «приезжала» из левого верхнего угла), дальше — плавно
+  if (jump) { trayPop.style.transition = 'none'; trayPop.style.translate = `${x}px ${y}px`; void trayPop.offsetWidth; trayPop.style.transition = ''; }
+  else trayPop.style.translate = `${x}px ${y}px`;
 }
 async function trayShow() {
   clearTimeout(trayHideT); prevClose(); hideTip();
   trayList = (await bar.tbTray().catch(() => [])) || [];
+  const first = trayPop.hidden || !trayPop.classList.contains('on');
   trayPop.hidden = false; menuOpen = true;
   trayDraw();
+  if (first) trayPlace(true);
   requestAnimationFrame(() => trayPop.classList.add('on'));
   // значки проявляются волной слева направо
   trayPop.querySelectorAll('.tt-i').forEach((x, i) => x.animate([{ opacity: 0, transform: 'translateY(8px) scale(.7)' }, { opacity: 1, transform: 'none' }], { duration: 340, delay: 40 + i * 22, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' }));
