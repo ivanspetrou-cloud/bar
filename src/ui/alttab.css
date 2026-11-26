@@ -117,3 +117,7 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 [data-view="carousel"] .at-grid.deck.dragging { cursor: grabbing; }
 .at-body img { -webkit-user-drag: none; user-select: none; }
 .at-body { user-select: none; }
+
+/* на сцене под живой миниатюрой — только тёмный фон, без значка-заглушки: притенённая миниатюра не «просвечивает» значком */
+.at-grid.deck .at-shot { background: #000; }
+.at-grid.deck .at-shot .at-shot-ic { opacity: 0; }

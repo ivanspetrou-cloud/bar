@@ -40,8 +40,7 @@ function cardOf(w, i) {
     shot);
   // в сетке наведение выбирает; на сцене карточки сами ездят под курсором — выбор только кликом;
   // в стопке наведённое заднее окно приподнимается
-  card.addEventListener('mouseenter', () => { if (!deck()) setSel(list.indexOf(w), true); else if (cfg.view === 'stack') liftCard(card, true); });
-  card.addEventListener('mouseleave', () => { if (cfg.view === 'stack') liftCard(card, false); });
+  card.addEventListener('mouseenter', () => { if (!deck()) setSel(list.indexOf(w), true); });
   card.addEventListener('click', () => { if (noClick) return; const i = list.indexOf(w); if (deck() && i !== sel) { setSel(i); return; } setSel(i); pick(); });
   card.addEventListener('auxclick', (e) => { if (e.button === 1) closeWin(list.indexOf(w)); });
   card._w = w; card._shot = shot;
@@ -99,7 +98,7 @@ function placeDeck(jump, from) {
     if (!c._w) return;
     const p = deckPos(i);
     if (jump) c.style.transition = 'none';
-    c.style.transform = (dragPx ? `translateX(${dragPx}px) ` : '') + p.t; c.style.opacity = p.o; c.style.zIndex = p.z; c.style.filter = p.f;
+    c.style.transform = (dragPx ? `translateX(${dragPx}px) ` : '') + p.t; c.style.opacity = p.o; c.style.zIndex = p.z; c.style.filter = c._hover ? 'none' : p.f;
     c._live = !!p.live; c._dim = p.dimK == null ? 1 : p.dimK;
     if (jump) { void c.offsetWidth; c.style.transition = ''; }
   });
@@ -118,11 +117,22 @@ function loadStills() {
 }
 
 let lastSel = 0;
-function liftCard(c, on) {
-  if (!open || !shown || !!c._lift === on) return;
-  c._lift = on;
-  placeDeck(false, -1); trackThumbs(480);
+// наведение на сцене: карточка под курсором определяется по точке при каждом движении мыши (карточки сами ездят
+// под неподвижным курсором, и события «зашла/ушла» тут врут). Наведённая — непрозрачная; в стопке заднее — приподнимается
+let hoverCard = null;
+function setHover(c) {
+  if (c === hoverCard) return;
+  if (hoverCard) { hoverCard._lift = false; hoverCard._hover = false; }
+  hoverCard = c;
+  if (c) { c._hover = true; c._lift = cfg.view === 'stack' && c !== grid.children[sel]; }
+  if (open && shown) { placeDeck(false, -1); trackThumbs(480); }
 }
+grid.addEventListener('pointermove', (e) => {
+  if (!deck() || drag && drag.moved) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  setHover(el && el.closest ? el.closest('.at-card') : null);
+});
+grid.addEventListener('pointerleave', () => { if (deck()) setHover(null); });
 // ---------- карусель: листать перетаскиванием мышью ----------
 // лента едет за курсором, миниатюры — вместе с ней; отпустили — доезжает до ближайшего окна
 let dragPx = 0, drag = null, dragRaf = 0, noClick = false;
@@ -172,6 +182,8 @@ function setSel(i, hover) {
   const was = sel;
   sel = ((i % list.length) + list.length) % list.length;
   // на сцене живая миниатюра уходит вместе со старой передней карточкой и появляется у новой, когда та встанет на место
+  // после Tab наведение сбрасывается: под курсором теперь другая карточка (определится при следующем движении мыши)
+  if (deck() && was !== sel && hoverCard) { hoverCard._lift = false; hoverCard._hover = false; hoverCard = null; }
   if (deck() && was !== sel && shown) trackThumbs(560); // миниатюры едут вместе с карточками каждый кадр
   placeSel(false);
   if (!hover) { const c = grid.children[sel]; if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); }
@@ -189,7 +201,7 @@ function thumbItems() {
     if (!deck() && (r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) continue; // прокручено за край панели
     if (car && (r.left < 0 || r.right > window.innerWidth)) continue; // за краем экрана (при перетаскивании) — Windows нарисовала бы её на соседнем мониторе
     const m = 4 * (r.width / (c._shot.offsetWidth || r.width));
-    const it = { hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: deck() ? .35 + c._dim * .65 : 1 };
+    const it = { hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: deck() && !c._hover ? .35 + c._dim * .65 : 1 };
     // стопка: заднее окно видно только до верхнего края карточки перед ним — ниже миниатюру обрезаем
     if (stk) { const i = [...grid.children].indexOf(c), n = list.length, d = ((i - sel) % n + n) % n; if (d > 0) { const f = grid.children[(i - 1 + n) % n]; if (f) it.cb = f.getBoundingClientRect().top * k; } }
     items.push(it);
@@ -228,7 +240,7 @@ function reveal() {
 const onOpen = (m) => {
   cfg = m.cfg || {};
   list = m.list || [];
-  open = true; shown = false; stills = {};
+  open = true; shown = false; stills = {}; hoverCard = null;
   document.body.classList.remove('shown', 'leave');
   render();
   // первое окно — то, что впереди; Alt+Tab ведёт к следующему, Alt+Shift+Tab — к последнему
