@@ -300,6 +300,7 @@ fn cursor_tick() {
 pub fn handle(label: &str, ch: &str, a: &[Value]) -> Value {
     let arg = |i: usize| a.get(i).cloned().unwrap_or(Value::Null);
     match ch {
+        "tb-search" => { crate::tray::open_search(); Value::Null } // кнопка «Поиск» в доке — поиск в нотче
         "taskbar-get" => with(|s| s.docks.iter().find(|d| d.label == label).map(cfg_for)).unwrap_or_else(|| { let mut c = cfg(); c["displays"] = displays(); c }),
         "taskbar-set" => {
             let before = cfg();
