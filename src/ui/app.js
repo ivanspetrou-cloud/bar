@@ -2988,29 +2988,58 @@ function dropAt(rect, c) {
   const y = c === 'pill' || c === 'tc' || c[0] === 't' ? rect.y : rect.y + rect.h - DROP;
   return { x, y };
 }
+// Перелёт одной непрерывной траекторией: сжатие в каплю, полёт и разворот перекрываются по времени,
+// поэтому скорость нигде не падает до нуля (раньше на стыках четырёх отрезков капля замирала и снова разгонялась).
+// Кадры считаются заранее (~60 в секунду) и идут линейно — вся плавность в самих формулах.
+const ss = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * x * (x * (x * 6 - 15) + 10); }; // «smootherstep»: и скорость, и ускорение — без скачков
+const lerp = (a, b, k) => a + (b - a) * k;
+function cornerRadii(c) {
+  const cs = getComputedStyle(document.documentElement);
+  const r = parseFloat(cs.getPropertyValue('--r')) || 14, rp = parseFloat(cs.getPropertyValue('--r-pill')) || r;
+  // порядок как у border-radius: левый верхний, правый верхний, правый нижний, левый нижний
+  return { pill: [0, 0, rp, rp], tc: [0, 0, r, r], tl: [0, 0, r, 0], tr: [0, 0, 0, r], bl: [0, r, 0, 0], br: [r, 0, 0, 0] }[c] || [r, r, r, r];
+}
+function flyDur(from, to) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 1;
+  const dist = Math.hypot(to.x + to.w / 2 - (from.x + from.w / 2), to.y + to.h / 2 - (from.y + from.h / 2));
+  return Math.round(760 + Math.min(320, dist / 5)); // дальше путь — чуть дольше
+}
 function fly(from, to, fromC, toC) {
-  const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14;
   island.style.width = to.w + 'px'; island.style.height = to.h + 'px';
   const W = to.w, H = to.h;
-  const tf = (x, y, w, h) => `translate(${x}px, ${y}px) scale(${w / W}, ${h / H})`;
   const d1 = dropAt(from, fromC), d2 = dropAt(to, toC);
-  const dx = d2.x - d1.x, dy = d2.y - d1.y, dist = Math.hypot(dx, dy) || 1;
-  // вытягивание по направлению движения (по горизонтали или вертикали — что больше)
-  const horiz = Math.abs(dx) >= Math.abs(dy);
-  const sw = horiz ? DROP * 1.45 : DROP * 0.82, sh = horiz ? DROP * 0.82 : DROP * 1.45;
-  const mid = { x: d1.x + dx / 2 - (sw - DROP) / 2, y: d1.y + dy / 2 - (sh - DROP) / 2 };
-  const ease = 'cubic-bezier(.45, 0, .25, 1)';
-  const kf = [
-    { offset: 0, transform: tf(from.x, from.y, from.w, from.h), borderRadius: edgeRadius(fromC), easing: ease },
-    { offset: 0.3, transform: tf(d1.x, d1.y, DROP, DROP), borderRadius: '50%', easing: ease },           // собрался в каплю
-    { offset: 0.5, transform: tf(mid.x, mid.y, sw, sh), borderRadius: '50%', easing: ease },              // плывёт, вытянувшись
-    { offset: 0.7, transform: tf(d2.x, d2.y, DROP, DROP), borderRadius: '50%', easing: 'cubic-bezier(.2, .9, .3, 1.15)' }, // на месте
-    { offset: 1, transform: tf(to.x, to.y, to.w, to.h), borderRadius: edgeRadius(toC) },                  // развернулся
-  ];
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const dur = reduce ? 1 : Math.round(820 + Math.min(380, dist / 4)); // дальше путь — чуть дольше
+  const c0 = { x: from.x + from.w / 2, y: from.y + from.h / 2 }, c3 = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  const c1 = { x: d1.x + DROP / 2, y: d1.y + DROP / 2 }, c2 = { x: d2.x + DROP / 2, y: d2.y + DROP / 2 };
+  const horiz = Math.abs(c2.x - c1.x) >= Math.abs(c2.y - c1.y);
+  const R0 = cornerRadii(fromC), R3 = cornerRadii(toC);
+  const dur = flyDur(from, to);
+  const n = Math.max(24, Math.round(dur / 16));
+  const kf = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const k1 = ss(0, 0.42, t), m = ss(0.14, 0.86, t), k2 = ss(0.58, 1, t);
+    let w = lerp(lerp(from.w, DROP, k1), to.w, k2), h = lerp(lerp(from.h, DROP, k1), to.h, k2);
+    // в полёте капля чуть вытягивается по направлению движения (объём тот же)
+    const st = 1 + 0.38 * Math.sin(Math.PI * m) * k1 * (1 - k2);
+    if (horiz) { w *= st; h /= Math.sqrt(st); } else { h *= st; w /= Math.sqrt(st); }
+    const cx = c0.x + (c1.x - c0.x) * k1 + (c2.x - c1.x) * m + (c3.x - c2.x) * k2;
+    const cy = c0.y + (c1.y - c0.y) * k1 + (c2.y - c1.y) * m + (c3.y - c2.y) * k2;
+    const sx = w / W, sy = h / H, half = Math.min(w, h) / 2;
+    const vr = R0.map((r0, q) => Math.min(half, lerp(lerp(r0, DROP / 2, k1), R3[q], k2)));
+    kf.push({
+      offset: t,
+      transform: `translate(${(cx - w / 2).toFixed(2)}px, ${(cy - h / 2).toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`,
+      borderRadius: vr.map((v) => (v / sx).toFixed(2) + 'px').join(' ') + ' / ' + vr.map((v) => (v / sy).toFixed(2) + 'px').join(' '),
+    });
+  }
   const a = island.animate(kf, { duration: dur, easing: 'linear', fill: 'forwards' });
   return a.finished.then(() => a, () => a);
+}
+// содержимое меняется вместе с формой: старое тает, пока нотч сжимается, новое проявляется, пока капля разворачивается
+function flyContent(out, inn, dur) {
+  out.getAnimations().forEach((x) => x.cancel()); inn.getAnimations().forEach((x) => x.cancel());
+  out.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * 0.26, easing: 'ease-out', fill: 'forwards' });
+  inn.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur * 0.3, delay: dur * 0.7, easing: 'ease-in-out', fill: 'both' });
 }
 async function gameEnter(m) {
   if (Game.on) return;
@@ -3029,8 +3058,7 @@ async function gameEnter(m) {
   setIslandRect(from); // тот же кадр: игровые стили, а нотч на прежнем месте
   hudEl.innerHTML = hudEl._h = hudHtml();
   const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
-  barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
-  hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
+  flyContent(barEl, hudEl, flyDur(from, to));
   const a = await fly(loc(from), loc(to), 'pill', Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(loc(to)); a.cancel();
@@ -3045,7 +3073,7 @@ async function gameMove(to, fromCorner) {
   const from = Game.rect;
   bar.animBoost(true);
   await toStage();
-  await fadeTo(1, 180).finished.catch(() => {}); // в полёте плашка непрозрачная — плавно, без скачка
+  fadeTo(1, 260); // в полёте плашка непрозрачная — плавно, одновременно с началом полёта
   island.classList.remove('game-tc');
   const a = await fly(loc(from), loc(to), fromCorner, Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
@@ -3066,12 +3094,9 @@ async function gameExit(m) {
   const to = { x: (m.w - pillW) / 2 + dx, y: 0, w: pillW, h: 32 }; // ровно туда, где встанет обычный нотч
   bar.animBoost(true);
   await toStage();
-  await fadeTo(1, 180).finished.catch(() => {}); // прозрачность — плавно к непрозрачной
+  fadeTo(1, 260); // прозрачность — плавно к непрозрачной, одновременно с началом полёта
   island.classList.remove('game-tc');
-  hudEl.getAnimations().forEach((x) => x.cancel());
-  hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
-  barEl.getAnimations().forEach((x) => x.cancel());
-  barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
+  flyContent(hudEl, barEl, flyDur(from, to));
   const a = await fly(loc(from), loc(to), Game.corner, 'pill');
   bar.animBoost(false);
   winFull = !!m.open; // сразу откроется панель — окно не ужимаем до полоски
