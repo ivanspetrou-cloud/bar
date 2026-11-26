@@ -188,7 +188,14 @@ pub fn focus(h: i64) -> bool { focus_opts(h, true) }
 /// Перед запуском программы из дока: Windows разрешает выйти вперёд только процессу, который получил последний ввод.
 /// Клик по доку в Tauri получает процесс WebView2, а не Bar, — поэтому запущенная программа открывалась позади,
 /// пока не кликнешь куда-нибудь ещё. Нажатие Alt делает Bar «последним вводом», а затем это право отдаём любой программе.
-pub fn allow_foreground() { unsafe { key(0x12, false); key(0x12, true); let _ = AllowSetForegroundWindow(ASFW_ANY); } }
+/// Alt нажимается с «пустой» клавишей внутри (0x88 — не назначена): одиночное отпускание Alt переводит активное окно
+/// в режим меню, и следующий клик по нему съедается (кнопки «не работали», пока не кликнешь по пустому месту).
+/// Если впереди уже окно Bar — ничего не нажимаем: право выйти вперёд у нас и так есть.
+pub fn allow_foreground() { unsafe { if !bar_is_foreground() { alt_tap(); } let _ = AllowSetForegroundWindow(ASFW_ANY); } }
+/// «Последний ввод» — от Bar, но без режима меню (см. allow_foreground)
+pub fn alt_tap() { key(0x12, false); key(0x88, false); key(0x88, true); key(0x12, true); }
+/// впереди окно самого Bar (нотч, док) — тогда никаких нажатий не нужно
+pub fn bar_is_foreground() -> bool { unsafe { let (_, pid) = pid_of(GetForegroundWindow()); pid == std::process::id() } }
 /// minimize: разрешить последний способ — свернуть и развернуть окно (виден как анимация Windows; для нотча — нельзя)
 pub fn focus_opts(h: i64, minimize: bool) -> bool {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
@@ -196,8 +203,8 @@ pub fn focus_opts(h: i64, minimize: bool) -> bool {
     unsafe {
         if IsIconic(h).as_bool() { let _ = ShowWindow(h, SW_RESTORE); }
         let done = || GetForegroundWindow() == h;
-        // 1) Alt снимает блокировку переднего плана
-        key(0x12, false); key(0x12, true);
+        // 1) Alt снимает блокировку переднего плана (без режима меню — см. allow_foreground)
+        if !bar_is_foreground() { alt_tap(); }
         let _ = SetForegroundWindow(h);
         if done() { return true; }
         // 2) присоединиться к очереди ввода окна, которое сейчас впереди, — тогда смена фокуса разрешена

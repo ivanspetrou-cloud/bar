@@ -129,7 +129,18 @@ impl Notch {
     }
     // Только право на передний план (Alt) + обычная фокусировка Tauri. Без «склейки очередей ввода» (AttachThreadInput):
     // она сцепляла ввод нотча с окном, которое было впереди, и страница нотча до минуты не отвечала на клики.
-    pub fn focus(&self) { if self.st.lock().unwrap().noact { return; } bar_agent::win::allow_foreground(); let _ = self.win.set_focus(); }
+    // Окно нотча уже впереди (по нему только что кликнули) — ничего не делаем: раньше здесь всегда «нажимался» Alt,
+    // окно уходило в режим меню и первый клик по кнопкам съедался (панель музыки «не кликалась»). Иначе — право выйти вперёд
+    // без режима меню (см. win::allow_foreground) и вывод вперёд.
+    pub fn focus(&self) {
+        if self.st.lock().unwrap().noact { return; }
+        let Ok(h) = self.win.hwnd() else { return };
+        let h = windows::Win32::Foundation::HWND(h.0 as *mut _);
+        if unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() } == h { return; }
+        bar_agent::win::allow_foreground();
+        unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(h); }
+        crate::webview::focus_page(&self.win); // фокус ввода — странице; set_focus Tauri не зовём: при неудаче он жмёт одиночный Alt
+    }
     pub fn bounds(&self) -> (i32, i32, i32, i32) { let st = self.st.lock().unwrap(); (st.pos.0, st.pos.1, st.size.0, st.size.1) }
 
     fn track(&self) {

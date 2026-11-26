@@ -57,6 +57,10 @@ pub fn attach(w: &WebviewWindow) {
 }
 
 /// меньше памяти, пока окно свёрнуто / не нужно (WebView2 сам отдаёт системе кэши страницы)
+/// фокус клавиатуры — странице окна (после того как само окно вышло вперёд)
+pub fn focus_page(w: &WebviewWindow) {
+    let _ = w.with_webview(|pw| unsafe { let _ = pw.controller().MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); });
+}
 pub fn low_memory(w: &WebviewWindow, low: bool) {
     let _ = w.with_webview(move |pw| unsafe {
         if let Ok(core) = pw.controller().CoreWebView2() {
