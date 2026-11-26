@@ -260,7 +260,7 @@ const onMove = (d) => {
 bar.onAtMove(onMove);
 // для проверки без клавиатуры (отладка тестовой сборки)
 window.__at = { open: onOpen, move: onMove, state: () => ({ open, shown, sel, cols, n: list.length }) };
-bar.onAtCommit((ok) => { if (ok) pick(); else cancel(); });
+bar.onAtCommit((ok) => { if (!open) return; if (ok) pick(); else cancel(); }); // уже выбрали мышью — отпущенный Alt ничего не делает
 
 function finish(hwnd) {
   open = false; clearTimeout(showT); clearTimeout(thumbT);

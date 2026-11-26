@@ -31,7 +31,8 @@ UninstPage instfiles
 Section "Bar"
   ; закрыть работающий Bar (и прежнюю Electron-версию)
   nsExec::Exec 'taskkill /F /T /IM Bar.exe'
-  Sleep 900
+  ; помощник Alt+Tab (с правами администратора) закрывается сам следом за Bar — ждём, пока освободит Bar.exe
+  Sleep 1200
   ; файлы прежней версии — только файлы программы в её папке
   RMDir /r "$INSTDIR\locales"
   RMDir /r "$INSTDIR\resources"
@@ -89,6 +90,8 @@ SectionEnd
 
 Section "Uninstall"
   nsExec::Exec 'taskkill /F /T /IM Bar.exe'
+  ; задача помощника Alt+Tab (с правами администратора); без прав может не удалиться — тогда просто не запускается
+  nsExec::Exec 'schtasks /Delete /TN "Bar Alt+Tab" /F'
   Sleep 600
   Delete "$INSTDIR\Bar.exe"
   RMDir /r "$INSTDIR\presentmon"

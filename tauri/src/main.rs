@@ -179,6 +179,8 @@ pub fn quit(app: &AppHandle) {
 }
 
 fn main() {
+    // помощник Alt+Tab с правами администратора: без окон Bar, только перехват клавиш (см. alttab.rs)
+    if std::env::args().any(|a| a == "--alttab-helper") { alttab::helper_main(); return; }
     // данные Bar и окно нотча: настройки нужны раньше окна (оно спрашивает монитор)
     let settings = settings::Settings::load();
     ctx::set_settings(settings.clone());
