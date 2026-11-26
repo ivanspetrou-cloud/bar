@@ -1,7 +1,7 @@
 // Свой переключатель окон по Alt+Tab — в дизайне Bar (страница alttab.html).
 // Клавиши перехватывает низкоуровневый хук клавиатуры (WH_KEYBOARD_LL): пока держите Alt, Tab / Shift+Tab / стрелки
 // двигают выделение, Esc — отмена, отпустили Alt или Enter — открыть выбранное окно.
-// Не перехватывает: если выключен в настройках, в игре (по настройке), и когда впереди окно администратора —
+// Перехватывает всегда, когда включён (и в играх). Не перехватывает только над окнами администратора —
 // Windows не даёт обычной программе видеть его клавиши; тогда открывается обычный Alt+Tab Windows.
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,29 +40,7 @@ static ALLOW: AtomicBool = AtomicBool::new(false);
 fn compute_allow() -> bool {
     let c = cfg();
     if c["on"] == false || !READY.load(Ordering::Relaxed) { return false; }
-    // в игре — Alt+Tab Windows, но только если впереди сама игра на весь экран (из игры уже вышли — переключатель Bar)
-    // впереди именно окно игры (её процесс) — не любое развёрнутое окно: развёрнутые на весь экран окна при скрытой
-    // панели задач тоже «полноэкранные», и из-за этого иногда открывался Alt+Tab Windows
-    if c["game"] != true && crate::game::active() && fg_is_game() { return false; }
     true
-}
-fn fg_is_game() -> bool {
-    let gp = crate::game::active_pid();
-    if gp == 0 { return fg_fullscreen(); } // игра включена вручную — по полноэкранному окну
-    unsafe { let mut pid = 0u32; GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid)); pid == gp }
-}
-fn fg_fullscreen() -> bool {
-    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-    unsafe {
-        let fg = GetForegroundWindow();
-        if fg.is_invalid() { return false; }
-        let mut r = windows::Win32::Foundation::RECT::default();
-        if GetWindowRect(fg, &mut r).is_err() { return false; }
-        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        if !GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool() { return false; }
-        let m = mi.rcMonitor;
-        r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
-    }
 }
 fn enabled() -> bool { ALLOW.load(Ordering::Relaxed) }
 
