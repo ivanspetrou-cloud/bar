@@ -69,7 +69,7 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
   /* сворачивание и смена ширины — без перелёта: нотч не становится уже своего содержимого */
   transition: width .5s var(--glide), height .5s var(--glide), border-radius .5s var(--glide), box-shadow .35s ease, background-color .3s, color .3s, transform .45s var(--soft), opacity .3s;
 }
-#island.idle { transform: translate(calc(-50% + var(--oled-dx, 0px)), -120%); opacity: 0; }
+#island.idle:not(.closing) { transform: translate(calc(-50% + var(--oled-dx, 0px)), -40px); opacity: 0; } /* в пикселях: проценты зависят от меняющейся высоты */
 /* защита OLED: свёрнутый нотч без внимания приглушается */
 #island.dim:not(.open):not(.peek) .bar { opacity: .7; }
 #island.peek { width: calc(var(--pill-w, 196px) + 16px); height: 36px; }
@@ -991,7 +991,9 @@ svg.pp { transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 @keyframes pw-arm { 50% { transform: scale(1.12); } }
 
 /* нотч над развёрнутым окном: уезжает вверх, остаётся полоска 3 px; при наведении и всплывашках — выглядывает */
-#island.tucked:not(.open):not(.peek):not(.act-pop) { transform: translate(calc(-50% + var(--oled-dx, 0px)), calc(-100% + 3px)); }
+/* сдвиг — в пикселях (высота свёрнутого нотча 32 − 3), а не в процентах: проценты считаются от высоты, которая при раскрытии
+   и сворачивании меняется, — панель улетала вверх на свою большую высоту и возвращалась */
+#island.tucked:not(.open):not(.peek):not(.act-pop) { transform: translate(calc(-50% + var(--oled-dx, 0px)), -29px); }
 #island.tucked.peek:not(.open) { transition-delay: .18s; }
 
 /* переезд нотча на другой монитор: уезжает вверх, выезжает уже на новом */

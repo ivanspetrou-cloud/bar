@@ -166,7 +166,7 @@ let state = 'collapsed';
 let pinned = false;
 let fromGame = false; // панель открыта удержанием на игровой плашке (см. обработчик blur)
 let interactive = false;
-let enterT = 0, leaveT = 0, autoT = 0;
+let enterT = 0, leaveT = 0, autoT = 0, closingT = 0;
 let current = null, cleanup = null;
 const openHooks = new Set();
 
@@ -196,6 +196,7 @@ function expand(opts = {}) {
   }
   if (state === 'open') return;
   state = 'open';
+  clearTimeout(closingT); island.classList.remove('closing');
   swapBar();
   island.classList.add('open');
   island.classList.remove('peek');
@@ -214,6 +215,8 @@ function collapse(force) {
   state = 'collapsed';
   swapBar();
   island.classList.remove('open', 'peek');
+  // пока сворачивается — не прятаться вверх (над развёрнутым окном) и не уезжать при простое: сначала свернуться, потом уехать
+  island.classList.add('closing'); clearTimeout(closingT); closingT = setTimeout(() => island.classList.remove('closing'), 520);
   setInteractive(false);
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   openHooks.forEach((f) => f(false));
