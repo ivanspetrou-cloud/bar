@@ -238,11 +238,26 @@ pub fn start() {
     std::thread::spawn(|| { let mut n = 0u64; loop {
         std::thread::sleep(Duration::from_secs(1)); n += 1;
         if !with(|s| s.on) { continue; }
-        if n % 2 == 0 { full_check(); }
+        if n % 2 == 0 { full_check(); geometry_check(); }
         if n % 5 == 0 { snap_fg(); }
         if n % 10 == 0 { act("hidetaskbar", "1"); }
     } });
     std::thread::spawn(|| loop { std::thread::sleep(Duration::from_millis(60)); if with(|s| s.on) { cursor_tick(); } });
+}
+// Разрешение или расположение мониторов поменялось (игра в полноэкранном режиме со своим разрешением, подключили монитор):
+// Windows сам сдвигает окна, чтобы они остались на экране, — без этой проверки док и нотч оставались там, куда их сдвинуло.
+fn geometry_check() {
+    static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+    let mons = ctx::sh().notch.win.available_monitors().unwrap_or_default();
+    let sig: String = mons.iter().map(|m| format!("{},{},{},{},{};", m.position().x, m.position().y, m.size().width, m.size().height, m.scale_factor())).collect();
+    let mut last = LAST.lock().unwrap();
+    if *last == sig { return; }
+    let first = last.is_empty();
+    *last = sig;
+    drop(last);
+    if first { return; }
+    ctx::sh().notch.replace();
+    sync_displays();
 }
 fn full_check() {
     let raw = ctx::sh().fast.call_t("gamestate", "", 2000).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
