@@ -28,7 +28,7 @@ let stills = {}; // снимки окон для задних карточек (
 function cardOf(w, i) {
   const ic = h('span', { class: 'at-ic' }), big = h('span', { class: 'at-ic' });
   const key = 'exe:' + w.exe;
-  const put = (u) => { for (const x of [ic, big]) x.replaceChildren(u ? h('img', { src: u, alt: '' }) : h('span', { class: 'at-letter' }, (w.title || '?').charAt(0).toUpperCase())); };
+  const put = (u) => { for (const x of [ic, big]) x.replaceChildren(u ? h('img', { src: u, alt: '', draggable: 'false' }) : h('span', { class: 'at-letter' }, (w.title || '?').charAt(0).toUpperCase())); };
   if (icons.has(key)) put(icons.get(key)); else bar.appIcon({ id: key, exe: w.exe, name: w.title }).then((u) => { icons.set(key, u || null); put(u); }).catch(() => put(null));
   const close = h('button', { class: 'at-x', title: 'Закрыть окно', 'aria-label': 'Закрыть окно', html: icon('X') });
   close.addEventListener('click', (e) => { e.stopPropagation(); closeWin(list.indexOf(w)); });
@@ -40,7 +40,7 @@ function cardOf(w, i) {
     shot);
   // в сетке наведение выбирает; на сцене карточки сами ездят под курсором — выбор только кликом
   card.addEventListener('mouseenter', () => { if (!deck()) setSel(list.indexOf(w), true); });
-  card.addEventListener('click', () => { const i = list.indexOf(w); if (deck() && i !== sel) { setSel(i); return; } setSel(i); pick(); });
+  card.addEventListener('click', () => { if (noClick) return; const i = list.indexOf(w); if (deck() && i !== sel) { setSel(i); return; } setSel(i); pick(); });
   card.addEventListener('auxclick', (e) => { if (e.button === 1) closeWin(list.indexOf(w)); });
   card._w = w; card._shot = shot;
   return card;
@@ -72,11 +72,12 @@ function render() {
 function deckPos(i) {
   const n = list.length;
   if (cfg.view === 'carousel') {
+    // плоская лента без наложений: у каждой видимой карточки — живая миниатюра Windows (её нельзя повернуть или наложить)
     let d = ((i - sel) % n + n) % n; if (d > n / 2) d -= n; // ближайшее расстояние по кругу
-    const a = Math.abs(d), s = Math.sign(d);
-    const x = a === 0 ? 0 : s * (58 + (a - 1) * 30);             // % ширины карточки
-    const sc = [1, .78, .64, .54][Math.min(a, 3)];
-    return { t: `translateX(${x}%) rotateY(${-s * Math.min(a, 1) * 40}deg) scale(${sc})`, o: a > 3 ? 0 : 1 - a * .14, z: 50 - a, f: `brightness(${1 - Math.min(a, 3) * .16})` };
+    const a = Math.min(Math.abs(d), 4), s = Math.sign(d);
+    const SC = [1, .7, .5, .38, .3], C = [0, .89, 1.53, 2.01, 2.39]; // масштаб и центр (в ширинах карточки)
+    const dimK = [1, .72, .5, .36, 0][a];
+    return { t: `translateX(${s * C[a] * 100}%) scale(${SC[a]})`, o: Math.abs(d) > 3 ? 0 : 1, z: 50 - a, f: `brightness(${.4 + dimK * .6})`, live: Math.abs(d) <= 3, dimK };
   }
   const d = ((i - sel) % n + n) % n; // стопка: 0 — передняя, дальше — глубже
   const v = Math.min(d, 5);
@@ -91,13 +92,14 @@ function placeDeck(jump, from) {
     if (!jump && cfg.view === 'stack' && i === from && p.z < 46) {
       c.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(38%) scale(.92)', opacity: 0, offset: .45 }, { transform: p.t, opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.2,1)' });
     }
-    c.style.transform = p.t; c.style.opacity = p.o; c.style.zIndex = p.z; c.style.filter = p.f;
+    c.style.transform = (dragPx ? `translateX(${dragPx}px) ` : '') + p.t; c.style.opacity = p.o; c.style.zIndex = p.z; c.style.filter = p.f;
+    c._live = !!p.live; c._dim = p.dimK == null ? 1 : p.dimK;
     if (jump) { void c.offsetWidth; c.style.transition = ''; }
   });
 }
 function addStill(c, u) {
   if (!c._shot || c._shot.querySelector('img')) return;
-  const img = h('img', { src: u, alt: '' });
+  const img = h('img', { src: u, alt: '', draggable: 'false' });
   img.addEventListener('load', () => img.classList.add('ok'));
   c._shot.append(img);
 }
@@ -109,6 +111,37 @@ function loadStills() {
 }
 
 let lastSel = 0;
+// ---------- карусель: листать перетаскиванием мышью ----------
+// лента едет за курсором, миниатюры — вместе с ней; отпустили — доезжает до ближайшего окна
+let dragPx = 0, drag = null, dragRaf = 0, noClick = false;
+grid.addEventListener('pointerdown', (e) => {
+  if (cfg.view !== 'carousel' || e.button !== 0 || !shown || list.length < 2) return;
+  drag = { x0: e.clientX, moved: false, id: e.pointerId };
+});
+grid.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  let dx = e.clientX - drag.x0;
+  if (!drag.moved) { if (Math.abs(dx) < 6) return; drag.moved = true; grid.setPointerCapture(drag.id); grid.classList.add('dragging'); }
+  const front = grid.children[sel];
+  const step = (front ? front.offsetWidth : 300) * .89; // расстояние между соседними окнами
+  // перетянули на соседнее окно — оно становится центральным, лента продолжает ехать с того же места
+  while (dx < -step / 2) { sel = (sel + 1) % list.length; drag.x0 -= step; dx += step; }
+  while (dx > step / 2) { sel = (sel - 1 + list.length) % list.length; drag.x0 += step; dx -= step; }
+  dragPx = dx;
+  [...grid.children].forEach((x, i) => x.classList.toggle('on', i === sel));
+  placeDeck(false, -1); lastSel = sel;
+  if (!dragRaf) dragRaf = requestAnimationFrame(() => { dragRaf = 0; if (open) bar.thumbsShow(thumbItems(), true); });
+});
+const dragEnd = () => {
+  if (!drag) return;
+  const moved = drag.moved; drag = null;
+  if (!moved) return;
+  noClick = true; setTimeout(() => { noClick = false; }, 0);
+  grid.classList.remove('dragging');
+  dragPx = 0; placeDeck(false, -1); trackThumbs(520); // доезжает до ближайшего окна
+};
+grid.addEventListener('pointerup', dragEnd);
+grid.addEventListener('pointercancel', dragEnd);
 function placeSel(jump) {
   const c = grid.children[sel];
   [...grid.children].forEach((x, i) => x.classList.toggle('on', i === sel));
@@ -127,29 +160,46 @@ function setSel(i, hover) {
   const was = sel;
   sel = ((i % list.length) + list.length) % list.length;
   // на сцене живая миниатюра уходит вместе со старой передней карточкой и появляется у новой, когда та встанет на место
-  if (deck() && was !== sel && shown) { bar.thumbsClear(false); sendThumbs(200); } // проявляется, пока карточка доезжает последние пиксели
+  if (deck() && was !== sel && shown) {
+    if (cfg.view === 'carousel') trackThumbs(520);              // миниатюры едут вместе с лентой
+    else { bar.thumbsClear(false); sendThumbs(200); }           // стопка: у новой передней — когда она почти встала
+  }
   placeSel(false);
   if (!hover) { const c = grid.children[sel]; if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); }
 }
 
 // живые миниатюры окон (как у Windows — есть всегда, и у свёрнутых): места под них — в пикселях окна
 let thumbT = 0;
+function thumbItems() {
+  const k = window.devicePixelRatio || 1, pr = panel.getBoundingClientRect(), car = cfg.view === 'carousel';
+  const items = [];
+  for (const c of grid.children) {
+    if (!c._shot) continue;
+    if (car) { if (!c._live) continue; }                       // карусель — все видимые карточки
+    else if (deck() && c !== grid.children[sel]) continue;      // стопка — только передняя (задние закрыты передней)
+    const r = c._shot.getBoundingClientRect();                  // с учётом масштаба и сдвига карточки
+    if (!deck() && (r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) continue; // прокручено за край панели
+    const m = 4 * (r.width / (c._shot.offsetWidth || r.width));
+    items.push({ hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: car ? .35 + c._dim * .65 : 1 });
+  }
+  return items;
+}
 function sendThumbs(delay = 0, fade = true) {
   clearTimeout(thumbT);
   if ((cfg.view !== 'thumbs' && !deck()) || !open) return;
-  thumbT = setTimeout(() => {
-    if (!open) return;
-    const k = window.devicePixelRatio || 1, pr = panel.getBoundingClientRect();
-    const items = [];
-    for (const c of grid.children) {
-      if (!c._shot) continue;
-      if (deck() && c !== grid.children[sel]) continue; // на сцене — только передняя карточка
-      const r = c._shot.getBoundingClientRect();
-      if (r.top < pr.top - 1 || r.bottom > pr.bottom + 1) continue; // прокручено за край панели
-      items.push({ hwnd: c._w.hwnd, l: (r.left + 4) * k, t: (r.top + 4) * k, r: (r.right - 4) * k, b: (r.bottom - 4) * k });
-    }
-    bar.thumbsShow(items, fade);
-  }, delay);
+  thumbT = setTimeout(() => { if (open) bar.thumbsShow(thumbItems(), fade); }, delay);
+}
+// карусель едет — миниатюры Windows едут вместе с карточками: новые места каждый кадр, пока идёт анимация
+let trackRaf = 0, trackUntil = 0;
+function trackThumbs(ms) {
+  trackUntil = performance.now() + ms;
+  if (trackRaf) return;
+  const step = () => {
+    if (!open) { trackRaf = 0; return; }
+    bar.thumbsShow(thumbItems(), true);
+    trackRaf = performance.now() < trackUntil ? requestAnimationFrame(step) : 0;
+  };
+  trackRaf = requestAnimationFrame(step);
 }
 
 function reveal() {

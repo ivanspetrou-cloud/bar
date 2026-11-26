@@ -95,7 +95,7 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 /* на сцене панель не нужна — карточки «парят» над затемнением */
 [data-view="carousel"] .at-panel, [data-view="stack"] .at-panel { background: transparent; box-shadow: none; overflow: visible; max-height: none; }
 .at-grid.deck { display: block; position: relative; perspective: 1500px; }
-[data-view="carousel"] .at-grid.deck { width: min(92vw, calc(var(--dw) * 3.4)); height: calc(var(--dw) * .6 + 52px); }
+[data-view="carousel"] .at-grid.deck { width: 96vw; height: calc(var(--dw) * .6 + 52px); perspective: none; }
 [data-view="stack"] .at-grid.deck { width: calc(var(--dw) * 1.3); height: calc(var(--dw) * .6 + 52px + var(--dw) * .24); }
 .at-grid.deck .at-card {
   position: absolute; left: 50%; top: 50%; width: var(--dw); margin-left: calc(var(--dw) / -2); margin-top: calc((var(--dw) * .6 + 44px) / -2);
@@ -107,3 +107,10 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 .at-grid.deck .at-head { width: auto; }
 .at-grid.deck .at-shot { width: 100%; height: calc(var(--dw) * .6); }
 .at-grid.deck .at-t { font-size: var(--fs-body, 13px); }
+
+/* перетаскивание карусели: карточки идут за курсором без задержки; картинки не перетаскиваются браузером */
+.at-grid.deck.dragging .at-card { transition: none; }
+[data-view="carousel"] .at-grid.deck { cursor: grab; touch-action: none; }
+[data-view="carousel"] .at-grid.deck.dragging { cursor: grabbing; }
+.at-body img { -webkit-user-drag: none; user-select: none; }
+.at-body { user-select: none; }

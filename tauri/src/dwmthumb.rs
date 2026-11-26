@@ -9,7 +9,9 @@ use std::time::Duration;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Dwm::*;
 
-struct T { src: i64, thumb: isize, rect: RECT, gen: u64 }
+/// o — своя прозрачность миниатюры (боковые в карусели притенены), k — плавное проявление 0…255
+struct T { src: i64, thumb: isize, rect: RECT, gen: u64, o: u8, k: u8 }
+fn alpha(t: &T) -> u8 { (t.o as u32 * t.k as u32 / 255) as u8 }
 static S: Mutex<Option<HashMap<String, Vec<T>>>> = Mutex::new(None);
 static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -31,11 +33,13 @@ fn fit(thumb: isize, r: RECT) -> RECT {
     RECT { left: x, top: y, right: x + w, bottom: y + h }
 }
 
-/// показать миниатюры: [{hwnd, l, t, r, b}] — прямоугольники в физических пикселях окна-страницы
+/// показать миниатюры: [{hwnd, l, t, r, b, o?}] — прямоугольники в физических пикселях окна-страницы, o — прозрачность 0…1.
+/// Можно звать каждый кадр (карусель): существующие только переезжают, новые проявляются
 pub fn show(label: &str, dest: HWND, items: &Value, fade: bool) {
-    let want: Vec<(i64, RECT)> = items.as_array().map(|a| a.iter().filter_map(|x| {
+    let want: Vec<(i64, RECT, u8)> = items.as_array().map(|a| a.iter().filter_map(|x| {
         let g = |k: &str| x[k].as_f64().map(|v| v.round() as i32);
-        Some((x["hwnd"].as_i64()?, RECT { left: g("l")?, top: g("t")?, right: g("r")?, bottom: g("b")? }))
+        let o = (x["o"].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8;
+        Some((x["hwnd"].as_i64()?, RECT { left: g("l")?, top: g("t")?, right: g("r")?, bottom: g("b")? }, o))
     }).collect()).unwrap_or_default();
     let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     let mut fresh = vec![];
@@ -44,15 +48,16 @@ pub fn show(label: &str, dest: HWND, items: &Value, fade: bool) {
         let all = g.get_or_insert_with(HashMap::new);
         let list = all.entry(label.to_string()).or_default();
         // лишние — убрать
-        list.retain(|t| { let keep = want.iter().any(|(s, _)| *s == t.src); if !keep { unsafe { let _ = DwmUnregisterThumbnail(t.thumb); } } keep });
-        for (src, r) in &want {
+        list.retain(|t| { let keep = want.iter().any(|(s, _, _)| *s == t.src); if !keep { unsafe { let _ = DwmUnregisterThumbnail(t.thumb); } } keep });
+        for (src, r, o) in &want {
             if let Some(t) = list.iter_mut().find(|t| t.src == *src) {
-                t.rect = *r; t.gen = gen;
-                props(t.thumb, fit(t.thumb, *r), 255, true);
+                t.rect = *r; t.gen = gen; t.o = *o;
+                props(t.thumb, fit(t.thumb, *r), alpha(t), true);
             } else if let Ok(th) = unsafe { DwmRegisterThumbnail(dest, HWND(*src as isize as *mut _)) } {
-                props(th, fit(th, *r), if fade { 0 } else { 255 }, true);
-                list.push(T { src: *src, thumb: th, rect: *r, gen });
-                fresh.push(th);
+                let t = T { src: *src, thumb: th, rect: *r, gen, o: *o, k: if fade { 0 } else { 255 } };
+                props(th, fit(th, *r), alpha(&t), true);
+                list.push(t);
+                if fade { fresh.push(th); }
             }
         }
     }
@@ -61,9 +66,9 @@ pub fn show(label: &str, dest: HWND, items: &Value, fade: bool) {
         let label = label.to_string();
         std::thread::spawn(move || for step in 1..=6u32 {
             std::thread::sleep(Duration::from_millis(22));
-            let g = S.lock().unwrap();
-            let Some(list) = g.as_ref().and_then(|a| a.get(&label)) else { return };
-            for t in list.iter().filter(|t| fresh.contains(&t.thumb)) { props(t.thumb, fit(t.thumb, t.rect), (step * 255 / 6) as u8, true); }
+            let mut g = S.lock().unwrap();
+            let Some(list) = g.as_mut().and_then(|a| a.get_mut(&label)) else { return };
+            for t in list.iter_mut().filter(|t| fresh.contains(&t.thumb)) { t.k = (step * 255 / 6) as u8; props(t.thumb, fit(t.thumb, t.rect), alpha(t), true); }
         });
     }
 }
@@ -76,7 +81,7 @@ pub fn clear(label: &str, fade: bool) {
     let run = move || {
         if fade {
             for step in (0..5u32).rev() {
-                { let g = S.lock().unwrap(); if let Some(list) = g.as_ref().and_then(|a| a.get(&label)) { for t in list.iter().filter(|t| t.gen <= g0) { props(t.thumb, fit(t.thumb, t.rect), (step * 255 / 5) as u8, true); } } }
+                { let mut g = S.lock().unwrap(); if let Some(list) = g.as_mut().and_then(|a| a.get_mut(&label)) { for t in list.iter_mut().filter(|t| t.gen <= g0) { t.k = t.k.min((step * 255 / 5) as u8); props(t.thumb, fit(t.thumb, t.rect), alpha(t), true); } } }
                 std::thread::sleep(Duration::from_millis(22));
             }
         }
