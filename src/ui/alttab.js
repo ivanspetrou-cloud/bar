@@ -127,7 +127,7 @@ function setSel(i, hover) {
   const was = sel;
   sel = ((i % list.length) + list.length) % list.length;
   // на сцене живая миниатюра уходит вместе со старой передней карточкой и появляется у новой, когда та встанет на место
-  if (deck() && was !== sel && shown) { bar.thumbsClear(false); sendThumbs(360); }
+  if (deck() && was !== sel && shown) { bar.thumbsClear(false); sendThumbs(200); } // проявляется, пока карточка доезжает последние пиксели
   placeSel(false);
   if (!hover) { const c = grid.children[sel]; if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); }
 }
@@ -157,9 +157,9 @@ function reveal() {
   shown = true;
   document.body.classList.add('shown');
   placeSel(true);
-  // карточки появляются лёгкой волной
-  [...grid.children].forEach((c, i) => c.animate([{ opacity: 0, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: Math.min(i, 12) * 14, easing: 'cubic-bezier(.3,1.2,.5,1)', fill: 'backwards' }));
-  sendThumbs(330); // когда панель встала на место (её появление — 0,3 с)
+  // карточки проявляются лёгкой волной — только прозрачностью, без сдвига: живые миниатюры стоят на своих местах сразу
+  if (!deck()) [...grid.children].forEach((c, i) => c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, delay: Math.min(i, 12) * 12, easing: 'ease-out', fill: 'backwards' }));
+  sendThumbs(0);
   if (deck()) loadStills();
 }
 

@@ -243,7 +243,7 @@ pub fn handle(ch: &str, a: &[Value]) -> Value {
         "at-thumbs" => {
             let ids: Vec<String> = arg(0).as_array().map(|a| a.iter().filter_map(|x| x.as_i64()).take(24).map(|x| x.to_string()).collect()).unwrap_or_default();
             if ids.is_empty() { return json!({}); }
-            let rows = ctx::sh().act.call_t("winthumbs", &ids.join(","), 8000).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+            let rows = ctx::sh().act.call_t("winthumbs", &format!("s:{}", ids.join(",")), 8000).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
             let mut o = serde_json::Map::new();
             for r in rows { if let Some((h, b)) = r.as_str().and_then(|x| x.split_once('|')) { if b.len() > 100 { o.insert(h.to_string(), json!(format!("data:image/jpeg;base64,{}", b))); } } }
             Value::Object(o)

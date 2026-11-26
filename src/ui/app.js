@@ -1464,7 +1464,7 @@ tool({
               line('Свой переключатель окон', 'Alt+Tab в стиле Bar; выключите — вернётся окно Windows', toggle(c.on !== false, (v) => set({ on: v }))),
               h('div', { class: 'col at-opts' + (off ? ' off' : '') },
                 h('div', { class: 'sw at-view' }, h('span', {}, 'Вид'), seg([['thumbs', 'Миниатюры'], ['carousel', 'Карусель'], ['stack', 'Стопка'], ['icons', 'Значки'], ['list', 'Список']], 'view')),
-                line('Размер', '', seg([['s', 'S'], ['m', 'M'], ['l', 'L']], 'size')),
+                line('Размер', '', seg([['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']], 'size')),
                 line('Окна', '', seg([['all', 'Все мониторы'], ['here', 'Текущий']], 'monitor')),
                 line('Экран', '', seg([['primary', 'Основной'], ['active', 'С окном']], 'screen')))),
             h('div', { class: 'col at-opts' + (off ? ' off' : '') },

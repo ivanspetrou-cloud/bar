@@ -10,12 +10,13 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
   position: relative; max-width: 86vw; max-height: 80vh; overflow: hidden auto; padding: var(--at-pad);
   border-radius: calc(var(--r) + var(--at-pad)); background: var(--bg); color: var(--fg);
   box-shadow: 0 0 0 1px var(--line); /* только тонкий контур, как у нотча, — без размытой тени-ореола */
-  opacity: 0; transform: scale(.96) translateY(8px); pointer-events: none;
-  transition: opacity .16s ease, transform .3s var(--spring);
+  /* только проявление, без увеличения: места карточек известны сразу — живые миниатюры появляются вместе с панелью */
+  opacity: 0; pointer-events: none;
+  transition: opacity .16s ease;
   scrollbar-width: none;
 }
-.at-body.shown .at-panel { opacity: 1; transform: none; pointer-events: auto; }
-.at-body.leave .at-panel { transition: opacity .12s ease, transform .16s ease-in; transform: scale(.98); }
+.at-body.shown .at-panel { opacity: 1; pointer-events: auto; }
+.at-body.leave .at-panel { transition: opacity .12s ease; }
 
 .at-grid { display: grid; gap: 4px; position: relative; z-index: 1; }
 
@@ -56,6 +57,7 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 [data-size="s"] { --at-w: 168px; }
 [data-size="m"] { --at-w: 220px; }
 [data-size="l"] { --at-w: 290px; }
+[data-size="xl"] { --at-w: 380px; }
 
 /* вид «значки»: крупный значок и подпись под ним */
 /* значок сверху, подпись под ним; строка — по высоте содержимого (у миниатюр она фиксированная, 20px) */
@@ -85,7 +87,11 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 [data-view="icons"] .at-x { position: absolute; top: 6px; right: 6px; }
 
 /* ---------- «Карусель» и «Стопка»: сцена ---------- */
-[data-view="carousel"], [data-view="stack"] { --dw: calc(var(--at-w) * 1.6); }
+/* карточки сцены — от размера экрана: S 24%, M 30%, L 36%, XL 44% ширины (и не выше ~60% высоты экрана) */
+[data-view="carousel"], [data-view="stack"] { --dw: min(30vw, 100vh); }
+[data-view="carousel"][data-size="s"], [data-view="stack"][data-size="s"] { --dw: min(24vw, 84vh); }
+[data-view="carousel"][data-size="l"], [data-view="stack"][data-size="l"] { --dw: min(36vw, 100vh); }
+[data-view="carousel"][data-size="xl"], [data-view="stack"][data-size="xl"] { --dw: min(44vw, 100vh); }
 /* на сцене панель не нужна — карточки «парят» над затемнением */
 [data-view="carousel"] .at-panel, [data-view="stack"] .at-panel { background: transparent; box-shadow: none; overflow: visible; max-height: none; }
 .at-grid.deck { display: block; position: relative; perspective: 1500px; }

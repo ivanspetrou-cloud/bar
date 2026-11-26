@@ -157,9 +157,11 @@ pub fn task_windows() -> Value {
     }).collect::<Vec<_>>())
 }
 // превью окон: "hwnd|jpeg base64" для каждого запрошенного
+/// «s:» в начале — маленькие снимки (задние карточки Alt+Tab): в несколько раз быстрее
 pub fn win_thumbs(arg: &str) -> Value {
+    let (arg, (mw, mh)) = match arg.strip_prefix("s:") { Some(a) => (a, (360, 225)), None => (arg, (720, 450)) };
     json!(arg.split(',').filter(|s| !s.is_empty()).map(|s| {
-        let t = s.trim().parse::<i64>().ok().and_then(|v| img::thumb(hwnd(v), 720, 450, (1, 1))).map(|b| img::b64(&b)).unwrap_or_default();
+        let t = s.trim().parse::<i64>().ok().and_then(|v| img::thumb(hwnd(v), mw, mh, (1, 1))).map(|b| img::b64(&b)).unwrap_or_default();
         format!("{}|{}", s, t)
     }).collect::<Vec<_>>())
 }

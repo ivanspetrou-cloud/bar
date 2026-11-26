@@ -363,7 +363,7 @@ function prevOpen(el) {
       };
     });
     card._w = w; card._shot = shot;
-    if (!switching) card.animate([{ opacity: 0, transform: 'translateY(10px) scale(.95)' }], { duration: 360, delay: 40 + i * 45, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' });
+    if (!switching) card.animate([{ opacity: 0 }], { duration: 240, delay: 30 + i * 35, easing: 'ease-out', fill: 'backwards' }); // только прозрачность: живая миниатюра встаёт на место сразу
     return card;
   });
   prev.replaceChildren(...cards);
@@ -378,7 +378,7 @@ function prevOpen(el) {
   // живые миниатюры окон (как превью панели задач Windows — есть всегда, и у свёрнутых и «видеокартных» программ):
   // Windows рисует их на место снимков, когда превью встало на место
   if (switching) bar.thumbsClear(false);
-  prevLive(switching ? 260 : 380);
+  prevLive(switching ? 200 : 240); // превью почти встало (пружина доводит последние пиксели)
 }
 let prevLiveT = 0;
 function prevLive(delay = 0, fade = true) {
