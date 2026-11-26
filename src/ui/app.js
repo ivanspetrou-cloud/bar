@@ -2922,7 +2922,8 @@ document.addEventListener('keydown', (e) => {
   if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   srchInput.focus();
 });
-bar.onSearch(() => { expand(); srchFocus(true); });
+// поле поиска можно сфокусировать только в уже раскрытой панели — сначала дождаться, пока окно вырастет
+bar.onSearch(() => growWin().then(() => { expand(); requestAnimationFrame(() => srchFocus(true)); }));
 openHooks.add((open) => { if (open) Apps.load(); if (!open) setTimeout(() => { if (state !== 'open') srchClear(); }, 450); });
 const srchTyping = () => document.activeElement === srchInput;
 

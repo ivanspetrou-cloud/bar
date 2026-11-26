@@ -93,3 +93,6 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 .tp-shot.min:has(img.ok) img { opacity: .55; filter: saturate(.7); }
 .tp-shot.min:has(img.ok) .tp-min { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 6px; background: var(--bg); color: var(--fg-2); }
 @keyframes tp-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* док — только для мыши: без рамки фокуса после клика */
+button:focus, button:focus-visible, .tbi:focus, .tbi:focus-visible { outline: none; }
