@@ -488,7 +488,11 @@ function trayBtn() {
 }
 function trayDraw() {
   trayPop.replaceChildren(...(trayList.length ? trayList.map((it) => {
-    const b = h('button', { class: 'tt-i', 'aria-label': it.tip || 'Значок' }, h('img', { src: 'data:image/png;base64,' + it.png, alt: '' }));
+    const img = h('img', { src: 'data:image/png;base64,' + it.png, alt: '' });
+    // значки трея обычно 16 px (так их рисует Windows): показываем пиксель в пиксель, а не растягиваем — иначе мыло.
+    // Крупные картинки (от 20 px с учётом масштаба экрана) — уменьшаются до 20.
+    img.addEventListener('load', () => { const n = img.naturalWidth / (window.devicePixelRatio || 1); img.style.width = img.style.height = (n >= 20 ? 20 : Math.max(12, n)) + 'px'; });
+    const b = h('button', { class: 'tt-i', 'aria-label': it.tip || 'Значок' }, img);
     b._label = it.tip || '';
     b.addEventListener('mouseenter', () => { if (b._label) showTip(b); });
     b.addEventListener('mouseleave', hideTip);
