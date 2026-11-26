@@ -95,7 +95,8 @@ async function handle(msg) {
   ]);
   // опрос состояния — быстро и без побочных действий: уснувшую вкладку не трогаем
   if (msg.fn === 'state' || msg.fn === 'queue' || msg.fn === 'lyrics') return tab.discarded ? { error: 'tab-asleep' } : ask(tab.id, 3500);
-  const waitMs = resume ? 12000 : 3500; // включение последнего трека: переход и перемотка — до ~10 с
+  // включение последнего трека: переход и перемотка — до ~10 с, плюс до 6 с, пока звук правда пойдёт; «Играть» ждёт звука до 6 с
+  const waitMs = resume ? 18000 : msg.fn === 'toggle' ? 8000 : 3500;
   if (!tab.discarded && tab.status === 'complete') {
     const r = await ask(tab.id, waitMs);
     if (!r || r.error !== 'tab-asleep' && r.error !== 'tab-not-ready') return r;
@@ -103,7 +104,7 @@ async function handle(msg) {
   // Браузер усыпил вкладку (спящие вкладки Edge / экономия памяти Chrome) — код страницы не выполняется.
   // Нажали кнопку в Bar: будим вкладку (перезагрузка без переключения на неё; YouTube Music вспомнит трек и очередь) и повторяем команду.
   // только что открытую вкладку не перезагружаем — просто ждём, пока загрузится
-  return wakeAndRetry(tab.id, ask, !created, resume ? 12000 : 3000);
+  return wakeAndRetry(tab.id, ask, !created, resume ? 18000 : msg.fn === 'toggle' ? 8000 : 3000);
 }
 
 // не давать браузеру выгружать вкладку музыки, пока она открыта (её ждёт нотч)
