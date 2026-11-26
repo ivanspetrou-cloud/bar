@@ -19,6 +19,7 @@ const PILL_H: f64 = 44.0;
 #[derive(Default)]
 struct St {
     hud_track: bool, hud_rect: (i32, i32, i32, i32), band: i32,
+    noact: bool,
     mode: String, interactive: bool, zone: (i32, i32, i32, i32), pos: (i32, i32), size: (i32, i32), clickable: bool,
     follow: Option<(i32, i32)>, cand: Option<((i32, i32), Instant)>, hud_hover: bool,
     idle_last: Option<Instant>, idle_pt: (i32, i32), idle_hidden: bool, tucked: Option<bool>,
@@ -126,7 +127,7 @@ impl Notch {
         let v: Vec<i32> = z.split(',').map(|x| x.trim().parse().unwrap_or(0)).collect();
         if v.len() == 4 { self.st.lock().unwrap().zone = (v[0], v[1], v[2], v[3]); }
     }
-    pub fn focus(&self) { if let Ok(h) = self.win.hwnd() { bar_agent::win::focus_opts(h.0 as isize as i64, false); } let _ = self.win.set_focus(); }
+    pub fn focus(&self) { if self.st.lock().unwrap().noact { return; } if let Ok(h) = self.win.hwnd() { bar_agent::win::focus_opts(h.0 as isize as i64, false); } let _ = self.win.set_focus(); }
     pub fn bounds(&self) -> (i32, i32, i32, i32) { let st = self.st.lock().unwrap(); (st.pos.0, st.pos.1, st.size.0, st.size.1) }
 
     fn track(&self) {
@@ -157,6 +158,20 @@ impl Notch {
         if want != st.clickable {
             st.clickable = want;
             let _ = self.win.set_ignore_cursor_events(!want);
+            if st.noact { self.set_ex_noactivate(true); } // Tauri пересобирает расширенные стили — вернуть «не активироваться»
+        }
+    }
+    /// Панель, открытая из игры: клики по ней не делают Bar активным окном — игра остаётся впереди и не глушит звук
+    /// (многие игры выключают звук, когда теряют фокус).
+    pub fn set_noactivate(&self, on: bool) { self.st.lock().unwrap().noact = on; self.set_ex_noactivate(on); }
+    fn set_ex_noactivate(&self, on: bool) {
+        use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+        let Ok(hw) = self.win.hwnd() else { return };
+        let h = windows::Win32::Foundation::HWND(hw.0 as *mut _);
+        unsafe {
+            let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+            let nx = if on { ex | WS_EX_NOACTIVATE.0 as isize } else { ex & !(WS_EX_NOACTIVATE.0 as isize) };
+            if nx != ex { SetWindowLongPtrW(h, GWL_EXSTYLE, nx); }
         }
     }
     // «за мышью»: курсор задержался на другом мониторе — нотч уезжает вверх и выезжает там

@@ -183,7 +183,7 @@ pub fn hotkey() {
     let exe = p.get(2).copied().unwrap_or("manual");
     enter(Game { pid: p.get(3).and_then(|x| x.parse().ok()).unwrap_or(0), exe: exe.into(), name: if base(exe).is_empty() { "Игра".into() } else { base(exe) }, mon: m, k, manual: true });
 }
-pub fn open_panel() { if !active() { return; } with(|s| s.panel_open = true); exit(true); }
+pub fn open_panel() { if !active() { return; } with(|s| s.panel_open = true); ctx::sh().notch.set_noactivate(true); exit(true); }
 pub fn set_auto(on: bool) { let mut gv = g(); gv["auto"] = json!(on); save(gv); if !on && with(|s| s.active.as_ref().map_or(false, |a| !a.manual)) { exit(false); } }
 
 pub fn handle(ch: &str, a: &[Value]) -> Value {
@@ -194,6 +194,7 @@ pub fn handle(ch: &str, a: &[Value]) -> Value {
         "game-open-panel" => { open_panel(); Value::Null }
         "panel-state" => {
             if arg(0).as_bool() != Some(true) && with(|s| s.panel_open) {
+                ctx::sh().notch.set_noactivate(false); // панель закрылась — обычное поведение окна
                 std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(900)); with(|s| { s.panel_open = false; s.seen = 1; }); });
             }
             Value::Null
