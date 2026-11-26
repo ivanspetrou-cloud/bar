@@ -38,8 +38,10 @@ function cardOf(w, i) {
   const card = h('div', { class: 'at-card', role: 'option', title: w.title },
     h('span', { class: 'at-head' }, ic, cfg.titles !== false ? h('span', { class: 'at-t' }, w.title || w.exe) : h('span', { class: 'grow' }), close),
     shot);
-  // в сетке наведение выбирает; на сцене карточки сами ездят под курсором — выбор только кликом
-  card.addEventListener('mouseenter', () => { if (!deck()) setSel(list.indexOf(w), true); });
+  // в сетке наведение выбирает; на сцене карточки сами ездят под курсором — выбор только кликом;
+  // в стопке наведённое заднее окно приподнимается
+  card.addEventListener('mouseenter', () => { if (!deck()) setSel(list.indexOf(w), true); else if (cfg.view === 'stack') liftCard(card, true); });
+  card.addEventListener('mouseleave', () => { if (cfg.view === 'stack') liftCard(card, false); });
   card.addEventListener('click', () => { if (noClick) return; const i = list.indexOf(w); if (deck() && i !== sel) { setSel(i); return; } setSel(i); pick(); });
   card.addEventListener('auxclick', (e) => { if (e.button === 1) closeWin(list.indexOf(w)); });
   card._w = w; card._shot = shot;
@@ -84,19 +86,19 @@ function deckPos(i) {
     const dimK = [1, .72, .5, .36, 0][a];
     return { t: `translateX(${s * C[a] * 100}%) scale(${SC[a]})`, o: show ? 1 : 0, z: 50 - a, f: `brightness(${.4 + dimK * .6})`, live: show, dimK };
   }
-  const d = ((i - sel) % n + n) % n; // стопка: 0 — передняя, дальше — глубже
-  const v = Math.min(d, 5);
-  return { t: `translate(${v * 4.5}%, ${-v * 6}%) scale(${1 - v * .055})`, o: d > 4 ? 0 : 1 - d * .16, z: 50 - d, f: `brightness(${1 - v * .13})` };
+  // стопка-картотека: выбранное окно спереди целиком, следующие стоят за ним и выглядывают сверху полоской;
+  // наведённое заднее приподнимается — видно больше
+  const d = ((i - sel) % n + n) % n;
+  const v = Math.min(d, 6);
+  const c = grid.children[i];
+  const lift = d > 0 && c && c._lift ? 26 : 0; // % высоты карточки
+  return { t: `translateY(${-v * 11 - lift}%) scale(${1 - v * .045})`, o: d > 5 ? 0 : 1, z: 50 - d, f: 'none', live: d <= 5, dimK: 1 - Math.min(v, 5) * .12 };
 }
 function placeDeck(jump, from) {
   [...grid.children].forEach((c, i) => {
     if (!c._w) return;
     const p = deckPos(i);
     if (jump) c.style.transition = 'none';
-    // стопка, Tab вперёд: передняя карточка «уходит» вниз и возвращается в самый конец колоды
-    if (!jump && cfg.view === 'stack' && i === from && p.z < 46) {
-      c.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(38%) scale(.92)', opacity: 0, offset: .45 }, { transform: p.t, opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.2,1)' });
-    }
     c.style.transform = (dragPx ? `translateX(${dragPx}px) ` : '') + p.t; c.style.opacity = p.o; c.style.zIndex = p.z; c.style.filter = p.f;
     c._live = !!p.live; c._dim = p.dimK == null ? 1 : p.dimK;
     if (jump) { void c.offsetWidth; c.style.transition = ''; }
@@ -116,6 +118,11 @@ function loadStills() {
 }
 
 let lastSel = 0;
+function liftCard(c, on) {
+  if (!open || !shown || !!c._lift === on) return;
+  c._lift = on;
+  placeDeck(false, -1); trackThumbs(480);
+}
 // ---------- карусель: листать перетаскиванием мышью ----------
 // лента едет за курсором, миниатюры — вместе с ней; отпустили — доезжает до ближайшего окна
 let dragPx = 0, drag = null, dragRaf = 0, noClick = false;
@@ -165,10 +172,7 @@ function setSel(i, hover) {
   const was = sel;
   sel = ((i % list.length) + list.length) % list.length;
   // на сцене живая миниатюра уходит вместе со старой передней карточкой и появляется у новой, когда та встанет на место
-  if (deck() && was !== sel && shown) {
-    if (cfg.view === 'carousel') trackThumbs(520);              // миниатюры едут вместе с лентой
-    else { bar.thumbsClear(false); sendThumbs(200); }           // стопка: у новой передней — когда она почти встала
-  }
+  if (deck() && was !== sel && shown) trackThumbs(560); // миниатюры едут вместе с карточками каждый кадр
   placeSel(false);
   if (!hover) { const c = grid.children[sel]; if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); }
 }
@@ -176,17 +180,19 @@ function setSel(i, hover) {
 // живые миниатюры окон (как у Windows — есть всегда, и у свёрнутых): места под них — в пикселях окна
 let thumbT = 0;
 function thumbItems() {
-  const k = window.devicePixelRatio || 1, pr = panel.getBoundingClientRect(), car = cfg.view === 'carousel';
+  const k = window.devicePixelRatio || 1, pr = panel.getBoundingClientRect(), car = cfg.view === 'carousel', stk = cfg.view === 'stack';
   const items = [];
   for (const c of grid.children) {
     if (!c._shot) continue;
-    if (car) { if (!c._live) continue; }                       // карусель — все видимые карточки
-    else if (deck() && c !== grid.children[sel]) continue;      // стопка — только передняя (задние закрыты передней)
+    if (deck() && !c._live) continue;                           // карусель и стопка — все видимые карточки
     const r = c._shot.getBoundingClientRect();                  // с учётом масштаба и сдвига карточки
     if (!deck() && (r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) continue; // прокручено за край панели
     if (car && (r.left < 0 || r.right > window.innerWidth)) continue; // за краем экрана (при перетаскивании) — Windows нарисовала бы её на соседнем мониторе
     const m = 4 * (r.width / (c._shot.offsetWidth || r.width));
-    items.push({ hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: car ? .35 + c._dim * .65 : 1 });
+    const it = { hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: deck() ? .35 + c._dim * .65 : 1 };
+    // стопка: заднее окно видно только до верхнего края карточки перед ним — ниже миниатюру обрезаем
+    if (stk) { const i = [...grid.children].indexOf(c), n = list.length, d = ((i - sel) % n + n) % n; if (d > 0) { const f = grid.children[(i - 1 + n) % n]; if (f) it.cb = f.getBoundingClientRect().top * k; } }
+    items.push(it);
   }
   return items;
 }
