@@ -104,7 +104,9 @@ async function handle(msg) {
   // Браузер усыпил вкладку (спящие вкладки Edge / экономия памяти Chrome) — код страницы не выполняется.
   // Нажали кнопку в Bar: будим вкладку (перезагрузка без переключения на неё; YouTube Music вспомнит трек и очередь) и повторяем команду.
   // только что открытую вкладку не перезагружаем — просто ждём, пока загрузится
-  return wakeAndRetry(tab.id, ask, !created, resume ? 18000 : msg.fn === 'toggle' ? 8000 : 3000);
+  // будим сразу на последнем треке: одна загрузка страницы вместо «загрузить, потом перейти к треку»
+  const wakeUrl = resume && !created ? `https://music.youtube.com/watch?v=${String(resume.videoId).replace(/[^\w-]/g, '')}${resume.list ? '&list=' + String(resume.list).replace(/[^\w-]/g, '') : ''}` : null;
+  return wakeAndRetry(tab.id, ask, !created, resume ? 18000 : msg.fn === 'toggle' ? 8000 : 3000, wakeUrl);
 }
 
 // не давать браузеру выгружать вкладку музыки, пока она открыта (её ждёт нотч)
@@ -112,19 +114,19 @@ function keepAwake(tab) {
   if (tab && tab.autoDiscardable !== false) chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
 }
 let waking = null;
-async function wakeAndRetry(tabId, ask, reload = true, ms = 3000) {
+async function wakeAndRetry(tabId, ask, reload = true, ms = 3000, url = null) {
   if (!waking) {
     waking = (async () => {
-      if (reload) await chrome.tabs.reload(tabId).catch(() => {});
+      if (reload) await (url ? chrome.tabs.update(tabId, { url }) : chrome.tabs.reload(tabId)).catch(() => {});
       // ждём, пока страница загрузится и код расширения в ней оживёт
-      for (let i = 0; i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 500));
+      // спрашиваем страницу часто и не ждём полной загрузки («complete» наступает позже, чем оживает плеер)
+      for (let i = 0; i < 80; i++) {
+        await new Promise((r) => setTimeout(r, 250));
         const t = await chrome.tabs.get(tabId).catch(() => null);
         if (!t) return false;
-        if (t.status === 'complete') {
-          const ping = await Promise.race([chrome.tabs.sendMessage(tabId, { type: 'bar', fn: 'state', args: [] }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 1500))]);
-          if (ping && !ping.error) return true;
-        }
+        if (t.discarded) continue;
+        const ping = await Promise.race([chrome.tabs.sendMessage(tabId, { type: 'bar', fn: 'state', args: [] }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 800))]);
+        if (ping && !ping.error) return true;
       }
       return false;
     })().finally(() => setTimeout(() => { waking = null; }, 0));
@@ -134,7 +136,7 @@ async function wakeAndRetry(tabId, ask, reload = true, ms = 3000) {
   for (let i = 0; i < 6; i++) {
     const r = await ask(tabId, ms);
     if (r && !r.error) return r;
-    await new Promise((res) => setTimeout(res, 700));
+    await new Promise((res) => setTimeout(res, 300));
   }
   return { error: 'tab-not-ready' };
 }

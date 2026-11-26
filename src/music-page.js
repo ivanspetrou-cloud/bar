@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.3.1';
+  const BAR_PAGE_V = '0.3.2';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -287,9 +287,13 @@
     state, queue,
     // r — последний игравший трек ({ videoId, list, time }), его помнит Bar. Если плеер пуст (вкладку перезагрузили
     // или открыли заново) — включаем этот трек с того же места, а не «ничего».
-    toggle(r) {
+    async toggle(r) {
       const own = loadLast();
       if (own && own.videoId && (!r || !r.videoId || (own.at || 0) > (r.at || 0))) r = own; // что свежее
+      // вкладку только что разбудили прямо на этом треке: плееру нужна секунда, чтобы получить его, — ждём, а не переходим заново
+      if (r && r.videoId && new URLSearchParams(location.search).get('v') === r.videoId) {
+        for (let i = 0; i < 16; i++) { const q = P(), d = q && q.getVideoData && q.getVideoData(); if (d && d.video_id === r.videoId && q.getDuration() > 0) break; await new Promise((res) => setTimeout(res, 150)); }
+      }
       const p = P(); if (!p) return r && r.videoId ? resume(r) : false;
       const vd = (p.getVideoData && p.getVideoData()) || {};
       const st = p.getPlayerState();
