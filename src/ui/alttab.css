@@ -58,9 +58,10 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 [data-size="l"] { --at-w: 290px; }
 
 /* вид «значки»: крупный значок и подпись под ним */
-[data-view="icons"] .at-card { align-items: center; width: calc(var(--at-w) * .5); padding: 12px 6px 8px; }
-[data-view="icons"] .at-head { flex-direction: column; width: 100%; gap: 6px; }
-[data-view="icons"] .at-ic { width: calc(var(--at-w) * .22); height: calc(var(--at-w) * .22); }
+/* значок сверху, подпись под ним; строка — по высоте содержимого (у миниатюр она фиксированная, 20px) */
+[data-view="icons"] .at-card { width: calc(var(--at-w) * .52); padding: 14px 8px 10px; }
+[data-view="icons"] .at-head { flex-direction: column; align-items: center; justify-content: flex-start; width: auto; height: auto; gap: 8px; padding: 0; }
+[data-view="icons"] .at-ic { width: calc(var(--at-w) * .24); height: calc(var(--at-w) * .24); }
 [data-view="icons"] .at-t { width: 100%; text-align: center; }
 /* вид «список»: строки */
 [data-view="list"] .at-card { flex-direction: row; padding: 8px 10px; }

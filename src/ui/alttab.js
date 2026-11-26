@@ -65,11 +65,12 @@ function placeSel(jump) {
   const c = grid.children[sel];
   [...grid.children].forEach((x, i) => x.classList.toggle('on', i === sel));
   if (!c || !c._w) { selEl.style.opacity = '0'; return; }
-  const p = panel.getBoundingClientRect(), r = c.getBoundingClientRect();
+  // от раскладки, а не от экрана: панель при появлении увеличивается (96% → 100%), и экранные координаты в этот
+  // момент ещё «уменьшенные» — рамка уезжала мимо карточки
   if (jump) selEl.style.transition = 'none';
   selEl.style.opacity = '1';
-  selEl.style.transform = `translate(${r.left - p.left + panel.scrollLeft}px, ${r.top - p.top + panel.scrollTop}px)`;
-  selEl.style.width = r.width + 'px'; selEl.style.height = r.height + 'px';
+  selEl.style.transform = `translate(${grid.offsetLeft + c.offsetLeft}px, ${grid.offsetTop + c.offsetTop}px)`;
+  selEl.style.width = c.offsetWidth + 'px'; selEl.style.height = c.offsetHeight + 'px';
   if (jump) { void selEl.offsetWidth; selEl.style.transition = ''; }
 }
 function setSel(i, hover) {

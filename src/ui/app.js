@@ -1455,7 +1455,7 @@ tool({
       bar.atGet().then((c) => {
         if (body._tok !== tok) return;
         const set = (p) => { Object.assign(c, p); bar.atSet(p); draw(); };
-        const seg = (opts, key) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', { class: c[key] === v ? 'on' : '', onclick: () => set({ [key]: v }) }, label)));
+        const seg = (opts, key) => h('div', { class: 'seg at-seg' }, opts.map(([v, label]) => h('button', { class: c[key] === v ? 'on' : '', onclick: () => set({ [key]: v }) }, label)));
         const line = (name, desc, ctl) => h('div', { class: 'sw' }, h('span', {}, name, desc && h('span', { class: 'muted' }, ' · ' + desc)), ctl);
         function draw() {
           const off = c.on === false;
@@ -1465,8 +1465,8 @@ tool({
               h('div', { class: 'col at-opts' + (off ? ' off' : '') },
                 line('Вид', '', seg([['thumbs', 'Миниатюры'], ['icons', 'Значки'], ['list', 'Список']], 'view')),
                 line('Размер', '', seg([['s', 'S'], ['m', 'M'], ['l', 'L']], 'size')),
-                line('Окна', '', seg([['all', 'Все мониторы'], ['here', 'Этот монитор']], 'monitor')),
-                line('Где показывать', '', seg([['primary', 'Основной монитор'], ['active', 'Где активное окно']], 'screen')))),
+                line('Окна', '', seg([['all', 'Все мониторы'], ['here', 'Текущий']], 'monitor')),
+                line('Экран', '', seg([['primary', 'Основной'], ['active', 'С окном']], 'screen')))),
             h('div', { class: 'col at-opts' + (off ? ' off' : '') },
               line('Свёрнутые окна', 'показывать в списке', toggle(c.minimized !== false, (v) => set({ minimized: v }))),
               line('Названия окон', 'под миниатюрами и значками', toggle(c.titles !== false, (v) => set({ titles: v }))),

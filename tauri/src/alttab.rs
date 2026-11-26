@@ -41,8 +41,15 @@ fn compute_allow() -> bool {
     let c = cfg();
     if c["on"] == false || !READY.load(Ordering::Relaxed) { return false; }
     // в игре — Alt+Tab Windows, но только если впереди сама игра на весь экран (из игры уже вышли — переключатель Bar)
-    if c["game"] != true && crate::game::active() && fg_fullscreen() { return false; }
+    // впереди именно окно игры (её процесс) — не любое развёрнутое окно: развёрнутые на весь экран окна при скрытой
+    // панели задач тоже «полноэкранные», и из-за этого иногда открывался Alt+Tab Windows
+    if c["game"] != true && crate::game::active() && fg_is_game() { return false; }
     true
+}
+fn fg_is_game() -> bool {
+    let gp = crate::game::active_pid();
+    if gp == 0 { return fg_fullscreen(); } // игра включена вручную — по полноэкранному окну
+    unsafe { let mut pid = 0u32; GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid)); pid == gp }
 }
 fn fg_fullscreen() -> bool {
     use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
@@ -222,7 +229,14 @@ pub fn handle(ch: &str, a: &[Value]) -> Value {
         "at-pick" => {
             OPEN.store(false, Ordering::Relaxed);
             PICKED.store(SEQ.load(Ordering::Relaxed).max(PICKED.load(Ordering::Relaxed)), Ordering::Relaxed);
-            if let Some(h) = arg(0).as_i64().filter(|&h| h != 0) { bar_agent::win::focus_opts(h, false); }
+            // как Alt+Tab самой Windows — SwitchToThisWindow, без нажатий клавиш: «нажатый» Alt сбивал состояние Alt,
+            // если его уже снова держали, и следующий Tab открывал Alt+Tab Windows
+            if let Some(h) = arg(0).as_i64().filter(|&h| h != 0) { unsafe {
+                let w = HWND(h as isize as *mut _);
+                if IsIconic(w).as_bool() { let _ = ShowWindow(w, SW_RESTORE); }
+                SwitchToThisWindow(w, true);
+                if GetForegroundWindow() != w { let _ = SetForegroundWindow(w); }
+            } }
             std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(170)); if !OPEN.load(Ordering::Relaxed) { show(false); } });
             Value::Null
         }

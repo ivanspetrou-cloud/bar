@@ -18,6 +18,8 @@ struct St { active: Option<Game>, last_mon: Option<(i32, i32, i32, i32, f64)>, p
 static S: Mutex<Option<St>> = Mutex::new(None);
 fn with<R>(f: impl FnOnce(&mut St) -> R) -> R { f(S.lock().unwrap().get_or_insert_with(St::default)) }
 
+/// процесс активной игры (0 — нет)
+pub fn active_pid() -> u32 { S.lock().unwrap().as_ref().and_then(|s| s.active.as_ref().map(|g| g.pid)).unwrap_or(0) }
 pub fn active() -> bool { S.lock().unwrap().as_ref().map_or(false, |s| s.active.is_some()) }
 /// левый верхний угол монитора игры (физ. пиксели) — док прячется только на нём
 pub fn active_mon() -> Option<(i32, i32)> { S.lock().unwrap().as_ref().and_then(|s| s.active.as_ref().map(|g| (g.mon.0, g.mon.1))) }
