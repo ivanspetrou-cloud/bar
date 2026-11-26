@@ -170,6 +170,8 @@ impl Notch {
         let p = cursor();
         let on_mine = self.display().map_or(false, |m| inside(&m, p)); // до блокировки: display() сам её берёт
         let mut st = self.st.lock().unwrap();
+        // в игре отсчёт простоя стоит: после выхода нотч не должен сразу уезжать за край
+        if crate::game::active() { st.idle_last = Some(Instant::now()); st.idle_pt = p; }
         if secs <= 0.0 || crate::game::active() { if st.idle_hidden { st.idle_hidden = false; drop(st); ctx::emit("idle", false); } return; }
         let moved = p != st.idle_pt;
         st.idle_pt = p;
