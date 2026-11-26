@@ -437,8 +437,10 @@ function showTip(el) {
 function placeTip(el, jump) {
   if (tip.hidden) return;
   const r = el.getBoundingClientRect(), sh = shell.getBoundingClientRect();
-  const x = Math.round(r.left + r.width / 2 - tip.offsetWidth / 2);
-  const y = Math.round(sh.top - sizePx() * 0.45 - tip.offsetHeight - 6); // над самой высокой иконкой
+  // никогда не за краем экрана
+  const x = Math.max(6, Math.min(window.innerWidth - tip.offsetWidth - 6, Math.round(r.left + r.width / 2 - tip.offsetWidth / 2)));
+  // значок трея — подсказка над панелью трея (а не поверх её значков); значок дока — над самой высокой иконкой
+  const y = el.classList.contains('tt-i') ? Math.round(trayPop.getBoundingClientRect().top - tip.offsetHeight - 8) : Math.round(sh.top - sizePx() * 0.45 - tip.offsetHeight - 6);
   if (jump) { tip.style.transition = 'none'; tip.style.translate = `${x}px ${y}px`; void tip.offsetWidth; tip.style.transition = ''; }
   else tip.style.translate = `${x}px ${y}px`;
 }
