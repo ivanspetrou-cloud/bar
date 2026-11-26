@@ -192,7 +192,7 @@ function expand(opts = {}) {
   clearTimeout(leaveT); clearTimeout(enterT); clearTimeout(autoT);
   if (opts.auto) {
     // открыт программно (результат OCR и т.п.) — если мышь так и не пришла, свернуться
-    autoT = setTimeout(() => { if (!island.matches(':hover') && !pinned && !srchTyping()) collapse(); }, 9000);
+    autoT = setTimeout(() => { if (!island.matches(':hover') && !pinned && !srchTyping()) collapse(); }, fromGame ? (Game.panelClose || 5000) : 9000); // из игры — по настройке (Настройки → Игры)
   }
   if (state === 'open') return;
   state = 'open';
@@ -326,7 +326,7 @@ document.addEventListener('keydown', (e) => {
 bar.onToggle(() => {
   if (state === 'open') return collapse(true);
   expand({ auto: true });
-  bar.focus();
+  if (!fromGame) bar.focus(); // после игры фокус не отнимаем — см. game.rs open_after
 });
 bar.onCollapse(() => collapse(true));
 // нет движения мыши на мониторе с нотчем — нотч уезжает за край экрана
@@ -1674,6 +1674,8 @@ tool({
             h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips,
               h('div', { class: 'g-hold' }, h('span', { class: 'small' }, 'Открыть панель, держа курсор на плашке'),
                 segOf([[0, 'Выкл'], [500, '0,5 с'], [1000, '1 с'], [2000, '2 с']], g.hold ?? 1000, async (v) => { await bar.gameSet({ hold: v }); show('game'); })),
+              h('div', { class: 'g-hold' }, h('span', { class: 'small' }, 'Панель из игры закрывается, если курсор не пришёл, через'),
+                segOf([[3000, '3 с'], [5000, '5 с'], [10000, '10 с']], g.panelClose ?? 5000, async (v) => { await bar.gameSet({ panelClose: v }); show('game'); })),
               hk('game') && h('span', { class: 'muted small' }, `${hk('game')} — включить или выйти вручную`))),
           h('div', { class: 'col' },
             h('div', { class: 'card col g-card' }, h('h4', {}, 'FPS'), h('div', { class: 'small ' + PERM[0] }, PERM[1]), permBtn,
@@ -3074,6 +3076,7 @@ async function gameExit(m) {
   bar.animBoost(false);
   winFull = !!m.open; // сразу откроется панель — окно не ужимаем до полоски
   fromGame = !!m.open;
+  Game.panelClose = m.panelClose || 5000;
   // посадка: игровые стили снимаются в тот же кадр и без CSS-переходов — нотч уже стоит ровно на своём месте
   await settleNoTransition(() => {
     Game.on = false; Game.rect = null;

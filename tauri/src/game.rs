@@ -24,7 +24,7 @@ pub fn active_mon() -> Option<(i32, i32)> { S.lock().unwrap().as_ref().and_then(
 
 fn g() -> Value {
     let cur = ctx::sh().settings.get("game");
-    let mut g = json!({ "auto": true, "corner": "tr", "fade": 0, "hold": 1000, "show": { "fps": true, "cpu": true, "gpu": true, "ram": true, "ping": true, "clock": true }, "ignore": [], "seen": [] });
+    let mut g = json!({ "auto": true, "corner": "tr", "fade": 0, "hold": 1000, "panelClose": 5000, "show": { "fps": true, "cpu": true, "gpu": true, "ram": true, "ping": true, "clock": true }, "ignore": [], "seen": [] });
     if let Some(o) = cur.as_object() { for (k, v) in o { if k == "show" { if let Some(so) = v.as_object() { for (a, b) in so { g["show"][a] = b.clone(); } } } else { g[k] = v.clone(); } } }
     g
 }
@@ -86,9 +86,11 @@ fn exit(after_open: bool) {
     stop_stats();
     with(|s| { s.last_mon = Some((gm.mon.0, gm.mon.1, gm.mon.2, gm.mon.3, gm.k)); s.exit_done = after_open; });
     let gv = g();
-    ctx::emit("game", json!({ "phase": "exit", "open": after_open, "corner": gv["corner"], "w": gm.mon.2 as f64 / gm.k, "h": gm.mon.3 as f64 / gm.k }));
+    ctx::emit("game", json!({ "phase": "exit", "open": after_open, "panelClose": gv["panelClose"], "corner": gv["corner"], "w": gm.mon.2 as f64 / gm.k, "h": gm.mon.3 as f64 / gm.k }));
 }
-fn open_after() { ctx::emit("toggle", Value::Null); ctx::sh().notch.focus(); }
+// панель после игры: без захвата фокуса — игра держит его, а попытки отнять видны (рывок окна) и шлют игре Alt;
+// панель работает мышью, клик по ней сам даёт фокус
+fn open_after() { ctx::emit("toggle", Value::Null); }
 
 // ---------- показатели ----------
 fn presentmon() -> Option<std::path::PathBuf> {
@@ -218,8 +220,9 @@ pub fn handle(ch: &str, a: &[Value]) -> Value {
         "game-set" => {
             let p = arg(0);
             let mut gv = g();
-            for k in ["auto", "corner", "fade", "hold"] { if !p[k].is_null() { gv[k] = p[k].clone(); } }
+            for k in ["auto", "corner", "fade", "hold", "panelClose"] { if !p[k].is_null() { gv[k] = p[k].clone(); } }
             let hold = gv["hold"].as_i64().unwrap_or(1000); gv["hold"] = json!(if [0, 500, 1000, 2000].contains(&hold) { hold } else { 1000 });
+            let pc = gv["panelClose"].as_i64().unwrap_or(5000); gv["panelClose"] = json!(if [3000, 5000, 10000].contains(&pc) { pc } else { 5000 });
             if !["tl", "tr", "bl", "br", "tc"].contains(&gv["corner"].as_str().unwrap_or("")) { gv["corner"] = json!("tr"); }
             let fade = gv["fade"].as_i64().unwrap_or(0); gv["fade"] = json!(if [0, 40, 60].contains(&fade) { fade } else { 0 });
             if let Some(o) = p["show"].as_object() { for (k, v) in o { gv["show"][k] = v.clone(); } }

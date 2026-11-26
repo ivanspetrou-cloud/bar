@@ -126,7 +126,7 @@ impl Notch {
         let v: Vec<i32> = z.split(',').map(|x| x.trim().parse().unwrap_or(0)).collect();
         if v.len() == 4 { self.st.lock().unwrap().zone = (v[0], v[1], v[2], v[3]); }
     }
-    pub fn focus(&self) { if let Ok(h) = self.win.hwnd() { bar_agent::win::focus(h.0 as isize as i64); } let _ = self.win.set_focus(); }
+    pub fn focus(&self) { if let Ok(h) = self.win.hwnd() { bar_agent::win::focus_opts(h.0 as isize as i64, false); } let _ = self.win.set_focus(); }
     pub fn bounds(&self) -> (i32, i32, i32, i32) { let st = self.st.lock().unwrap(); (st.pos.0, st.pos.1, st.size.0, st.size.1) }
 
     fn track(&self) {
