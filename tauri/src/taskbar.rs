@@ -135,7 +135,7 @@ fn create(m: &Monitor, all: &[Monitor], n: usize) -> Option<Dock> {
     let (tx, rx) = std::sync::mpsc::channel();
     let l2 = label.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        let w = WebviewWindowBuilder::new(&app, &l2, WebviewUrl::App("taskbar.html".into()))
+        let w = WebviewWindowBuilder::new(&app, &l2, WebviewUrl::App("taskbar.html".into())).additional_browser_args(crate::webview::ARGS)
             .title("Bar — таскбар").decorations(false).transparent(true).always_on_top(true).skip_taskbar(true).resizable(false)
             .shadow(false).focused(false).visible(false).disable_drag_drop_handler().build();
         if let Ok(w) = &w {

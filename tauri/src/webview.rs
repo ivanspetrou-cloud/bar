@@ -6,6 +6,12 @@ use tauri::WebviewWindow;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use windows::core::{Interface, PWSTR};
 
+/// Параметры движка для всех окон Bar (должны совпадать у всех окон — иначе WebView2 не создаст окно).
+/// Chromium сам решает, что окно «закрыто» другими окнами (например, игрой на весь экран на единственном мониторе),
+/// и перестаёт его рисовать — анимации входа в игровой режим не отрисовывались, был виден только конец.
+/// Отключаем эту слежку и «фоновую» экономию. Первые три — значения Tauri по умолчанию (один --disable-features).
+pub const ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows --disable-renderer-backgrounding";
+
 pub fn attach(w: &WebviewWindow) {
     let label = w.label().to_string();
     let _ = w.with_webview(move |pw| unsafe {

@@ -37,7 +37,7 @@ pub fn mon_id(m: &Monitor) -> String { format!("{},{}", m.position().x, m.positi
 
 impl Notch {
     pub fn create(app: &AppHandle, init: &str) -> tauri::Result<Notch> {
-        let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into())).additional_browser_args(crate::webview::ARGS)
             .title("Bar").inner_size(WIN_W, PILL_H).decorations(false).transparent(true).always_on_top(true)
             .skip_taskbar(true).resizable(false).shadow(false).focused(false).visible(false)
             .disable_drag_drop_handler().initialization_script(init).build()?;
