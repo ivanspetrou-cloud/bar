@@ -100,7 +100,8 @@ button:focus, button:focus-visible, .tbi:focus, .tbi:focus-visible { outline: no
 /* значки трея над кнопкой-стрелкой */
 .tb-tray { display: grid; grid-template-columns: repeat(var(--tt-cols, 4), 36px); gap: 4px; padding: 8px; }
 .tt-i { width: 36px; height: 36px; border: 0; border-radius: var(--r-sm); background: transparent; display: grid; place-items: center; cursor: pointer; transition: background .15s, transform .2s var(--spring); }
-.tt-i:hover { background: var(--ctl); }
+.tt-i:hover { background: var(--ctl-hi); transform: scale(1.08); }
+.tt-i:active { transform: scale(.92); }
 .tt-i img { width: 20px; height: 20px; image-rendering: auto; pointer-events: none; }
 .tt-empty { color: var(--mut); font-size: var(--fs-cap); padding: 4px 8px; white-space: nowrap; }
 .tbi.sys.on .tb-ic { color: var(--hi-text); }

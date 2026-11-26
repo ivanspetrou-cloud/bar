@@ -494,7 +494,7 @@ function trayDraw() {
     b.addEventListener('mouseleave', hideTip);
     b.addEventListener('click', () => { bar.tbTrayClick(it.key, 'left'); b.animate([{ transform: 'none' }, { transform: 'scale(.86)' }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.32,.5,1)' }); });
     b.addEventListener('dblclick', () => bar.tbTrayClick(it.key, 'double'));
-    b.addEventListener('contextmenu', (e) => { e.preventDefault(); hideTip(); bar.tbTrayClick(it.key, 'right'); });
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); hideTip(); trayMenuAt = Date.now(); clearTimeout(trayHideT); bar.tbTrayClick(it.key, 'right'); });
     return b;
   }) : [h('div', { class: 'tt-empty' }, 'Значков нет')]));
   trayPop.style.setProperty('--tt-cols', Math.max(1, Math.min(6, trayList.length || 1)));
@@ -526,7 +526,10 @@ function trayClose() {
   setTimeout(() => { if (!trayPop.classList.contains('on')) trayPop.hidden = true; }, 220);
   if (!over) hideSoon();
 }
-const trayLeave = () => { clearTimeout(trayHideT); if (trayOpen()) trayHideT = setTimeout(trayClose, 500); };
+// закрывается не сразу: можно спокойно перевести мышь между доком и панелью; после правого клика (меню программы)
+// панель ждёт дольше — меню уводит мышь в сторону
+let trayMenuAt = 0;
+const trayLeave = () => { clearTimeout(trayHideT); if (trayOpen()) trayHideT = setTimeout(trayClose, Date.now() - trayMenuAt < 8000 ? 6000 : 1200); };
 trayPop.addEventListener('mouseenter', () => { clearTimeout(trayHideT); show(); });
 trayPop.addEventListener('mouseleave', trayLeave);
 bar.tbTray().then((l) => { trayList = l || []; render(); }).catch(() => {});
@@ -607,13 +610,14 @@ bar.onTbCfg(applyCfg);
 if (bar.onTbAway) bar.onTbAway((on) => requestAnimationFrame(() => document.body.classList.toggle('away', !!on)));
 bar.onTbPeek(() => { show(); hideSoon(2500); sendZone(); });
 // прямоугольник дока (и превью, если открыто) — главному процессу, чтобы в играх он сам делал док кликабельным
+// тот же набор, что и в ежекадровой проверке (tauri/make-ui.js): док, значки, превью, панель трея, подсказка —
+// иначе два источника затирали друг друга и часть панели трея пропускала мышь насквозь
 function sendZone() {
   const r = shell.getBoundingClientRect();
   const z = { l: r.left, t: r.top, r: r.right, b: r.bottom };
-  const add = (q) => { if (!q.width) return; z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); };
-  if (!prev.hidden) add(prev.getBoundingClientRect());
-  for (const el of shell.querySelectorAll('.tbi')) add(el.getBoundingClientRect()); // увеличенные значки выходят за подложку
-  add(bgEl.getBoundingClientRect());
+  for (const p of document.querySelectorAll('.tb-prev:not([hidden]), .tb-tip:not([hidden]), #tb-shell .tbi, #tb-bg')) {
+    const q = p.getBoundingClientRect(); if (q.width) { z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); }
+  }
   bar.tbZone(z);
 }
 setInterval(() => { if (shown) sendZone(); }, 250);
