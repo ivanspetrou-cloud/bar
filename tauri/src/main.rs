@@ -10,6 +10,7 @@ mod capture;
 mod clip;
 mod crypto;
 mod ctx;
+mod dwmthumb;
 mod game;
 mod migrate;
 mod music;
@@ -58,6 +59,14 @@ fn handle(app: &AppHandle, label: &str, ch: &str, a: &[Value]) -> Value {
     if ch.starts_with("update-") { return updater::handle(ch); }
     if ch.starts_with("hotkeys-") { return tray::handle(app, ch, a); }
     if ch.starts_with("at-") { return alttab::handle(ch, a); }
+    // живые миниатюры окон (переключатель Alt+Tab, превью дока)
+    if ch == "thumbs-show" || ch == "thumbs-clear" {
+        let Some(w) = app.get_webview_window(label) else { return Value::Null };
+        let Ok(h) = w.hwnd() else { return Value::Null };
+        if ch == "thumbs-show" { dwmthumb::show(label, windows::Win32::Foundation::HWND(h.0 as *mut _), &arg(a, 0), arg(a, 1).as_bool().unwrap_or(true)); }
+        else { dwmthumb::clear(label, arg(a, 0).as_bool().unwrap_or(true)); }
+        return Value::Null;
+    }
     if ch.starts_with("tb-") || ch.starts_with("taskbar-") || ch == "pick-exe" || ch == "pick-folder" { return taskbar::handle(label, ch, a); }
     match ch {
         // ---------- окно нотча ----------

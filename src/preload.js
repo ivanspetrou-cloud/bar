@@ -103,6 +103,8 @@ contextBridge.exposeInMainWorld('bar', {
   onOpenTool: on('open-tool'),
   tbDesktop: () => ipcRenderer.send('tb-desktop'),
   tbSearch: () => ipcRenderer.send('tb-search'),
+  thumbsShow: (items, fade) => ipcRenderer.invoke('thumbs-show', items, fade),
+  thumbsClear: (fade) => ipcRenderer.invoke('thumbs-clear', fade),
   atGet: () => ipcRenderer.invoke('at-get'),
   atReady: () => ipcRenderer.invoke('at-ready'),
   atSet: (c) => ipcRenderer.invoke('at-set', c),

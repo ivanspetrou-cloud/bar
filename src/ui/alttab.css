@@ -17,7 +17,7 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 .at-body.shown .at-panel { opacity: 1; transform: none; pointer-events: auto; }
 .at-body.leave .at-panel { transition: opacity .12s ease, transform .16s ease-in; transform: scale(.98); }
 
-.at-grid { display: grid; gap: 6px; position: relative; z-index: 1; }
+.at-grid { display: grid; gap: 4px; position: relative; z-index: 1; }
 
 /* выделение — отдельный слой, который плавно переезжает к выбранной карточке */
 .at-sel {
@@ -32,8 +32,8 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
   position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: var(--r);
   cursor: pointer; color: var(--fg); transition: transform .2s var(--spring);
 }
-.at-card:active { transform: scale(.97); }
-.at-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 2px; }
+/* без сжатия при нажатии: живая миниатюра Windows не сжимается вместе с карточкой */
+.at-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 0 0 2px; height: 20px; }
 .at-ic { width: 18px; height: 18px; flex: none; display: grid; place-items: center; }
 .at-ic img { width: 100%; height: 100%; object-fit: contain; }
 .at-letter { width: 100%; height: 100%; border-radius: 5px; background: var(--ctl); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
@@ -42,7 +42,7 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 
 /* миниатюры */
 .at-shot {
-  width: var(--at-w); height: calc(var(--at-w) * .6); border-radius: calc(var(--r) - 6px); background: var(--card);
+  width: var(--at-w); height: calc(var(--at-w) * .6); border-radius: max(2px, calc(var(--r) - 6px)); background: var(--card);
   overflow: hidden; display: grid; place-items: center; position: relative;
 }
 .at-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .2s; }
@@ -50,7 +50,6 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 .at-shot-ic { width: 40%; height: 40%; display: grid; place-items: center; opacity: .55; }
 .at-shot-ic .at-ic { width: 44px; height: 44px; }
 .at-shot:has(img.ok) .at-shot-ic { opacity: 0; }
-.at-shot.min::after { content: "Свёрнуто"; position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: max(3px, calc(var(--r) - 12px)); background: var(--bg); color: var(--fg-2); font-size: 11px; }
 .at-head { width: var(--at-w); }
 
 /* размеры */
@@ -69,15 +68,17 @@ html, body.at-body { background: transparent; overflow: hidden; width: 100%; hei
 [data-view="list"] .at-ic { width: 20px; height: 20px; }
 [data-view="list"] .at-t { font-size: var(--fs-body, 13px); }
 
-/* закрыть окно — кружок в углу при наведении */
+/* закрыть окно — в строке названия, у правого края карточки (отступ 6px, как у миниатюры):
+   скругление концентрично с углом карточки — --r − 6px, тот же радиус, что у миниатюры */
 .at-x {
-  position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; border-radius: 50%; display: grid; place-items: center;
-  background: var(--ctl); color: var(--fg-2); cursor: pointer; opacity: 0; transform: scale(.8);
-  transition: opacity .15s, transform .2s var(--spring), background .15s, color .15s; z-index: 2;
+  flex: none; width: 20px; height: 20px; margin-left: auto; border: 0; border-radius: max(4px, calc(var(--r) - 6px)); display: grid; place-items: center;
+  background: transparent; color: var(--mut); cursor: pointer; opacity: 0; transform: scale(.85);
+  transition: opacity .15s, transform .2s var(--spring), background .15s, color .15s;
 }
 .at-x svg.i { width: 13px; height: 13px; }
-.at-card:hover .at-x { opacity: 1; transform: none; }
+.at-card:hover .at-x, .at-card.on .at-x { opacity: 1; transform: none; }
 .at-x:hover { background: var(--red); color: var(--on-red); }
-[data-view="list"] .at-x { top: 50%; margin-top: -11px; right: 8px; }
+.at-x:active { transform: scale(.9); }
 
 .at-empty { color: var(--mut); padding: 18px 26px; }
+[data-view="icons"] .at-x { position: absolute; top: 6px; right: 6px; }

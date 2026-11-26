@@ -28,12 +28,13 @@ function cardOf(w, i) {
   const put = (u) => { for (const x of [ic, big]) x.replaceChildren(u ? h('img', { src: u, alt: '' }) : h('span', { class: 'at-letter' }, (w.title || '?').charAt(0).toUpperCase())); };
   if (icons.has(key)) put(icons.get(key)); else bar.appIcon({ id: key, exe: w.exe, name: w.title }).then((u) => { icons.set(key, u || null); put(u); }).catch(() => put(null));
   const close = h('button', { class: 'at-x', title: 'Закрыть окно', 'aria-label': 'Закрыть окно', html: icon('X') });
-  close.addEventListener('click', (e) => { e.stopPropagation(); closeWin(i); });
-  const shot = cfg.view === 'thumbs' ? h('span', { class: 'at-shot' + (w.min ? ' min' : '') }, h('span', { class: 'at-shot-ic' }, big)) : null;
+  close.addEventListener('click', (e) => { e.stopPropagation(); closeWin(list.indexOf(w)); });
+  // место под живую миниатюру (её рисует Windows поверх страницы); значок — пока миниатюра не появилась
+  const shot = cfg.view === 'thumbs' ? h('span', { class: 'at-shot' }, h('span', { class: 'at-shot-ic' }, big)) : null;
+  // как у Windows: сверху значок, название и крестик в одну строку, под ними — окно
   const card = h('div', { class: 'at-card', role: 'option', title: w.title },
-    shot,
-    h('span', { class: 'at-head' }, ic, cfg.titles !== false && h('span', { class: 'at-t' }, w.title || w.exe)),
-    close);
+    h('span', { class: 'at-head' }, ic, cfg.titles !== false ? h('span', { class: 'at-t' }, w.title || w.exe) : h('span', { class: 'grow' }), close),
+    shot);
   card.addEventListener('mouseenter', () => setSel(list.indexOf(w), true));
   card.addEventListener('click', () => { setSel(list.indexOf(w)); pick(); });
   card.addEventListener('auxclick', (e) => { if (e.button === 1) closeWin(list.indexOf(w)); });
@@ -78,21 +79,23 @@ function setSel(i, hover) {
   if (!hover) { const c = grid.children[sel]; if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); }
 }
 
-function loadThumbs() {
-  if (cfg.view !== 'thumbs') return;
-  const ids = list.filter((w) => !w.min).map((w) => w.hwnd);
-  if (!ids.length) return;
-  const at = list;
-  bar.atThumbs(ids).then((m) => {
-    if (at !== list || !m) return;
+// живые миниатюры окон (как у Windows — есть всегда, и у свёрнутых): места под них — в пикселях окна
+let thumbT = 0;
+function sendThumbs(delay = 0, fade = true) {
+  clearTimeout(thumbT);
+  if (cfg.view !== 'thumbs' || !open) return;
+  thumbT = setTimeout(() => {
+    if (!open) return;
+    const k = window.devicePixelRatio || 1, pr = panel.getBoundingClientRect();
+    const items = [];
     for (const c of grid.children) {
-      const u = c._w && m[c._w.hwnd];
-      if (!u || !c._shot) continue;
-      const img = h('img', { src: u, alt: '' });
-      img.addEventListener('load', () => img.classList.add('ok'));
-      c._shot.append(img);
+      if (!c._shot) continue;
+      const r = c._shot.getBoundingClientRect();
+      if (r.top < pr.top - 1 || r.bottom > pr.bottom + 1) continue; // прокручено за край панели
+      items.push({ hwnd: c._w.hwnd, l: (r.left + 4) * k, t: (r.top + 4) * k, r: (r.right - 4) * k, b: (r.bottom - 4) * k });
     }
-  }).catch(() => {});
+    bar.thumbsShow(items, fade);
+  }, delay);
 }
 
 function reveal() {
@@ -102,7 +105,7 @@ function reveal() {
   placeSel(true);
   // карточки появляются лёгкой волной
   [...grid.children].forEach((c, i) => c.animate([{ opacity: 0, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: Math.min(i, 12) * 14, easing: 'cubic-bezier(.3,1.2,.5,1)', fill: 'backwards' }));
-  loadThumbs();
+  sendThumbs(330); // когда панель встала на место (её появление — 0,3 с)
 }
 
 const onOpen = (m) => {
@@ -130,7 +133,8 @@ window.__at = { open: onOpen, move: onMove, state: () => ({ open, shown, sel, co
 bar.onAtCommit((ok) => { if (ok) pick(); else cancel(); });
 
 function finish(hwnd) {
-  open = false; clearTimeout(showT);
+  open = false; clearTimeout(showT); clearTimeout(thumbT);
+  bar.thumbsClear(true);
   document.body.classList.add('leave');
   document.body.classList.remove('shown');
   bar.atPick(hwnd || 0);
@@ -141,13 +145,14 @@ function closeWin(i) {
   const w = list[i]; if (!w) return;
   bar.atClose(w.hwnd);
   const c = grid.children[i];
-  const done = () => { list.splice(list.indexOf(w), 1); if (sel >= list.length) sel = Math.max(0, list.length - 1); render(); placeSel(true); if (!list.length) cancel(); };
+  const done = () => { list.splice(list.indexOf(w), 1); if (sel >= list.length) sel = Math.max(0, list.length - 1); render(); placeSel(true); if (!list.length) cancel(); else sendThumbs(30, false); };
   if (c) c.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.85)' }], { duration: 180, easing: 'ease-in' }).onfinish = done; else done();
 }
 // клик мимо панели — отмена
 dim.addEventListener('click', cancel);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
-window.addEventListener('resize', () => { if (open) { layout(); placeSel(true); } });
+window.addEventListener('resize', () => { if (open) { layout(); placeSel(true); sendThumbs(60, false); } });
+panel.addEventListener('scroll', () => { if (open && shown) sendThumbs(40, false); });
 
 // страница готова — только теперь Bar начинает перехватывать Alt+Tab
 bar.atReady();

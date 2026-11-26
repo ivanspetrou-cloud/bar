@@ -356,9 +356,10 @@ function prevOpen(el) {
     x.addEventListener('click', (e) => {
       e.stopPropagation();
       bar.tbCloseWin(w.hwnd);
+      card._closing = true; prevLive(0, false); // миниатюру закрываемого окна — сразу убрать
       card.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.85) translateY(8px)' }], { duration: 220, easing: 'ease-in' }).onfinish = () => {
         card.remove();
-        if (!prev.querySelector('.tp-card')) prevClose(); else prevPlace();
+        if (!prev.querySelector('.tp-card')) prevClose(); else { prevPlace(); prevLive(260, false); }
       };
     });
     card._w = w; card._shot = shot;
@@ -374,8 +375,23 @@ function prevOpen(el) {
   prevPlace(first);
   if (first) { void prev.offsetWidth; prev.style.transition = ''; }
   prev.classList.add('on');
-  prevThumbs();
-  clearInterval(prevThumbT); prevThumbT = setInterval(prevThumbs, 1500); // пока открыто — живые
+  // живые миниатюры окон (как превью панели задач Windows — есть всегда, и у свёрнутых и «видеокартных» программ):
+  // Windows рисует их на место снимков, когда превью встало на место
+  if (switching) bar.thumbsClear(false);
+  prevLive(switching ? 260 : 380);
+}
+let prevLiveT = 0;
+function prevLive(delay = 0, fade = true) {
+  clearTimeout(prevLiveT);
+  prevLiveT = setTimeout(() => {
+    if (!prevFor || prev.hidden) return;
+    const k = window.devicePixelRatio || 1;
+    const items = [...prev.querySelectorAll('.tp-card')].filter((c) => c._shot && !c._closing).map((c) => {
+      const r = c._shot.getBoundingClientRect();
+      return { hwnd: c._w.hwnd, l: (r.left + 4) * k, t: (r.top + 4) * k, r: (r.right - 4) * k, b: (r.bottom - 4) * k };
+    });
+    bar.thumbsShow(items, fade);
+  }, delay);
 }
 function prevPlace(jump) {
   if (!prevFor || prev.hidden) return;
@@ -402,8 +418,9 @@ async function prevThumbs() {
   }
 }
 function prevClose() {
-  clearTimeout(prevT); clearTimeout(prevHideT); clearInterval(prevThumbT);
+  clearTimeout(prevT); clearTimeout(prevHideT); clearInterval(prevThumbT); clearTimeout(prevLiveT);
   if (!prevFor) return;
+  bar.thumbsClear(true);
   prevFor = null;
   prev.classList.remove('on');
   setTimeout(() => { if (!prevFor) { prev.hidden = true; prev.replaceChildren(); } }, 200);

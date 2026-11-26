@@ -30,16 +30,34 @@ enum Ev { Open(i32), Move(i32), Up, Down, Commit, Cancel }
 pub fn cfg() -> Value {
     let t = ctx::sh().settings.get("alttab");
     // view: thumbs | icons | list; size: s | m | l; monitor: all | here; game: перехватывать ли в игре
-    let mut c = json!({ "on": true, "view": "thumbs", "size": "m", "monitor": "all", "minimized": true, "game": false, "dim": true, "titles": true });
+    let mut c = json!({ "on": true, "view": "thumbs", "size": "m", "monitor": "all", "minimized": true, "game": false, "dim": true, "titles": true, "screen": "primary" });
     if let Some(o) = t.as_object() { for (k, v) in o { c[k] = v.clone(); } }
     c
 }
-fn enabled() -> bool {
+/// перехватывать ли сейчас — считается в фоне 5 раз в секунду; сам перехватчик только читает этот флаг
+/// (если перехватчик клавиш медлит, Windows молча его отключает — и открывался Alt+Tab Windows)
+static ALLOW: AtomicBool = AtomicBool::new(false);
+fn compute_allow() -> bool {
     let c = cfg();
-    if c["on"] != true || !READY.load(Ordering::Relaxed) { return false; }
-    if crate::game::active() && c["game"] != true { return false; }
+    if c["on"] == false || !READY.load(Ordering::Relaxed) { return false; }
+    // в игре — Alt+Tab Windows, но только если впереди сама игра на весь экран (из игры уже вышли — переключатель Bar)
+    if c["game"] != true && crate::game::active() && fg_fullscreen() { return false; }
     true
 }
+fn fg_fullscreen() -> bool {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.is_invalid() { return false; }
+        let mut r = windows::Win32::Foundation::RECT::default();
+        if GetWindowRect(fg, &mut r).is_err() { return false; }
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool() { return false; }
+        let m = mi.rcMonitor;
+        r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
+    }
+}
+fn enabled() -> bool { ALLOW.load(Ordering::Relaxed) }
 
 fn send(e: Ev) { if let Some(t) = TX.get() { let _ = t.lock().unwrap().send(e); } }
 fn key_down(vk: VIRTUAL_KEY) -> bool { unsafe { GetAsyncKeyState(vk.0 as i32) as u16 & 0x8000 != 0 } }
@@ -129,8 +147,10 @@ fn worker(rx: std::sync::mpsc::Receiver<Ev>) {
         match e {
             Ev::Open(dir) => {
                 let Some(w) = ctx::app().get_webview_window(LABEL) else { continue };
-                let m = work_monitor();
-                let here = if cfg()["monitor"] == "here" { m.as_ref().map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32)) } else { None };
+                let work = work_monitor();
+                // как у Windows — на основном мониторе (или там, где активное окно — по настройке)
+                let m = if cfg()["screen"] == "active" { work.clone() } else { w.primary_monitor().ok().flatten().or_else(|| work.clone()) };
+                let here = if cfg()["monitor"] == "here" { work.as_ref().map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32)) } else { None };
                 if let Some(m) = &m {
                     if let Ok(hw) = w.hwnd() { unsafe { let _ = SetWindowPos(HWND(hw.0 as *mut _), Some(HWND_TOPMOST), m.position().x, m.position().y, m.size().width as i32, m.size().height as i32, SWP_NOACTIVATE); } }
                 }
@@ -167,11 +187,23 @@ pub fn start(app: &tauri::AppHandle) {
     let (tx, rx) = channel();
     let _ = TX.set(Mutex::new(tx));
     std::thread::spawn(move || worker(rx));
+    std::thread::spawn(|| loop { ALLOW.store(compute_allow(), Ordering::Relaxed); std::thread::sleep(Duration::from_millis(200)); });
     std::thread::spawn(|| unsafe {
         let inst = GetModuleHandleW(None).unwrap_or_default();
-        let _hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(kb), Some(inst.into()), 0);
+        let mut hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(kb), Some(inst.into()), 0).ok();
+        // раз в 30 с — заново: если Windows сняла перехватчик (например, ПК подвис), он вернётся сам
+        let _ = SetTimer(None, 0, 30_000, None);
         let mut msg = MSG::default();
-        while GetMessageW(&mut msg, None, 0, 0).as_bool() { let _ = TranslateMessage(&msg); DispatchMessageW(&msg); }
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            if msg.message == WM_TIMER && msg.hwnd.is_invalid() {
+                if !OPEN.load(Ordering::Relaxed) {
+                    if let Some(h) = hook.take() { let _ = UnhookWindowsHookEx(h); }
+                    hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(kb), Some(inst.into()), 0).ok();
+                }
+                continue;
+            }
+            let _ = TranslateMessage(&msg); DispatchMessageW(&msg);
+        }
     });
 }
 
