@@ -178,7 +178,7 @@ fn worker(rx: std::sync::mpsc::Receiver<Ev>) {
 
 pub fn start(app: &tauri::AppHandle) {
     // окно — заранее и скрытым: показ по Alt+Tab мгновенный
-    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("alttab.html".into())).additional_browser_args(crate::webview::ARGS)
+    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("alttab.html".into())).additional_browser_args(crate::webview::args())
         .title("Bar — окна").decorations(false).transparent(true).always_on_top(true).skip_taskbar(true).resizable(false)
         .shadow(false).focused(false).visible(false).disable_drag_drop_handler().build();
     if let Ok(w) = &w {

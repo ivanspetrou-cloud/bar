@@ -56,3 +56,12 @@ pub fn http() -> ureq::Agent {
         match native_tls::TlsConnector::new() { Ok(t) => b.tls_connector(Arc::new(t)).build(), Err(_) => b.build() }
     }).clone()
 }
+
+/// журнал запуска и сбоев: %APPDATA%\Bar\crash.log (без него Bar при сбое закрывался молча — причину не узнать)
+pub fn log(msg: &str) {
+    use std::io::Write;
+    let p = data_dir().join("crash.log");
+    if std::fs::metadata(&p).map(|m| m.len() > 200_000).unwrap_or(false) { let _ = std::fs::remove_file(&p); }
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) { let _ = writeln!(f, "[{t}] {msg}"); }
+}

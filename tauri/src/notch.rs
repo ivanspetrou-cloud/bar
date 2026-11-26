@@ -37,10 +37,20 @@ pub fn mon_id(m: &Monitor) -> String { format!("{},{}", m.position().x, m.positi
 
 impl Notch {
     pub fn create(app: &AppHandle, init: &str) -> tauri::Result<Notch> {
-        let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into())).additional_browser_args(crate::webview::ARGS)
+        let make = |args: &str| WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into())).additional_browser_args(args)
             .title("Bar").inner_size(WIN_W, PILL_H).decorations(false).transparent(true).always_on_top(true)
             .skip_taskbar(true).resizable(false).shadow(false).focused(false).visible(false)
-            .disable_drag_drop_handler().initialization_script(init).build()?;
+            .disable_drag_drop_handler().initialization_script(init).build();
+        // окно нотча — первое окно Bar: если движок не принял наши параметры, все окна — с параметрами Tauri по умолчанию
+        let win = match make(crate::webview::args()) {
+            Ok(w) => w,
+            Err(e) => {
+                crate::ctx::log(&format!("окно нотча с параметрами движка не создалось: {e} — пробую без них"));
+                crate::webview::USE_ARGS.store(false, std::sync::atomic::Ordering::Relaxed);
+                make(crate::webview::args())?
+            }
+        };
+        crate::ctx::log("окно нотча создано");
         crate::webview::attach(&win);
         let n = Notch { win, st: Arc::new(Mutex::new(St { mode: "pill".into(), ..Default::default() })) };
         crate::webview::low_memory(&n.win, true);

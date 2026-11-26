@@ -11,6 +11,11 @@ use windows::core::{Interface, PWSTR};
 /// и перестаёт его рисовать — анимации входа в игровой режим не отрисовывались, был виден только конец.
 /// Отключаем эту слежку и «фоновую» экономию. Первые три — значения Tauri по умолчанию (один --disable-features).
 pub const ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows --disable-renderer-backgrounding";
+/// значения Tauri по умолчанию — запасной вариант, если движок на этом ПК не принял ARGS (окно нотча не создалось)
+pub const DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+pub static USE_ARGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// параметры движка для нового окна (одинаковые у всех окон)
+pub fn args() -> &'static str { if USE_ARGS.load(std::sync::atomic::Ordering::Relaxed) { ARGS } else { DEFAULT_ARGS } }
 
 pub fn attach(w: &WebviewWindow) {
     let label = w.label().to_string();

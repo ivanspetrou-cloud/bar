@@ -52,7 +52,7 @@ pub fn start(mode: &str) {
     *CAP.lock().unwrap() = Some(Cap { mode: mode.into(), w, h, data });
     let app = ctx::app().clone();
     let _ = app.clone().run_on_main_thread(move || {
-        let Ok(ov) = WebviewWindowBuilder::new(&app, "overlay", WebviewUrl::App("overlay.html".into())).additional_browser_args(crate::webview::ARGS)
+        let Ok(ov) = WebviewWindowBuilder::new(&app, "overlay", WebviewUrl::App("overlay.html".into())).additional_browser_args(crate::webview::args())
             .title("Bar — захват").decorations(false).always_on_top(true).skip_taskbar(true).resizable(false).shadow(false)
             .visible(false).focused(true).disable_drag_drop_handler().build() else { return };
         crate::webview::attach(&ov);

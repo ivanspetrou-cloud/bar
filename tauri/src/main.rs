@@ -196,6 +196,9 @@ fn wait_old_webview() {
 fn main() {
     // помощник Alt+Tab с правами администратора: без окон Bar, только перехват клавиш (см. alttab.rs)
     if std::env::args().any(|a| a == "--alttab-helper") { alttab::helper_main(); return; }
+    // сбой — в журнал (иначе Bar закрывался молча)
+    std::panic::set_hook(Box::new(|i| ctx::log(&format!("СБОЙ: {i}"))));
+    ctx::log("запуск Bar");
     wait_old_webview();
     // данные Bar и окно нотча: настройки нужны раньше окна (оно спрашивает монитор)
     let settings = settings::Settings::load();
@@ -231,6 +234,7 @@ fn main() {
             music::start();
             game::start();
             taskbar::start();
+            ctx::log(&format!("Bar {} запущен", h.package_info().version));
             alttab::start(&h);
             updater::start();
             // события окон Windows: таскбар (список окон) и нотч (развёрнутое окно → полоска)
