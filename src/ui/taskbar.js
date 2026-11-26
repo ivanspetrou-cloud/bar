@@ -488,21 +488,38 @@ function trayBtn() {
   el.classList.toggle('on', trayOpen());
   return el;
 }
-function trayDraw() {
-  trayPop.replaceChildren(...(trayList.length ? trayList.map((it) => {
-    const img = h('img', { src: 'data:image/png;base64,' + it.png, alt: '' });
+// кнопки значков живут между обновлениями: программы обновляют значок трея часто (число непрочитанного, заряд…),
+// и раньше панель пересоздавалась целиком — кнопка под курсором заменялась новой, и подсветка мигала.
+// Теперь меняется только то, что правда изменилось (картинка, подсказка, порядок)
+const trayEls = new Map();
+function trayItem(it) {
+  let b = trayEls.get(it.key);
+  if (!b) {
+    const img = h('img', { alt: '' });
     // значки трея обычно 16 px (так их рисует Windows): показываем пиксель в пиксель, а не растягиваем — иначе мыло.
     // Крупные картинки (от 20 px с учётом масштаба экрана) — уменьшаются до 20.
-    img.addEventListener('load', () => { const n = img.naturalWidth / (window.devicePixelRatio || 1); img.style.width = img.style.height = (n >= 20 ? 20 : Math.max(12, n)) + 'px'; });
-    const b = h('button', { class: 'tt-i', 'aria-label': it.tip || 'Значок' }, img);
-    b._label = it.tip || '';
+    img.addEventListener('load', () => { const n = img.naturalWidth / (window.devicePixelRatio || 1); const px = (n >= 20 ? 20 : Math.max(12, n)) + 'px'; if (img.style.width !== px) img.style.width = img.style.height = px; });
+    b = h('button', { class: 'tt-i' }, img);
+    b._img = img;
     b.addEventListener('mouseenter', () => { if (b._label) showTip(b); });
     b.addEventListener('mouseleave', hideTip);
-    b.addEventListener('click', () => { bar.tbTrayClick(it.key, 'left'); b.animate([{ transform: 'none' }, { transform: 'scale(.86)' }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.32,.5,1)' }); });
-    b.addEventListener('dblclick', () => bar.tbTrayClick(it.key, 'double'));
-    b.addEventListener('contextmenu', (e) => { e.preventDefault(); hideTip(); trayMenuAt = Date.now(); clearTimeout(trayHideT); bar.tbTrayClick(it.key, 'right'); });
-    return b;
-  }) : [h('div', { class: 'tt-empty' }, 'Значков нет')]));
+    b.addEventListener('click', () => { bar.tbTrayClick(b._it.key, 'left'); b.animate([{ transform: 'none' }, { transform: 'scale(.86)' }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.32,.5,1)' }); });
+    b.addEventListener('dblclick', () => bar.tbTrayClick(b._it.key, 'double'));
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); hideTip(); trayMenuAt = Date.now(); clearTimeout(trayHideT); bar.tbTrayClick(b._it.key, 'right'); });
+    trayEls.set(it.key, b);
+  }
+  b._it = it;
+  const src = 'data:image/png;base64,' + it.png;
+  if (b._img.getAttribute('src') !== src) b._img.src = src;
+  if (b._label !== (it.tip || '')) { b._label = it.tip || ''; b.setAttribute('aria-label', b._label || 'Значок'); if (tipFor === b) tip.textContent = tipText(b); }
+  return b;
+}
+function trayDraw() {
+  const want = trayList.length ? trayList.map(trayItem) : [trayPop.querySelector('.tt-empty') || h('div', { class: 'tt-empty' }, 'Значков нет')];
+  const keep = new Set(want);
+  for (const [k, b] of trayEls) if (!trayList.some((it) => it.key === k)) { trayEls.delete(k); if (tipFor === b) hideTip(); }
+  for (const c of [...trayPop.children]) if (!keep.has(c)) c.remove();
+  want.forEach((el, i) => { if (trayPop.children[i] !== el) trayPop.insertBefore(el, trayPop.children[i] || null); });
   trayPop.style.setProperty('--tt-cols', Math.max(1, Math.min(6, trayList.length || 1)));
   trayPlace();
 }
@@ -547,7 +564,7 @@ bar.onTbTray((list) => {
   const w0 = trayPop.offsetWidth, h0 = trayPop.offsetHeight;
   trayDraw();
   // новый значок — появляется, панель плавно меняет размер
-  trayList.forEach((it, i) => { if (!had.has(it.key)) { const x = trayPop.children[i]; if (x) x.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.3,1.32,.5,1)' }); } });
+  trayList.forEach((it) => { if (!had.has(it.key)) { const x = trayEls.get(it.key); if (x) x.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.3,1.32,.5,1)' }); } });
   const w1 = trayPop.offsetWidth, h1 = trayPop.offsetHeight;
   if (w0 !== w1 || h0 !== h1) trayPop.animate([{ width: w0 + 'px', height: h0 + 'px' }, { width: w1 + 'px', height: h1 + 'px' }], { duration: 300, easing: 'cubic-bezier(.3,1.2,.5,1)' });
 });
