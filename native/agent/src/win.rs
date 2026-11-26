@@ -184,7 +184,9 @@ pub fn win_icon(exe: &str) -> Value {
 
 // Вывести окно вперёд. Windows не даёт фоновой программе забрать фокус, пока пользователь последним кликал
 // в другом окне (например, на другом мониторе), — поэтому несколько способов по очереди, с проверкой результата.
-pub fn focus(h: i64) -> bool {
+pub fn focus(h: i64) -> bool { focus_opts(h, true) }
+/// minimize: разрешить последний способ — свернуть и развернуть окно (виден как анимация Windows; для нотча — нельзя)
+pub fn focus_opts(h: i64, minimize: bool) -> bool {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     let h = hwnd(h);
     unsafe {
@@ -208,7 +210,7 @@ pub fn focus(h: i64) -> bool {
         // 3) так переключает Alt+Tab
         SwitchToThisWindow(h, true);
         std::thread::sleep(std::time::Duration::from_millis(60));
-        if done() { return true; }
+        if done() || !minimize { return done(); }
         // 4) свернуть и развернуть: развёрнутое окно Windows активирует всегда
         let _ = ShowWindow(h, SW_MINIMIZE);
         let _ = ShowWindow(h, SW_RESTORE);

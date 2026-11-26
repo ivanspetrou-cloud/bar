@@ -1060,3 +1060,10 @@ svg.pp { transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 
 .tb-line .seg button { white-space: nowrap; }
 .tb-line .tb-lbl { flex: none; }
+
+/* «Играть», пока вкладка YouTube Music просыпается: кнопка мягко дышит, от неё расходится волна */
+.ib.big.waking { position: relative; animation: pp-wake 1.2s ease-in-out infinite; }
+.ib.big.waking::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 2px var(--fg); animation: pp-ping 1.2s ease-out infinite; pointer-events: none; }
+@keyframes pp-wake { 50% { opacity: .7; transform: scale(.95); } }
+@keyframes pp-ping { from { opacity: .6; transform: scale(1); } to { opacity: 0; transform: scale(1.35); } }
+@media (prefers-reduced-motion: reduce) { .ib.big.waking, .ib.big.waking::after { animation-duration: 3s; } }

@@ -164,6 +164,7 @@ const island = $('#island');
 const hot = $('#hot');
 let state = 'collapsed';
 let pinned = false;
+let fromGame = false; // панель открыта удержанием на игровой плашке (см. обработчик blur)
 let interactive = false;
 let enterT = 0, leaveT = 0, autoT = 0;
 let current = null, cleanup = null;
@@ -191,7 +192,7 @@ function expand(opts = {}) {
   clearTimeout(leaveT); clearTimeout(enterT); clearTimeout(autoT);
   if (opts.auto) {
     // открыт программно (результат OCR и т.п.) — если мышь так и не пришла, свернуться
-    autoT = setTimeout(() => { if (!island.matches(':hover') && !pinned && !srchTyping()) collapse(); }, 9000);
+    autoT = setTimeout(() => { if (!island.matches(':hover') && !pinned && !srchTyping()) collapse(); }, fromGame ? (Game.panelClose || 5000) : 9000); // из игры — по настройке (Настройки → Игры)
   }
   if (state === 'open') return;
   state = 'open';
@@ -209,6 +210,7 @@ function expand(opts = {}) {
 function collapse(force) {
   if (state !== 'open') return;
   if (pinned && !force) return;
+  fromGame = false;
   state = 'collapsed';
   swapBar();
   island.classList.remove('open', 'peek');
@@ -313,7 +315,10 @@ hot.addEventListener('mouseenter', hoverIn);
 hot.addEventListener('mouseleave', hoverOut);
 island.addEventListener('mouseenter', hoverIn);
 island.addEventListener('mouseleave', hoverOut);
-window.addEventListener('blur', () => { if (state === 'open' && !pinned) collapse(); });
+// панель, открытую удержанием на игровой плашке, игра сразу забирает фокусом обратно — это не повод сворачиваться:
+// закроется кликом мимо (после того как мышь побывала на панели) или сама, если мышь так и не пришла (9 с)
+island.addEventListener('mouseenter', () => { fromGame = false; });
+window.addEventListener('blur', () => { if (state === 'open' && !pinned && !fromGame) collapse(); });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (Srch.q) srchClear(); else if (current) goHome(); else collapse(true); }
 });
@@ -321,7 +326,7 @@ document.addEventListener('keydown', (e) => {
 bar.onToggle(() => {
   if (state === 'open') return collapse(true);
   expand({ auto: true });
-  bar.focus();
+  if (!fromGame) bar.focus(); // после игры фокус не отнимаем — см. game.rs open_after
 });
 bar.onCollapse(() => collapse(true));
 // нет движения мыши на мониторе с нотчем — нотч уезжает за край экрана
@@ -1669,6 +1674,8 @@ tool({
             h('div', { class: 'card col g-card' }, h('h4', {}, 'Что показывать в плашке'), chips,
               h('div', { class: 'g-hold' }, h('span', { class: 'small' }, 'Открыть панель, держа курсор на плашке'),
                 segOf([[0, 'Выкл'], [500, '0,5 с'], [1000, '1 с'], [2000, '2 с']], g.hold ?? 1000, async (v) => { await bar.gameSet({ hold: v }); show('game'); })),
+              h('div', { class: 'g-hold' }, h('span', { class: 'small' }, 'Панель из игры закрывается, если курсор не пришёл, через'),
+                segOf([[3000, '3 с'], [5000, '5 с'], [10000, '10 с']], g.panelClose ?? 5000, async (v) => { await bar.gameSet({ panelClose: v }); show('game'); })),
               hk('game') && h('span', { class: 'muted small' }, `${hk('game')} — включить или выйти вручную`))),
           h('div', { class: 'col' },
             h('div', { class: 'card col g-card' }, h('h4', {}, 'FPS'), h('div', { class: 'small ' + PERM[0] }, PERM[1]), permBtn,
@@ -1957,7 +1964,7 @@ function updateRow() {
     };
     row.dataset.state = s.state;
     switch (s.state) {
-      case 'dev': set('code', `Bar ${v}`, 'Режим разработки — обновления приходят только в установленную версию', ''); break;
+      case 'dev': set('code', `Bar Lab ${v}`, 'Тестовая сборка: обновляется вручную, отдельно от основного Bar', ''); break;
       case 'checking': set('redo', 'Проверяю обновления…', `Сейчас у вас ${v}`, '', null, 'spin'); break;
       case 'available': set('download', `Доступна версия ${s.next}`, `Сейчас у вас ${v}`, 'Скачать', () => bar.updateDownload(), 'go'); break;
       case 'downloading': {
@@ -2467,6 +2474,8 @@ function nowPlayingCard() {
       e.stopPropagation();
       if (k === 'prev') animOnce(b, 'nudge-l');
       if (k === 'next') animOnce(b, 'nudge-r');
+      // пока вкладка просыпается, повторные нажатия не шлём: иначе второе нажатие ставит только что запущенную музыку на паузу
+      if (k === 'toggle' && b.classList.contains('waking')) return;
       if (k === 'toggle') ppTap(b);
       // YouTube Music — через расширение: вкладку, которую браузер усыпил после долгой паузы, оно будит и повторяет команду.
       // Системный медиаплеер Windows в этом случае отвечает «готово», но уснувшая вкладка не играет.
@@ -2477,9 +2486,15 @@ function nowPlayingCard() {
       const same = !m.title || (MU.st && MU.st.title === m.title);
       const ytm = MU.ext && MU.ytTab && fromBrowser && (same || (k === 'toggle' && !m.playing));
       if (ytm) {
-        const slow = setTimeout(() => flash('Будим вкладку YouTube Music…', 2500), 900); // уснувшая вкладка перезагружается несколько секунд
+        // уснувшая вкладка перезагружается 5–15 с: всё это время кнопка показывает ожидание, подсказка не гаснет
+        const slow = setTimeout(() => { b.classList.add('waking'); if (b._hold) b._hold.until = Date.now() + 60000; flash('Будим YouTube Music — секунду…', 60000); }, 900);
         const r = await bar.musicCmd(k);
         clearTimeout(slow);
+        if (b.classList.contains('waking')) {
+          b.classList.remove('waking');
+          if (b._hold) b._hold.until = Date.now() + 1500;
+          flash(r ? 'YouTube Music играет' : 'YouTube Music не ответил — попробуйте ещё раз', 1800);
+        }
         if (r) return;
       }
       const was = !!m.playing;
@@ -2926,8 +2941,10 @@ const cornerRect = (w, hh, c) => (c === 'tc'
 // Форма по положению: прилегает к краям, скруглён только угол, обращённый внутрь экрана.
 // 'pill' / 'tc' — вырез сверху (скруглены оба нижних угла).
 function edgeRadius(c) {
-  const r = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14) + 'px';
-  return { pill: `0 0 ${r} ${r}`, tc: `0 0 ${r} ${r}`, tl: `0 0 ${r} 0`, tr: `0 0 0 ${r}`, bl: `0 ${r} 0 0`, br: `${r} 0 0 0` }[c] || r;
+  const cs = getComputedStyle(document.documentElement);
+  const r = (parseFloat(cs.getPropertyValue('--r')) || 14) + 'px';
+  const rp = (parseFloat(cs.getPropertyValue('--r-pill')) || parseFloat(r)) + 'px'; // вырез — как у обычного нотча
+  return { pill: `0 0 ${rp} ${rp}`, tc: `0 0 ${r} ${r}`, tl: `0 0 ${r} 0`, tr: `0 0 0 ${r}`, bl: `0 ${r} 0 0`, br: `${r} 0 0 0` }[c] || r;
 }
 // прозрачность плашки после посадки (в полёте — непрозрачная)
 function applyFade(on) {
@@ -2935,30 +2952,31 @@ function applyFade(on) {
   const o = on ? 1 - (Game.fade || 0) / 100 : 1;
   island.animate([{ opacity: getComputedStyle(island).opacity }, { opacity: o }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
 }
-// окно-сцена охватывает только путь перелёта; Game.off — его левый верхний угол на мониторе
-function pathBox(a, b) {
-  const pad = 24;
-  const x = Math.max(0, Math.min(a.x, b.x) - pad), y = Math.max(0, Math.min(a.y, b.y) - pad);
-  const r = Math.min(Game.W, Math.max(a.x + a.w, b.x + b.w) + pad), btm = Math.min(Game.H, Math.max(a.y + a.h, b.y + b.h) + pad);
-  return { x, y, w: r - x, h: btm - y };
+// Окно нотча стоит в левом верхнем углу монитора и в игре не двигается: на время перелёта оно — весь монитор,
+// после посадки окно лишь укорачивается по высоте до плашки (положение то же). Координаты страницы = координаты монитора.
+const loc = (r) => r;
+async function toStage() { await bar.gameStage({ x: 0, y: 0, w: Game.W, h: Game.H }); }
+// где сейчас нарисован нотч — как есть, со сдвигом защиты OLED и текущей шириной
+function islandNow() { const b = island.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }
+// снять игровые стили без CSS-переходов: иначе нотч «доезжает» на место после посадки
+async function settleNoTransition(fn) {
+  island.style.transition = 'none';
+  fn();
+  void island.offsetWidth;
+  await nextFrame();
+  island.style.transition = '';
 }
-const loc = (r) => ({ x: r.x - Game.off.x, y: r.y - Game.off.y, w: r.w, h: r.h });
-async function toStage(from, to) { const box = pathBox(from, to); Game.off = { x: box.x, y: box.y }; await bar.gameStage(box); }
+// прозрачность плашки — всегда плавно от текущего значения
+function fadeTo(o, ms = 220) {
+  const cur = parseFloat(getComputedStyle(island).opacity);
+  island.getAnimations().forEach((x) => x.cancel());
+  return island.animate([{ opacity: isNaN(cur) ? 1 : cur }, { opacity: o }], { duration: ms, easing: 'ease-out', fill: 'forwards' });
+}
 function setIslandRect(r) {
   island.style.transform = `translate(${r.x}px, ${r.y}px)`;
   island.style.width = r.w + 'px'; island.style.height = r.h + 'px';
 }
 const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
-// Смена размера/положения окна: в первый кадр Windows показывает старую картинку на новом месте —
-// поэтому на это время нотч невидим и появляется уже на своём месте.
-async function swapWindow(change, place) {
-  island.style.visibility = 'hidden';
-  await change();
-  await nextFrame();
-  place();
-  await nextFrame();
-  island.style.visibility = '';
-}
 // Перелёт: нотч чуть «отрывается» от края, плывёт по дуге и мягко садится; форма — от выреза к плашке.
 // Перелёт «каплей»: нотч сжимается в круглую каплю у края, капля переплывает (чуть вытягиваясь в движении)
 // и в новом месте разворачивается в плашку. Анимируется только transform (сдвиг + масштаб) — считает видеокарта.
@@ -2970,54 +2988,82 @@ function dropAt(rect, c) {
   const y = c === 'pill' || c === 'tc' || c[0] === 't' ? rect.y : rect.y + rect.h - DROP;
   return { x, y };
 }
+// Перелёт одной непрерывной траекторией: сжатие в каплю, полёт и разворот перекрываются по времени,
+// поэтому скорость нигде не падает до нуля (раньше на стыках четырёх отрезков капля замирала и снова разгонялась).
+// Кадры считаются заранее (~60 в секунду) и идут линейно — вся плавность в самих формулах.
+const ss = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * x * (x * (x * 6 - 15) + 10); }; // «smootherstep»: и скорость, и ускорение — без скачков
+const lerp = (a, b, k) => a + (b - a) * k;
+function cornerRadii(c) {
+  const cs = getComputedStyle(document.documentElement);
+  const r = parseFloat(cs.getPropertyValue('--r')) || 14, rp = parseFloat(cs.getPropertyValue('--r-pill')) || r;
+  // порядок как у border-radius: левый верхний, правый верхний, правый нижний, левый нижний
+  return { pill: [0, 0, rp, rp], tc: [0, 0, r, r], tl: [0, 0, r, 0], tr: [0, 0, 0, r], bl: [0, r, 0, 0], br: [r, 0, 0, 0] }[c] || [r, r, r, r];
+}
+function flyDur(from, to) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 1;
+  const dist = Math.hypot(to.x + to.w / 2 - (from.x + from.w / 2), to.y + to.h / 2 - (from.y + from.h / 2));
+  return Math.round(760 + Math.min(320, dist / 5)); // дальше путь — чуть дольше
+}
 function fly(from, to, fromC, toC) {
-  const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r')) || 14;
   island.style.width = to.w + 'px'; island.style.height = to.h + 'px';
   const W = to.w, H = to.h;
-  const tf = (x, y, w, h) => `translate(${x}px, ${y}px) scale(${w / W}, ${h / H})`;
   const d1 = dropAt(from, fromC), d2 = dropAt(to, toC);
-  const dx = d2.x - d1.x, dy = d2.y - d1.y, dist = Math.hypot(dx, dy) || 1;
-  // вытягивание по направлению движения (по горизонтали или вертикали — что больше)
-  const horiz = Math.abs(dx) >= Math.abs(dy);
-  const sw = horiz ? DROP * 1.45 : DROP * 0.82, sh = horiz ? DROP * 0.82 : DROP * 1.45;
-  const mid = { x: d1.x + dx / 2 - (sw - DROP) / 2, y: d1.y + dy / 2 - (sh - DROP) / 2 };
-  const ease = 'cubic-bezier(.45, 0, .25, 1)';
-  const kf = [
-    { offset: 0, transform: tf(from.x, from.y, from.w, from.h), borderRadius: edgeRadius(fromC), easing: ease },
-    { offset: 0.3, transform: tf(d1.x, d1.y, DROP, DROP), borderRadius: '50%', easing: ease },           // собрался в каплю
-    { offset: 0.5, transform: tf(mid.x, mid.y, sw, sh), borderRadius: '50%', easing: ease },              // плывёт, вытянувшись
-    { offset: 0.7, transform: tf(d2.x, d2.y, DROP, DROP), borderRadius: '50%', easing: 'cubic-bezier(.2, .9, .3, 1.15)' }, // на месте
-    { offset: 1, transform: tf(to.x, to.y, to.w, to.h), borderRadius: edgeRadius(toC) },                  // развернулся
-  ];
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const dur = reduce ? 1 : Math.round(820 + Math.min(380, dist / 4)); // дальше путь — чуть дольше
+  const c0 = { x: from.x + from.w / 2, y: from.y + from.h / 2 }, c3 = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  const c1 = { x: d1.x + DROP / 2, y: d1.y + DROP / 2 }, c2 = { x: d2.x + DROP / 2, y: d2.y + DROP / 2 };
+  const horiz = Math.abs(c2.x - c1.x) >= Math.abs(c2.y - c1.y);
+  const R0 = cornerRadii(fromC), R3 = cornerRadii(toC);
+  const dur = flyDur(from, to);
+  const n = Math.max(24, Math.round(dur / 16));
+  const kf = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const k1 = ss(0, 0.42, t), m = ss(0.14, 0.86, t), k2 = ss(0.58, 1, t);
+    let w = lerp(lerp(from.w, DROP, k1), to.w, k2), h = lerp(lerp(from.h, DROP, k1), to.h, k2);
+    // в полёте капля чуть вытягивается по направлению движения (объём тот же)
+    const st = 1 + 0.38 * Math.sin(Math.PI * m) * k1 * (1 - k2);
+    if (horiz) { w *= st; h /= Math.sqrt(st); } else { h *= st; w /= Math.sqrt(st); }
+    const cx = c0.x + (c1.x - c0.x) * k1 + (c2.x - c1.x) * m + (c3.x - c2.x) * k2;
+    const cy = c0.y + (c1.y - c0.y) * k1 + (c2.y - c1.y) * m + (c3.y - c2.y) * k2;
+    const sx = w / W, sy = h / H, half = Math.min(w, h) / 2;
+    const vr = R0.map((r0, q) => Math.min(half, lerp(lerp(r0, DROP / 2, k1), R3[q], k2)));
+    kf.push({
+      offset: t,
+      transform: `translate(${(cx - w / 2).toFixed(2)}px, ${(cy - h / 2).toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`,
+      borderRadius: vr.map((v) => (v / sx).toFixed(2) + 'px').join(' ') + ' / ' + vr.map((v) => (v / sy).toFixed(2) + 'px').join(' '),
+    });
+  }
   const a = island.animate(kf, { duration: dur, easing: 'linear', fill: 'forwards' });
   return a.finished.then(() => a, () => a);
+}
+// содержимое меняется вместе с формой: старое тает, пока нотч сжимается, новое проявляется, пока капля разворачивается
+function flyContent(out, inn, dur) {
+  out.getAnimations().forEach((x) => x.cancel()); inn.getAnimations().forEach((x) => x.cancel());
+  out.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur * 0.26, easing: 'ease-out', fill: 'forwards' });
+  inn.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur * 0.3, delay: dur * 0.7, easing: 'ease-in-out', fill: 'both' });
 }
 async function gameEnter(m) {
   if (Game.on) return;
   Game.on = true; Game.busy = true; Game.corner = m.corner; Game.fade = m.fade || 0; Game.hold = m.hold ?? 1000; Game.show = m.show || {}; Game.W = m.w; Game.H = m.h;
   if (state === 'open') { pinned = false; collapse(true); }
   clearTimeout(shrinkT); winFull = true;
-  // если панель только что сворачивалась — дождаться, пока нотч станет полоской
-  for (let i = 0; i < 40 && (island.classList.contains('open') || island.getAnimations().length); i++) await new Promise((r) => setTimeout(r, 25));
   island.classList.remove('peek', 'idle', 'dim');
+  // дождаться, пока панель свернётся и нотч доиграет свои переходы — перелёт начинается с неподвижной полоски
+  for (let i = 0; i < 60 && (island.classList.contains('open') || island.getAnimations().length); i++) await new Promise((r) => setTimeout(r, 25));
   pushNeed();
-  const fromW = parseFloat(island.style.getPropertyValue('--pill-w')) || island.offsetWidth || 196;
-  const from = { x: (Game.W - fromW) / 2, y: 0, w: fromW, h: 32 };
-  let to;
   bar.animBoost(true);
+  await toStage(); // окно только вырастает вниз — нотч остаётся там же
+  await nextFrame();
+  const from = islandNow();
   island.classList.add('game');
+  setIslandRect(from); // тот же кадр: игровые стили, а нотч на прежнем месте
   hudEl.innerHTML = hudEl._h = hudHtml();
-  to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
-  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
-  barEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
-  hudEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
+  const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, Game.corner);
+  flyContent(barEl, hudEl, flyDur(from, to));
   const a = await fly(loc(from), loc(to), 'pill', Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(loc(to)); a.cancel();
   Game.rect = to;
-  await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
+  await bar.gameDock(to);
   bar.animBoost(false);
   applyFade(true);
   Game.busy = false;
@@ -3025,15 +3071,15 @@ async function gameEnter(m) {
 async function gameMove(to, fromCorner) {
   Game.busy = true;
   const from = Game.rect;
-  island.getAnimations().forEach((x) => x.cancel());
-  island.classList.remove('game-tc');
   bar.animBoost(true);
-  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
+  await toStage();
+  fadeTo(1, 260); // в полёте плашка непрозрачная — плавно, одновременно с началом полёта
+  island.classList.remove('game-tc');
   const a = await fly(loc(from), loc(to), fromCorner, Game.corner);
   island.classList.toggle('game-tc', Game.corner === 'tc');
   setIslandRect(loc(to)); a.cancel();
   Game.rect = to;
-  await swapWindow(() => bar.gameDock(to), () => setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }));
+  await bar.gameDock(to);
   bar.animBoost(false);
   applyFade(true);
   Game.busy = false;
@@ -3042,36 +3088,66 @@ async function gameExit(m) {
   if (!Game.on) return;
   Game.busy = true;
   const from = Game.rect || cornerRect(200, HUD_H, Game.corner);
-  const wasTc = Game.corner === 'tc';
-  island.getAnimations().forEach((x) => x.cancel()); // снять прозрачность
-  island.classList.remove('game-tc');
+  renderBar(); // ширина полоски — по нынешнему содержимому, чтобы после посадки она уже не менялась
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
-  const to = { x: (m.w - pillW) / 2, y: 0, w: pillW, h: 32 };
+  const dx = parseFloat(getComputedStyle(island).getPropertyValue('--oled-dx')) || 0;
+  const to = { x: (m.w - pillW) / 2 + dx, y: 0, w: pillW, h: 32 }; // ровно туда, где встанет обычный нотч
   bar.animBoost(true);
-  await swapWindow(() => toStage(from, to), () => setIslandRect(loc(from)));
-  hudEl.getAnimations().forEach((x) => x.cancel());
-  hudEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
-  barEl.getAnimations().forEach((x) => x.cancel());
-  barEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 820, fill: 'both' });
+  await toStage();
+  fadeTo(1, 260); // прозрачность — плавно к непрозрачной, одновременно с началом полёта
+  island.classList.remove('game-tc');
+  flyContent(hudEl, barEl, flyDur(from, to));
   const a = await fly(loc(from), loc(to), Game.corner, 'pill');
   bar.animBoost(false);
-  winFull = false;
-  await swapWindow(() => bar.gameExitDone(), () => {
+  winFull = !!m.open; // сразу откроется панель — окно не ужимаем до полоски
+  fromGame = !!m.open;
+  Game.panelClose = m.panelClose || 5000;
+  // посадка: игровые стили снимаются в тот же кадр и без CSS-переходов — нотч уже стоит ровно на своём месте
+  await settleNoTransition(() => {
     Game.on = false; Game.rect = null;
     island.classList.remove('game');
     island.style.transform = ''; island.style.width = ''; island.style.height = ''; island.style.borderRadius = '';
-    a.cancel();
+    island.getAnimations().forEach((x) => x.cancel());
     hudEl.getAnimations().forEach((x) => x.cancel()); barEl.getAnimations().forEach((x) => x.cancel());
     hudEl.innerHTML = hudEl._h = '';
   });
+  await bar.gameExitDone(); // окно уменьшается по высоте обратно — положение то же
   Game.busy = false;
   pushNeed(); renderBar();
+}
+// показатели плашки: элементы обновляются на месте (без пересоздания), а то, что появилось впервые
+// (значение вместо «…», новый показатель), — мягко проявляется
+const HUD_EMPTY = /^(…|—)?$/;
+const hudKey = (el) => el.getAttribute('title') || el.className;
+function hudFadeIn(el, i = 0) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el.animate([{ opacity: 0, transform: 'translateY(3px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }],
+    { duration: 320, delay: i * 40, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'backwards' });
+}
+function hudPatch(html) {
+  const tmp = document.createElement('div'); tmp.innerHTML = html;
+  const old = [...hudEl.children], nw = [...tmp.children];
+  const same = old.length === nw.length && old.every((el, i) => hudKey(el) === hudKey(nw[i]));
+  if (!same) {
+    const had = new Set(old.map(hudKey));
+    hudEl.innerHTML = html;
+    [...hudEl.children].forEach((el, i) => { if (!had.has(hudKey(el))) hudFadeIn(el, i); });
+    return;
+  }
+  old.forEach((el, i) => {
+    if (el.innerHTML === nw[i].innerHTML) return;
+    const ov = el.querySelector('.hud-v'), nv = nw[i].querySelector('.hud-v');
+    const was = ov ? ov.textContent.trim() : '';
+    if (ov && nv && el.childElementCount === nw[i].childElementCount) ov.textContent = nv.textContent; // только цифры — без перерисовки значков
+    else el.innerHTML = nw[i].innerHTML;
+    if (HUD_EMPTY.test(was) && !HUD_EMPTY.test((nv || nw[i]).textContent.trim())) hudFadeIn(ov || el);
+  });
 }
 function drawHud() {
   if (!Game.on || Game.busy) return;
   const html = hudHtml();
   if (html === hudEl._h) return;
-  hudEl.innerHTML = hudEl._h = html;
+  hudPatch(html); hudEl._h = html;
   // плашка подстраивается под содержимое (например, появилось предупреждение о батарее)
   const w = Math.ceil(hudEl.offsetWidth);
   if (Game.rect && Math.abs(w - Game.rect.w) > 1) resizeHud(w);
@@ -3083,16 +3159,16 @@ async function resizeHud(w) {
   Game.busy = true;
   const old = Game.rect, nw = cornerRect(w, HUD_H, Game.corner);
   const big = { x: Math.min(old.x, nw.x), y: old.y, w: Math.max(old.x + old.w, nw.x + nw.w) - Math.min(old.x, nw.x), h: old.h };
-  await swapWindow(() => bar.gameDock(big), () => setIslandRect({ x: old.x - big.x, y: 0, w: old.w, h: old.h }));
+  await bar.gameDock(big); // видимая область — общий прямоугольник, окно на месте
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const a = island.animate([
-    { transform: `translate(${old.x - big.x}px, 0px)`, width: old.w + 'px' },
-    { transform: `translate(${nw.x - big.x}px, 0px)`, width: nw.w + 'px' },
+    { transform: `translate(${old.x}px, ${old.y}px)`, width: old.w + 'px' },
+    { transform: `translate(${nw.x}px, ${nw.y}px)`, width: nw.w + 'px' },
   ], { duration: reduce ? 1 : 260, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
   await a.finished.catch(() => {});
-  setIslandRect({ x: nw.x - big.x, y: 0, w: nw.w, h: nw.h }); a.cancel();
+  setIslandRect(nw); a.cancel();
   Game.rect = nw;
-  await swapWindow(() => bar.gameDock(nw), () => setIslandRect({ x: 0, y: 0, w: nw.w, h: nw.h }));
+  await bar.gameDock(nw);
   Game.busy = false;
   drawHud(); // пока шла анимация, могли прийти новые данные
 }
@@ -3107,7 +3183,7 @@ bar.onGame((m) => {
         const to = cornerRect(Math.ceil(hudEl.offsetWidth), HUD_H, m.corner);
         Game.fade = m.fade || 0; Game.hold = m.hold ?? Game.hold;
         if (m.corner !== Game.corner) { const old = Game.corner; Game.corner = m.corner; await gameMove(to, old); }
-        else { Game.rect = to; setIslandRect({ x: 0, y: 0, w: to.w, h: to.h }); bar.gameDock(to); applyFade(true); }
+        else { Game.rect = to; setIslandRect(to); bar.gameDock(to); applyFade(true); }
       }
     } catch (e) { console.warn('game', e); Game.busy = false; }
   });

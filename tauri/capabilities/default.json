@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Окна Bar: события от Rust (core:default). Свои команды Bar — одна команда ipc.",
+  "windows": ["*"],
+  "permissions": ["core:default"]
+}

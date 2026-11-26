@@ -3,7 +3,7 @@
 // Возвращает компактные данные для интерфейса Bar.
 (() => {
   // версия кода на странице: при обновлении расширения новая версия заменяет старую
-  const BAR_PAGE_V = '0.3.0';
+  const BAR_PAGE_V = '0.3.2';
   if (window.__bar && window.__bar.v === BAR_PAGE_V) return true;
 
   const P = () => document.querySelector('#movie_player');
@@ -258,6 +258,17 @@
   function loadLast() { try { return JSON.parse(localStorage.getItem(LAST) || 'null'); } catch { return null; } }
   if (!window.__barSaveT) window.__barSaveT = setInterval(saveLast, 5000);
   // включить трек (и его плейлист) и перемотать на место, где остановились
+  // «Играть» отвечает, только когда звук правда пошёл: только что проснувшаяся вкладка первые секунды
+  // игнорирует playVideo — повторяем, пока плеер не перейдёт в «играет» (до ~6 с)
+  async function ensurePlay(p) {
+    for (let i = 0; i < 24; i++) {
+      p = P() || p;
+      if (p && p.getPlayerState() === 1) return true;
+      if (p && i % 4 === 0) p.playVideo();
+      await new Promise((res) => setTimeout(res, 250));
+    }
+    return !!(P() && P().getPlayerState() === 1);
+  }
   async function resume(r) {
     go({ watchEndpoint: r.list ? { videoId: r.videoId, playlistId: r.list } : { videoId: r.videoId } });
     for (let i = 0; i < 40; i++) {
@@ -265,8 +276,7 @@
       const p = P(); const vd = p && p.getVideoData && p.getVideoData();
       if (!vd || vd.video_id !== r.videoId || !(p.getDuration() > 0)) continue;
       if (r.time > 5 && r.time < p.getDuration() - 5) p.seekTo(r.time, true);
-      if (p.getPlayerState() !== 1) p.playVideo();
-      return true;
+      return ensurePlay(p);
     }
     return false;
   }
@@ -277,9 +287,13 @@
     state, queue,
     // r — последний игравший трек ({ videoId, list, time }), его помнит Bar. Если плеер пуст (вкладку перезагрузили
     // или открыли заново) — включаем этот трек с того же места, а не «ничего».
-    toggle(r) {
+    async toggle(r) {
       const own = loadLast();
       if (own && own.videoId && (!r || !r.videoId || (own.at || 0) > (r.at || 0))) r = own; // что свежее
+      // вкладку только что разбудили прямо на этом треке: плееру нужна секунда, чтобы получить его, — ждём, а не переходим заново
+      if (r && r.videoId && new URLSearchParams(location.search).get('v') === r.videoId) {
+        for (let i = 0; i < 16; i++) { const q = P(), d = q && q.getVideoData && q.getVideoData(); if (d && d.video_id === r.videoId && q.getDuration() > 0) break; await new Promise((res) => setTimeout(res, 150)); }
+      }
       const p = P(); if (!p) return r && r.videoId ? resume(r) : false;
       const vd = (p.getVideoData && p.getVideoData()) || {};
       const st = p.getPlayerState();
@@ -288,7 +302,7 @@
         if (!vd.video_id || (vd.video_id !== r.videoId && (st === -1 || st === 5))) return resume(r);
         if (vd.video_id === r.videoId && (p.getCurrentTime() || 0) < 1 && r.time > 5) p.seekTo(r.time, true); // страница загрузила трек с начала
       }
-      p.playVideo(); return true;
+      return ensurePlay(p);
     },
     next() { const p = P(); p && p.nextVideo(); return true; },
     prev() { const p = P(); if (!p) return false; if (p.getCurrentTime() > 4) p.seekTo(0, true); else p.previousVideo(); return true; },
