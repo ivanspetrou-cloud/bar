@@ -44,14 +44,46 @@ impl Notch {
         let n = Notch { win, st: Arc::new(Mutex::new(St { mode: "pill".into(), ..Default::default() })) };
         crate::webview::low_memory(&n.win, true);
         n.place();
-        let _ = n.win.set_ignore_cursor_events(true);
+        n.pass(true);
         let w = n.clone();
         std::thread::Builder::new().name("bar-cursor".into()).spawn(move || loop { w.track(); std::thread::sleep(Duration::from_millis(40)); }).ok();
         let w = n.clone();
         std::thread::Builder::new().name("bar-follow".into()).spawn(move || loop { w.follow_tick(); w.idle_tick(); std::thread::sleep(Duration::from_millis(200)); }).ok();
         Ok(n)
     }
-    pub fn show(&self) { let _ = self.win.show(); }
+    // Tauri при показе пересобирает стили по своим флагам — возвращаем свои: без заголовка и «пропускать мышь» как было
+    pub fn show(&self) { let _ = self.win.show(); self.fix_style(); let c = self.st.lock().unwrap().clickable; self.pass(!c); }
+    fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> { self.win.hwnd().ok().map(|h| windows::Win32::Foundation::HWND(h.0 as *mut _)) }
+    /// Окно Tauri «без рамки» только на вид: стили заголовка у него остаются, и с регионом окна Windows рисует
+    /// системную рамку с «Bar» и кнопками. Делаем окно настоящей всплывашкой без заголовка и без кнопки на панели задач.
+    /// Tauri переставляет стили, когда меняет свои флаги (видимость, «пропускать мышь»), поэтому «пропускать мышь»
+    /// переключаем сами (pass), а стиль проверяем после показа и перед каждым регионом.
+    fn fix_style(&self) {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        let Some(h) = self.hwnd() else { return };
+        unsafe {
+            let st = GetWindowLongPtrW(h, GWL_STYLE) as u32;
+            let ex = GetWindowLongPtrW(h, GWL_EXSTYLE) as u32;
+            let bad = (WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME).0;
+            let nst = (st & !bad) | WS_POPUP.0;
+            let nex = (ex & !WS_EX_APPWINDOW.0) | WS_EX_TOOLWINDOW.0;
+            if nst == st && nex == ex { return; }
+            SetWindowLongPtrW(h, GWL_STYLE, nst as isize);
+            SetWindowLongPtrW(h, GWL_EXSTYLE, nex as isize);
+            let _ = SetWindowPos(h, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+    }
+    /// окно пропускает мышь насквозь (on) или ловит её — напрямую флагами Windows, не трогая остальные стили
+    fn pass(&self, on: bool) {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        let Some(h) = self.hwnd() else { return };
+        unsafe {
+            let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+            let t = (WS_EX_TRANSPARENT.0 | WS_EX_LAYERED.0) as isize;
+            let nx = if on { ex | t } else { ex & !t };
+            if nx != ex { SetWindowLongPtrW(h, GWL_EXSTYLE, nx); }
+        }
+    }
     pub fn hide(&self) { let _ = self.win.hide(); }
 
     /// монитор нотча: основной, выбранный в настройках или тот, где сейчас курсор («за мышью»)
@@ -90,16 +122,8 @@ impl Notch {
         use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn, HRGN};
         let Ok(hw) = self.win.hwnd() else { return };
         let h = windows::Win32::Foundation::HWND(hw.0 as *mut _);
+        self.fix_style();
         unsafe {
-            // окно без рамки только «на вид»: у него остаются стили заголовка, и с регионом Windows рисует
-            // системную рамку с кнопками. Убираем их совсем (окно-«всплывашка»); Tauri может вернуть — проверяем каждый раз.
-            use windows::Win32::UI::WindowsAndMessaging::*;
-            let st = GetWindowLongPtrW(h, GWL_STYLE) as u32;
-            let bad = (WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME).0;
-            if st & bad != 0 {
-                SetWindowLongPtrW(h, GWL_STYLE, ((st & !bad) | WS_POPUP.0) as isize);
-                let _ = SetWindowPos(h, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            }
             match r {
                 Some((x, y, w, ht)) => { let rg = CreateRectRgn(x, y, x + w, y + ht); let _ = SetWindowRgn(h, Some(rg), true); } // регион теперь принадлежит окну
                 None => { let _ = SetWindowRgn(h, Some(HRGN::default()), true); }
@@ -118,7 +142,7 @@ impl Notch {
     // ---------- игровой режим: «сцена» (путь перелёта) и «плашка» в углу; окно всегда прозрачно для мыши ----------
     pub fn stage(&self, mon: (i32, i32, i32, i32), b: (f64, f64, f64, f64), k: f64) {
         self.st.lock().unwrap().mode = "stage".into();
-        let _ = self.win.set_ignore_cursor_events(true);
+        self.pass(true);
         self.st.lock().unwrap().clickable = false;
         // сцена — весь монитор игры; окно нотча и так стоит в его левом верхнем углу, поэтому оно только растёт вниз
         let _ = (b, k);
@@ -128,7 +152,7 @@ impl Notch {
     }
     pub fn hud(&self, mon: (i32, i32, i32, i32), r: (f64, f64, f64, f64), k: f64, hover: bool) {
         { let mut st = self.st.lock().unwrap(); st.mode = "hud".into(); st.hud_track = hover; st.clickable = false; }
-        let _ = self.win.set_ignore_cursor_events(true);
+        self.pass(true);
         // окно не двигается: видимой остаётся только плашка (регион), остальной монитор — свободен для игры
         if self.bounds() != (mon.0, mon.1, mon.2, mon.3) { self.set_bounds(mon.0, mon.1, mon.2, mon.3); }
         let hr = ((r.0 * k).floor() as i32, (r.1 * k).floor() as i32, (r.2 * k).ceil() as i32 + 1, (r.3 * k).ceil() as i32 + 1);
@@ -139,8 +163,8 @@ impl Notch {
         let h = st.hud_rect;
         st.hud_hover = cx >= h.0 && cy >= h.1 && cx < h.0 + h.2 && cy < h.1 + h.3;
     }
-    pub fn to_full(&self) { self.st.lock().unwrap().mode = "full".into(); self.place(); let _ = self.win.set_ignore_cursor_events(true); self.st.lock().unwrap().clickable = false; crate::webview::low_memory(&self.win, false); }
-    pub fn pill(&self) { self.st.lock().unwrap().mode = "pill".into(); self.place(); let _ = self.win.set_ignore_cursor_events(true); self.st.lock().unwrap().clickable = false; }
+    pub fn to_full(&self) { self.st.lock().unwrap().mode = "full".into(); self.place(); self.pass(true); self.st.lock().unwrap().clickable = false; crate::webview::low_memory(&self.win, false); }
+    pub fn pill(&self) { self.st.lock().unwrap().mode = "pill".into(); self.place(); self.pass(true); self.st.lock().unwrap().clickable = false; }
 
     pub fn set_interactive(&self, on: bool) { self.st.lock().unwrap().interactive = on; self.track(); }
     /// «l,t,r,b» — где на странице нотч (физические пиксели внутри окна)
@@ -174,7 +198,7 @@ impl Notch {
         let want = over || (st.interactive && inside_win && in_band);
         if want != st.clickable {
             st.clickable = want;
-            let _ = self.win.set_ignore_cursor_events(!want);
+            self.pass(!want);
         }
     }
     // «за мышью»: курсор задержался на другом мониторе — нотч уезжает вверх и выезжает там
