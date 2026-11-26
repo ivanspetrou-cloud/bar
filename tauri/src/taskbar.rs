@@ -24,11 +24,15 @@ struct St { on: bool, docks: Vec<Dock>, list: Value, thumbs: HashMap<i64, String
 static S: Mutex<Option<St>> = Mutex::new(None);
 fn with<R>(f: impl FnOnce(&mut St) -> R) -> R { f(S.lock().unwrap().get_or_insert_with(St::default)) }
 
+/// событие во все доки (на всех мониторах)
+pub fn emit_docks(ch: &str, v: Value) { let labels = with(|s| s.docks.iter().map(|d| d.label.clone()).collect::<Vec<_>>()); for l in labels { ctx::emit_to(&l, ch, v.clone()); } }
+/// приёмник значков трея — только пока док включён и в нём есть кнопка «Значки трея»
+fn tray_sync() { let c = cfg(); crate::trayhost::set(c["on"] == true && c["btn"]["tray"] != false); }
 fn cfg() -> Value {
     let t = ctx::sh().settings.get("taskbar");
     let mut c = json!({ "on": false, "mode": "hide", "size": "m", "magnify": true, "reserve": false, "sizes": {}, "same": true, "running": true, "extras": [] });
     if let Some(o) = t.as_object() { for (k, v) in o { c[k] = v.clone(); } }
-    let mut btn = json!({ "start": true, "search": true, "desktop": true, "restart": true, "shutdown": true });
+    let mut btn = json!({ "start": true, "search": true, "desktop": true, "restart": true, "shutdown": true, "tray": true });
     if let Some(o) = t["btn"].as_object() { for (k, v) in o { btn[k] = v.clone(); } }
     c["btn"] = btn;
     c
@@ -247,12 +251,14 @@ pub fn disable() {
     restore_win_taskbar();
 }
 pub fn on_displays_changed() { if with(|s| s.on) { std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(300)); sync_displays(); }); } }
-pub fn stop() { with(|s| for d in s.docks.iter_mut() { reserve(d, false); }); restore_win_taskbar(); }
+pub fn stop() { crate::trayhost::set(false); with(|s| for d in s.docks.iter_mut() { reserve(d, false); }); restore_win_taskbar(); }
 
 /// фоновые проверки: полноэкранные окна (раз в 2 с), снимок активного окна (раз в 5 с), панель Windows спрятана (раз в 10 с),
 /// курсор (каждые 60 мс): у нижнего края — док выезжает, над доком — кликабелен
 pub fn start() {
     if cfg()["on"] == true { std::thread::spawn(enable); } else { std::thread::spawn(restore_win_taskbar); }
+    tray_sync();
+    crate::trayhost::start_shellhook();
     std::thread::spawn(|| { let mut n = 0u64; loop {
         std::thread::sleep(Duration::from_secs(1)); n += 1;
         if !with(|s| s.on) { continue; }
@@ -334,6 +340,11 @@ pub fn handle(label: &str, ch: &str, a: &[Value]) -> Value {
     let arg = |i: usize| a.get(i).cloned().unwrap_or(Value::Null);
     match ch {
         "tb-search" => { crate::tray::open_search(); Value::Null } // кнопка «Поиск» в доке — поиск в нотче
+        "tb-tray" => crate::trayhost::list(),
+        "tb-tray-debug" => crate::trayhost::debug(),
+        "tb-flash" => crate::trayhost::flashing(),
+        "tb-unflash" => { let v: Vec<i64> = arg(0).as_array().map(|a| a.iter().filter_map(|x| x.as_i64()).collect()).unwrap_or_default(); crate::trayhost::unflash(&v); crate::trayhost::flashing() }
+        "tb-tray-click" => { let (k, kind) = (arg(0).as_str().unwrap_or("").to_string(), arg(1).as_str().unwrap_or("left").to_string()); std::thread::spawn(move || crate::trayhost::click(&k, &kind)); Value::Null }
         "taskbar-get" => with(|s| s.docks.iter().find(|d| d.label == label).map(cfg_for)).unwrap_or_else(|| { let mut c = cfg(); c["displays"] = displays(); c }),
         "taskbar-set" => {
             let before = cfg();
@@ -342,6 +353,7 @@ pub fn handle(label: &str, ch: &str, a: &[Value]) -> Value {
             ctx::sh().settings.put("taskbar", t);
             let now = cfg();
             if now["on"] != before["on"] { if now["on"] == true { enable(); } else { disable(); } } else { sync_displays(); }
+            tray_sync();
             let mut r = now; r["displays"] = displays(); r
         }
         "tb-interactive" => { with(|s| if let Some(d) = s.docks.iter_mut().find(|d| d.label == label) { d.page = arg(0).as_bool().unwrap_or(false); }); Value::Null }

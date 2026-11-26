@@ -15,7 +15,7 @@ function h(tag, props = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(c));
   return el;
 }
-const LUC = { start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2', restart: 'RotateCw', shutdown: 'Power' };
+const LUC = { tray: 'ChevronUp', start: 'LayoutGrid', search: 'Search', desktop: 'Minimize2', restore: 'Maximize2', restart: 'RotateCw', shutdown: 'Power' };
 function icon(n) {
   const node = window.lucide && window.lucide.icons && window.lucide.icons[LUC[n] || n];
   const inner = node ? node.map(([tag, a]) => `<${tag} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('') : '';
@@ -105,9 +105,41 @@ function itemEl(it) {
   el.classList.toggle('launching', launching.has(it.key) && n === 0 && !it.away.length);
   if ((n > 0 || it.away.length) && launching.has(it.key)) { clearTimeout(launching.get(it.key)); launching.delete(it.key); }
   syncDots(el.querySelector('.tb-dots'), n ? Math.min(n, 3) : it.away.length ? 1 : 0);
+  setBadge(el, badgeOf(it));
   el.title = '';
   return el;
 }
+
+// ---------- уведомления на значках ----------
+// Число — из заголовка окна («Telegram (3677)», «(3) Discord») или подсказки значка в трее; точка — программа мигает
+// кнопкой (так Slack сообщает о новом сообщении) или пометила заголовок «* …». Сам значок-наложение Windows программам не отдаёт.
+let flashed = new Set();
+const NUM_RE = [/^\((\d{1,6})\)\s/, /\((\d{1,6})\)\s*$/, /^\[(\d{1,6})\]\s/];
+function numIn(t) { for (const r of NUM_RE) { const m = r.exec(t || ''); if (m) return +m[1]; } return 0; }
+function badgeOf(it) {
+  const ws = [...it.wins, ...it.away];
+  if (!ws.length) return null;
+  let n = 0, dot = false;
+  for (const w of ws) { n = Math.max(n, numIn(w.title)); if (/^[*!•●]\s/.test(w.title || '') || flashed.has(w.hwnd)) dot = true; }
+  const pids = new Set(ws.map((w) => w.pid));
+  for (const t of trayList) if (pids.has(t.pid)) n = Math.max(n, numIn(t.tip));
+  return n ? (n > 99 ? '99+' : String(n)) : dot ? '' : null;
+}
+function setBadge(el, v) {
+  let b = el._badge;
+  if (v == null) {
+    if (b && !b._leaving) { b._leaving = true; b.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(0)', opacity: 0 }], { duration: 200, easing: 'ease-in' }).onfinish = () => { b.remove(); if (el._badge === b) el._badge = null; }; }
+    return;
+  }
+  if (!b || b._leaving) {
+    b = h('span', { class: 'tb-badge' }); el.append(b); el._badge = b;
+    b.animate([{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+  } else if (b.textContent !== v) b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.32,.5,1)' });
+  b.classList.toggle('dot', v === '');
+  if (b.textContent !== v) b.textContent = v;
+}
+bar.tbFlash().then((l) => { flashed = new Set(l || []); render(); }).catch(() => {});
+bar.onTbFlash((l) => { flashed = new Set(l || []); render(); });
 
 // Точки окон живут между перерисовками: активная плавно вытягивается в полоску и сжимается обратно,
 // новая точка появляется, лишняя — исчезает (а не подменяется мгновенно)
@@ -149,6 +181,7 @@ function render() {
     ...run.map(itemEl),
     extras.length && (pinned.length || run.length) ? sep('sep4') : null,
     ...extras,
+    b.tray !== false && trayBtn(),
     b.desktop !== false && sep('sep3'),
     b.desktop !== false && fixed('sys:desktop', desk ? 'restore' : 'desktop', desk ? 'Развернуть всё' : 'Свернуть всё', () => toggleDesk()),
     (b.restart !== false || b.shutdown !== false) && sep('sep5'),
@@ -250,6 +283,8 @@ function bounce(key) {
   render();
 }
 async function onClick(it) {
+  const fl = [...it.wins, ...it.away].map((w) => w.hwnd).filter((x) => flashed.has(x));
+  if (fl.length) { fl.forEach((x) => flashed.delete(x)); bar.tbUnflash(fl); }
   if (!it.wins.length && it.away.length) { bar.winFocus(it.away[0].hwnd); setTimeout(() => bar.tbRefresh(), 250); return; } // окно на другом мониторе — к нему
   if (!it.wins.length) { bar.appLaunch(it.app); bounce(it.key); return; }
   const active = it.wins.find((w) => w.active);
@@ -439,6 +474,75 @@ function magnify(x) {
   });
 }
 
+// ---------- значки трея («стрелочка», как у панели задач Windows) ----------
+// Значки присылает Bar (приёмник трея, trayhost.rs); клик — программе так же, как от Windows:
+// левый — открыть, правый — её собственное меню (выход, настройки…).
+let trayList = [], trayHideT = 0;
+const trayPop = h('div', { class: 'tb-prev tb-tray', hidden: true });
+document.body.append(trayPop);
+const trayOpen = () => !trayPop.hidden && trayPop.classList.contains('on');
+function trayBtn() {
+  const el = fixed('sys:tray', 'tray', 'Значки трея', () => (trayOpen() ? trayClose() : trayShow()));
+  el.classList.toggle('on', trayOpen());
+  return el;
+}
+function trayDraw() {
+  trayPop.replaceChildren(...(trayList.length ? trayList.map((it) => {
+    const b = h('button', { class: 'tt-i', 'aria-label': it.tip || 'Значок' }, h('img', { src: 'data:image/png;base64,' + it.png, alt: '' }));
+    b._label = it.tip || '';
+    b.addEventListener('mouseenter', () => { if (b._label) showTip(b); });
+    b.addEventListener('mouseleave', hideTip);
+    b.addEventListener('click', () => { bar.tbTrayClick(it.key, 'left'); b.animate([{ transform: 'none' }, { transform: 'scale(.86)' }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.32,.5,1)' }); });
+    b.addEventListener('dblclick', () => bar.tbTrayClick(it.key, 'double'));
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); hideTip(); bar.tbTrayClick(it.key, 'right'); });
+    return b;
+  }) : [h('div', { class: 'tt-empty' }, 'Значков нет')]));
+  trayPop.style.setProperty('--tt-cols', Math.max(1, Math.min(6, trayList.length || 1)));
+  trayPlace();
+}
+function trayPlace() {
+  if (trayPop.hidden) return;
+  const btn = els.get('sys:tray'); if (!btn) return;
+  const r = btn.getBoundingClientRect(), sh = shell.getBoundingClientRect();
+  const x = Math.max(8, Math.min(window.innerWidth - trayPop.offsetWidth - 8, Math.round(r.left + r.width / 2 - trayPop.offsetWidth / 2)));
+  const y = Math.round(sh.top - trayPop.offsetHeight - 10);
+  trayPop.style.translate = `${x}px ${y}px`;
+}
+async function trayShow() {
+  clearTimeout(trayHideT); prevClose(); hideTip();
+  trayList = (await bar.tbTray().catch(() => [])) || [];
+  trayPop.hidden = false; menuOpen = true;
+  trayDraw();
+  requestAnimationFrame(() => trayPop.classList.add('on'));
+  // значки проявляются волной слева направо
+  trayPop.querySelectorAll('.tt-i').forEach((x, i) => x.animate([{ opacity: 0, transform: 'translateY(8px) scale(.7)' }, { opacity: 1, transform: 'none' }], { duration: 340, delay: 40 + i * 22, easing: 'cubic-bezier(.3,1.32,.5,1)', fill: 'backwards' }));
+  const b = els.get('sys:tray'); if (b) b.classList.add('on');
+}
+function trayClose() {
+  clearTimeout(trayHideT);
+  if (trayPop.hidden) return;
+  trayPop.classList.remove('on'); menuOpen = false;
+  const b = els.get('sys:tray'); if (b) b.classList.remove('on');
+  setTimeout(() => { if (!trayPop.classList.contains('on')) trayPop.hidden = true; }, 220);
+  if (!over) hideSoon();
+}
+const trayLeave = () => { clearTimeout(trayHideT); if (trayOpen()) trayHideT = setTimeout(trayClose, 500); };
+trayPop.addEventListener('mouseenter', () => { clearTimeout(trayHideT); show(); });
+trayPop.addEventListener('mouseleave', trayLeave);
+bar.tbTray().then((l) => { trayList = l || []; render(); }).catch(() => {});
+bar.onTbTray((list) => {
+  const had = new Set(trayList.map((x) => x.key));
+  trayList = list || [];
+  render(); // числа в подсказках трея → кружки на значках
+  if (!trayOpen()) return;
+  const w0 = trayPop.offsetWidth, h0 = trayPop.offsetHeight;
+  trayDraw();
+  // новый значок — появляется, панель плавно меняет размер
+  trayList.forEach((it, i) => { if (!had.has(it.key)) { const x = trayPop.children[i]; if (x) x.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.3,1.32,.5,1)' }); } });
+  const w1 = trayPop.offsetWidth, h1 = trayPop.offsetHeight;
+  if (w0 !== w1 || h0 !== h1) trayPop.animate([{ width: w0 + 'px', height: h0 + 'px' }, { width: w1 + 'px', height: h1 + 'px' }], { duration: 300, easing: 'cubic-bezier(.3,1.2,.5,1)' });
+});
+
 // ---------- показ / скрытие ----------
 let shown = false, hideT = 0, over = false, menuOpen = false;
 function show() { clearTimeout(hideT); hideT = 0; if (shown) return; shown = true; document.body.classList.add('shown'); }
@@ -455,8 +559,8 @@ document.addEventListener('mousemove', (e) => {
 });
 // курсор ушёл с этого монитора совсем — событий больше не придёт, прячемся по таймеру
 document.addEventListener('mouseleave', () => { if (cfg.mode === 'hide' && !over && !menuOpen) hideSoon(450); });
-shell.addEventListener('mouseenter', () => { over = true; show(); document.body.classList.add('mag'); bar.tbInteractive(true); });
-shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); prevLeave(); hideSoon(); });
+shell.addEventListener('mouseenter', () => { over = true; clearTimeout(trayHideT); show(); document.body.classList.add('mag'); bar.tbInteractive(true); });
+shell.addEventListener('mouseleave', () => { over = false; lastX = null; document.body.classList.remove('mag'); magnify(null); hideTip(); bar.tbInteractive(false); prevLeave(); trayLeave(); hideSoon(); });
 shell.addEventListener('mousemove', (e) => { lastX = e.clientX; magnify(e.clientX); });
 
 function applyCfg(c) {

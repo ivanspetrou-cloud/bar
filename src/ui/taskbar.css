@@ -96,3 +96,21 @@ body.mag .tbi, body.mag .tb-sep { transition: transform .07s linear, background 
 
 /* док — только для мыши: без рамки фокуса после клика */
 button:focus, button:focus-visible, .tbi:focus, .tbi:focus-visible { outline: none; }
+
+/* значки трея над кнопкой-стрелкой */
+.tb-tray { display: grid; grid-template-columns: repeat(var(--tt-cols, 4), 36px); gap: 4px; padding: 8px; }
+.tt-i { width: 36px; height: 36px; border: 0; border-radius: var(--r-sm); background: transparent; display: grid; place-items: center; cursor: pointer; transition: background .15s, transform .2s var(--spring); }
+.tt-i:hover { background: var(--ctl); }
+.tt-i img { width: 20px; height: 20px; image-rendering: auto; pointer-events: none; }
+.tt-empty { color: var(--mut); font-size: var(--fs-cap); padding: 4px 8px; white-space: nowrap; }
+.tbi.sys.on .tb-ic { color: var(--hi-text); }
+.tbi.sys[aria-label="Значки трея"] .tb-ic svg { transition: transform .3s var(--spring); }
+.tbi.sys.on[aria-label="Значки трея"] .tb-ic svg { transform: rotate(180deg); }
+
+/* уведомления на значке: кружок с числом или точка */
+.tb-badge {
+  position: absolute; top: 3%; right: 3%; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px;
+  background: #ff3b30; color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center;
+  box-shadow: 0 0 0 2px var(--bg); pointer-events: none; transform-origin: 50% 50%; font-variant-numeric: tabular-nums;
+}
+.tb-badge.dot { min-width: 0; width: 10px; height: 10px; padding: 0; top: 8%; right: 8%; }

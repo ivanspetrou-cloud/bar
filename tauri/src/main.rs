@@ -18,6 +18,7 @@ mod settings;
 mod shell;
 mod taskbar;
 mod tray;
+mod trayhost;
 mod updater;
 mod webview;
 mod worker;

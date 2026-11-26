@@ -722,6 +722,7 @@ tool({
           h('button', { class: 'chip tbs-chip' + (c.btn.start ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, start: !c.btn.start } }) }, I('apps'), 'Приложения'),
           h('button', { class: 'chip tbs-chip' + (c.btn.search ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, search: !c.btn.search } }) }, I('search'), 'Поиск'),
           h('button', { class: 'chip tbs-chip' + (c.btn.desktop ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, desktop: !c.btn.desktop } }) }, I('minimize'), 'Свернуть всё'),
+          h('button', { class: 'chip tbs-chip' + (c.btn.tray ? ' on' : ''), title: 'Стрелка со значками программ из трея: левый клик — открыть, правый — меню программы', onclick: () => set({ btn: { ...c.btn, tray: !c.btn.tray } }) }, I('up'), 'Значки трея'),
           h('button', { class: 'chip tbs-chip' + (c.running ? ' on' : ''), onclick: () => set({ running: !c.running }) }, I('apps'), 'Открытые программы'),
           h('button', { class: 'chip tbs-chip' + (c.btn.restart ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, restart: !c.btn.restart } }) }, I('redo'), 'Перезагрузка'),
           h('button', { class: 'chip tbs-chip' + (c.btn.shutdown ? ' on' : ''), onclick: () => set({ btn: { ...c.btn, shutdown: !c.btn.shutdown } }) }, I('pwr'), 'Завершение работы')),

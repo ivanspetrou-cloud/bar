@@ -252,10 +252,24 @@ pub fn show_desktop() { key(0x5B, false); key(0x44, false); key(0x44, true); key
 // ---------- панель задач Windows ----------
 fn abd(h: i64) -> APPBARDATA { APPBARDATA { cbSize: std::mem::size_of::<APPBARDATA>() as u32, hWnd: hwnd(h), ..Default::default() } }
 pub fn tb_autohide() -> bool { let mut d = abd(0); unsafe { SHAppBarMessage(4 /* ABM_GETSTATE */, &mut d) & 1 != 0 } }
+/// настоящая панель задач Windows: окно класса Shell_TrayWnd, но не приёмник трея Bar (заголовок «BarTrayHost»)
+pub fn explorer_tray() -> isize {
+    let cls = wide("Shell_TrayWnd");
+    let mut after = HWND::default();
+    unsafe {
+        while let Ok(x) = FindWindowExW(None, Some(after), PCWSTR(cls.as_ptr()), PCWSTR::null()) {
+            if x.is_invalid() { break; }
+            let mut t = [0u16; 32];
+            let n = GetWindowTextW(x, &mut t) as usize;
+            if String::from_utf16_lossy(&t[..n]) != "BarTrayHost" { return x.0 as isize; }
+            after = x;
+        }
+    }
+    0
+}
 pub fn tb_set_autohide(on: bool) {
     let mut d = abd(0);
-    let cls = wide("Shell_TrayWnd");
-    d.hWnd = unsafe { FindWindowW(PCWSTR(cls.as_ptr()), PCWSTR::null()) }.unwrap_or_default();
+    d.hWnd = HWND(explorer_tray() as *mut _);
     d.lParam = LPARAM(if on { 1 } else { 2 });
     unsafe { SHAppBarMessage(10 /* ABM_SETSTATE */, &mut d) };
 }
@@ -265,7 +279,9 @@ pub fn tb_hide(hide: bool) -> i32 {
     let (main, second) = (wide("Shell_TrayWnd"), wide("Shell_SecondaryTrayWnd"));
     let mut n = 0;
     unsafe {
-        if let Ok(t) = FindWindowW(PCWSTR(main.as_ptr()), PCWSTR::null()) { if !t.is_invalid() { let _ = ShowWindow(t, cmd); n += 1; } }
+        let t = HWND(explorer_tray() as *mut _);
+        if !t.is_invalid() { let _ = ShowWindow(t, cmd); n += 1; }
+        let _ = &main;
         let mut s = HWND::default();
         while let Ok(x) = FindWindowExW(None, Some(s), PCWSTR(second.as_ptr()), PCWSTR::null()) {
             if x.is_invalid() { break; }
