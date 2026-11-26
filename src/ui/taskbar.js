@@ -506,7 +506,10 @@ bar.onTbPeek(() => { show(); hideSoon(2500); sendZone(); });
 function sendZone() {
   const r = shell.getBoundingClientRect();
   const z = { l: r.left, t: r.top, r: r.right, b: r.bottom };
-  if (!prev.hidden) { const p = prev.getBoundingClientRect(); z.l = Math.min(z.l, p.left); z.t = Math.min(z.t, p.top); z.r = Math.max(z.r, p.right); z.b = Math.max(z.b, p.bottom); }
+  const add = (q) => { if (!q.width) return; z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); };
+  if (!prev.hidden) add(prev.getBoundingClientRect());
+  for (const el of shell.querySelectorAll('.tbi')) add(el.getBoundingClientRect()); // увеличенные значки выходят за подложку
+  add(bgEl.getBoundingClientRect());
   bar.tbZone(z);
 }
 setInterval(() => { if (shown) sendZone(); }, 250);

@@ -132,7 +132,9 @@ ${api.join('\n')}
     if (!sh) return;
     const r = sh.getBoundingClientRect();
     const z = { l: r.left, t: r.top, r: r.right, b: r.bottom };
-    for (const p of document.querySelectorAll('.tb-prev:not([hidden]), .tb-tip:not([hidden])')) { const q = p.getBoundingClientRect(); if (q.width) { z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); } }
+    // + сами значки: при наведении они увеличиваются и выходят вверх за подложку — иначе курсор на увеличенном значке
+    // считался «вне дока», окно отпускало мышь, значки сжимались и снова росли (дёрганое наведение)
+    for (const p of document.querySelectorAll('.tb-prev:not([hidden]), .tb-tip:not([hidden]), #tb-shell .tbi, #tb-bg')) { const q = p.getBoundingClientRect(); if (q.width) { z.l = Math.min(z.l, q.left); z.t = Math.min(z.t, q.top); z.r = Math.max(z.r, q.right); z.b = Math.max(z.b, q.bottom); } }
     const k = [z.l, z.t, z.r, z.b].map(Math.round).join(',');
     if (k !== lastTb) { lastTb = k; fire('tb-zone', [z]); }
     requestAnimationFrame(tbZone);
