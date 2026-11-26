@@ -212,8 +212,10 @@ textarea.field { flex: 1; min-height: 0; }
   flex: 1; display: grid; place-items: center; color: var(--mut); text-align: center; white-space: pre-line;
   border: 1.5px dashed var(--ctl-hi); border-radius: var(--r-card); padding: var(--pad);
 }
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); flex: 1; min-height: 0; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); flex: 1; min-height: 0; }
+.settings > .split { flex: none; } /* в прокручиваемых настройках колонки — во всю свою высоту, а не обрезаются по видимой части */
 .col { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+.col > .btn { flex-shrink: 0; } /* кнопка в переполненной колонке не сплющивается по высоте */
 .seg { display: inline-flex; background: var(--card); border-radius: var(--r-ctl); padding: 3px; align-self: flex-start; }
 .seg button { height: 30px; border: 0; background: transparent; padding: 0 12px; border-radius: calc(var(--r-ctl) - 3px); cursor: pointer; color: var(--mut); font-weight: 600; }
 .seg button.on { background: var(--ctl); color: var(--fg); }

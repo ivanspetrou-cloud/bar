@@ -2,6 +2,7 @@
 //   1) bash tauri/build.sh
 //   2) запустить native/target/release/bar-tauri.exe с WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333
 //   3) node scripts/anim-check.js [сценарий...]   (без аргументов — все)
+//      node scripts/anim-check.js layout            — вёрстка: сплющенные и обрезанные кнопки, узкие колонки во всех вкладках настроек и инструментах
 // Каждый кадр страница записывает размер, края и прозрачность нотча; скрипт ищет долгие кадры, скачки
 // (шаг резко больше соседних), «РАЗВОРОТ» края (движение туда-обратно) и мигание прозрачности.
 // Ожидаемые развороты: один у ширины при открытии (пружина) и верх у «всплывашки» в спрятанном режиме.
@@ -73,8 +74,28 @@ const SC = {
   idleAfterClose: ["expand()", "collapse(true); setTimeout(() => { island.classList.add('idle'); }, 120)", 1300],
   idleBack: ["collapse(true); island.classList.add('idle')", "island.classList.remove('idle')", 900],
 };
+
+const LAYOUT = `(() => { const bad = []; const tool = document.querySelector('#tool .tool'); const tb = tool && tool.getBoundingClientRect();
+  const scrolled = (el) => { for (let p = el.parentElement; p && p !== tool; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if (o === 'auto' || o === 'scroll') return true; } return false; };
+  for (const el of document.querySelectorAll('#tool button, #tool .sw, #tool select, #tool input, #tool .card')) {
+    const r = el.getBoundingClientRect(); if (!r.width) continue; const t = (el.textContent || el.title || el.tagName).trim().slice(0, 40);
+    if (el.tagName === 'BUTTON' && el.scrollHeight > el.clientHeight + 2 && getComputedStyle(el).overflowY === 'visible') bad.push('сплющена: ' + t + ' ' + Math.round(r.height) + '/' + el.scrollHeight);
+    if (el.tagName === 'BUTTON' && r.height < 20 && el.textContent.trim()) bad.push('низкая: ' + t + ' ' + Math.round(r.height));
+    if (tb && r.bottom > tb.bottom + 1 && !scrolled(el)) bad.push('обрезана снизу: ' + t);
+  }
+  for (const sp of document.querySelectorAll('#tool .split')) { const k = [...sp.children].map((c) => Math.round(c.getBoundingClientRect().width)); if (k.some((w) => w > 0 && w < 60)) bad.push('узкая колонка: ' + k.join('/')); }
+  return bad; })()`;
+async function layout(p) {
+  const tabs = ['main', 'ind', 'look', 'game', 'lab'];
+  const tools = (await p.ev("TOOLS.filter(t=>!t.hidden && t.id!=='settings').map(t=>t.id)"));
+  for (const t of tabs) { await p.ev(`pinned=true; store.set('settingsTab','${t}'); growWin().then(()=>{expand(); goHome(); openTool('settings')}); new Promise(r=>setTimeout(r,1500))`); const b = await p.ev(LAYOUT); console.log('настройки/' + t + ': ' + (b.length ? b.join('; ') : 'ок')); }
+  for (const t of tools) { await p.ev(`goHome(); openTool('${t}'); new Promise(r=>setTimeout(r,900))`); const b = await p.ev(LAYOUT); console.log(t + ': ' + (b.length ? b.join('; ') : 'ок')); }
+  await p.ev("pinned=false; collapse(true); 'ok'");
+}
+
 (async () => {
   const p = await page('main');
+  if (process.argv[2] === 'layout') { await layout(p); p.close(); process.exit(0); }
   await p.ev(REC);
   const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SC);
   for (const n of names) {
