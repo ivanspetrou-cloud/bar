@@ -1081,3 +1081,23 @@ svg.pp { transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 @keyframes pp-wake { 50% { opacity: .7; transform: scale(.95); } }
 @keyframes pp-ping { from { opacity: .6; transform: scale(1); } to { opacity: 0; transform: scale(1.35); } }
 @media (prefers-reduced-motion: reduce) { .ib.big.waking, .ib.big.waking::after { animation-duration: 3s; } }
+
+/* ---------- наведение для всех кликабельных элементов настроек (раньше реагировали только кнопки) ---------- */
+/* сегменты и вкладки: невыбранные подсвечиваются, выбранная — чуть ярче */
+.seg button { transition: background .15s, color .15s, transform .15s ease-out; }
+.seg button:not(.on):hover { background: color-mix(in srgb, var(--ctl) 55%, transparent); color: var(--fg); }
+.seg button.on:hover { background: var(--ctl-hi); }
+.seg button:active { transform: scale(.96); }
+/* тумблер: фон светлеет, ручка слегка увеличивается */
+.toggle:hover { background: color-mix(in srgb, var(--mut) 78%, var(--fg)); }
+.toggle.on:hover { background: color-mix(in srgb, var(--acc-g) 85%, var(--fg)); }
+.toggle::after { transition: transform .25s var(--spring), box-shadow .15s; }
+.toggle:hover::after { box-shadow: 0 1px 4px rgba(0,0,0,.35), 0 0 0 3px color-mix(in srgb, var(--knob) 25%, transparent); }
+.toggle:active::after { width: 19px; }
+.toggle.on:active::after { transform: translateX(13px); }
+/* выпадающие списки */
+select.field, select { transition: background .15s, box-shadow .15s; cursor: pointer; }
+select.field:hover, select:hover { background: var(--ctl-hi); }
+/* чипы: подсветка плавно, нажатие — отклик */
+.chip { transition: background .15s, transform .15s ease-out; }
+.chip:active { transform: scale(.97); }

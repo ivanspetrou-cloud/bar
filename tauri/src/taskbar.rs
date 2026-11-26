@@ -259,12 +259,17 @@ pub fn start() {
     if cfg()["on"] == true { std::thread::spawn(enable); } else { std::thread::spawn(restore_win_taskbar); }
     tray_sync();
     crate::trayhost::start_shellhook();
+    // панель задач Windows вылезла (скриншот, клавиша Win) — убрать сразу, а не через 10 с
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_millis(200));
+        if with(|s| s.on) && bar_agent::win::tb_visible() { bar_agent::win::tb_hide(true); }
+    });
     std::thread::spawn(|| { let mut n = 0u64; loop {
         std::thread::sleep(Duration::from_secs(1)); n += 1;
         if !with(|s| s.on) { continue; }
         if n % 2 == 0 { full_check(); geometry_check(); }
         if n % 5 == 0 { snap_fg(); }
-        if n % 10 == 0 { act("hidetaskbar", "1"); }
+        if n % 10 == 0 { act("hidetaskbar", "1"); } // на всякий случай (и вторые мониторы)
     } });
     std::thread::spawn(|| loop { std::thread::sleep(Duration::from_millis(60)); if with(|s| s.on) { cursor_tick(); } });
 }

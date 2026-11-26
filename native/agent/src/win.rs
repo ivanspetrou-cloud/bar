@@ -273,6 +273,8 @@ pub fn tb_set_autohide(on: bool) {
     d.lParam = LPARAM(if on { 1 } else { 2 });
     unsafe { SHAppBarMessage(10 /* ABM_SETSTATE */, &mut d) };
 }
+/// панель задач Windows сейчас видна (её показывает сама Windows: Win+Shift+S, «Ножницы», клавиша Win)
+pub fn tb_visible() -> bool { let t = HWND(explorer_tray() as *mut _); !t.is_invalid() && unsafe { IsWindowVisible(t) }.as_bool() }
 // спрятать / показать панель задач целиком (основную и на других мониторах), пока работает таскбар Bar
 pub fn tb_hide(hide: bool) -> i32 {
     let cmd = if hide { SW_HIDE } else { SW_SHOW };
