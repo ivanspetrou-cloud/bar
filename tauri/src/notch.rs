@@ -149,7 +149,11 @@ impl Notch {
         // раскрытая панель ловит клики только в своей полосе по центру (как прежнее окно шириной 820), а не по всей ширине монитора
         let half = st.band / 2;
         let in_band = cx >= st.size.0 / 2 - half && cx < st.size.0 / 2 + half;
-        let want = over || (st.interactive && inside_win && in_band);
+        // раскрытая панель ловит клики только над собой (+ поле 8 px): вокруг клики сразу уходят окнам под ней (игре и т.д.)
+        let _ = in_band;
+        let m = 8;
+        let over_panel = inside_win && cx >= l - m && cx < r + m && cy >= t - m && cy < b + m;
+        let want = over || (st.interactive && over_panel);
         if want != st.clickable {
             st.clickable = want;
             let _ = self.win.set_ignore_cursor_events(!want);
