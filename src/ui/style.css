@@ -873,6 +873,12 @@ svg.pp { transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 /* цвет обложки: мягкое свечение под свёрнутым нотчем, пока играет музыка */
 /* окно свёрнутого нотча всего на 12px выше таблетки: свечение компактное, чтобы его не обрезал край окна
    и оно шло точно по контуру нотча вместе со скруглениями */
+/* свечение: размер (--glow-b) и яркость (--glow-a) — из настроек; окно свёрнутого нотча на 12 px выше таблетки,
+   поэтому размер не больше 10 px — свечение не обрезается краем окна и идёт точно по контуру со скруглениями */
+#island.glow:not(.open) {
+  box-shadow: 0 1px var(--glow-b, 7px) calc(var(--glow-b, 7px) * -0.15) color-mix(in srgb, var(--tint) var(--glow-a, 75%), transparent),
+              inset 0 -1px 0 color-mix(in srgb, var(--tint) calc(var(--glow-a, 75%) * .73), transparent);
+}
 #island.tinted.open .card.np { background: linear-gradient(135deg, color-mix(in srgb, var(--tint) 22%, var(--card)), var(--card) 70%); transition: background .6s; }
 
 /* клик по дате в шапке открывает календарь */

@@ -157,8 +157,12 @@ function tintSync() {
   } else tintApply();
 }
 function tintApply() {
-  const on = !!(Tint.c && S.media && S.media.playing && store.get('tint', true));
-  island.classList.toggle('tinted', on);
+  const playing = !!(Tint.c && S.media && S.media.playing);
+  island.classList.toggle('tinted', playing && store.get('tint', true));
+  // свечение по контуру свёрнутого нотча — своя галочка, размер и яркость (Настройки → Дополнительно)
+  island.classList.toggle('glow', playing && store.get('glow', true));
+  island.style.setProperty('--glow-b', store.get('glowSize', 7) + 'px');
+  island.style.setProperty('--glow-a', store.get('glowBright', 75) + '%');
   if (Tint.c) island.style.setProperty('--tint', Tint.c);
 }
 liveHooks.add((p) => { if ('media' in p) tintSync(); });
@@ -587,7 +591,15 @@ const LAB_OPTS = [
   ['liveEq', 'Живой эквалайзер', 'столбики двигаются под настоящий звук', () => LiveEq.on, setLiveEq],
   ['tuck', 'Прятать над развёрнутыми окнами', 'вкладки браузера свободны', () => store.get('tuck', true), (v) => { store.set('tuck', !!v); tuckApply(); }],
   ['tint', 'Цвет обложки', 'фон карточки трека в цвет обложки', () => store.get('tint', true), (v) => { store.set('tint', !!v); tintApply(); }],
+  ['glow', 'Свечение в цвет обложки', 'контур нотча светится цветом трека, пока играет музыка', () => store.get('glow', true), (v) => { store.set('glow', !!v); tintApply(); }],
 ];
+// размер и яркость свечения: ползунок сразу меняет свечение (видно на свёрнутом нотче)
+function glowRow(key, name, min, max, def, fmt) {
+  const sl = makeSlider({ min, max, step: 1, value: store.get(key, def), label: name });
+  const val = h('b', { class: 'chime-v' }, fmt(store.get(key, def)));
+  sl.addEventListener('input', () => { store.set(key, +sl.value); val.textContent = fmt(+sl.value); tintApply(); });
+  return h('div', { class: 'sw chime-row' }, h('span', {}, name), sl, val);
+}
 function chimeRow() {
   const sl = makeSlider({ min: 0, max: 100, step: 5, value: chimeVol(), label: 'Громкость сигнала' });
   const val = h('b', { class: 'chime-v' }, chimeVol() ? chimeVol() + '%' : 'без звука');
@@ -630,7 +642,8 @@ function labSettings(toggle) {
     draw(t);
   });
   return h('div', { class: 'split', style: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } },
-    h('div', { class: 'col' }, notchScreenRow(), ...LAB_OPTS.map(row), chimeRow(),
+    h('div', { class: 'col' }, notchScreenRow(), ...LAB_OPTS.map(row),
+      glowRow('glowSize', 'Размер свечения', 2, 10, 7, (v) => v + ' px'), glowRow('glowBright', 'Яркость свечения', 15, 100, 75, (v) => v + '%'), chimeRow(),
       h('button', { class: 'btn sm', style: { alignSelf: 'flex-start' }, title: 'Если заряд мыши, клавиатуры или наушников не виден — пришлите это разработчику', onclick: copyDevDiag }, I('copy'), 'Скопировать сведения об устройствах')),
     tbBox);
 }
