@@ -1463,15 +1463,15 @@ tool({
             h('div', { class: 'col' },
               line('Свой переключатель окон', 'Alt+Tab в стиле Bar; выключите — вернётся окно Windows', toggle(c.on !== false, (v) => set({ on: v }))),
               h('div', { class: 'col at-opts' + (off ? ' off' : '') },
-                line('Вид', '', seg([['thumbs', 'Миниатюры'], ['icons', 'Значки'], ['list', 'Список']], 'view')),
+                h('div', { class: 'sw at-view' }, h('span', {}, 'Вид'), seg([['thumbs', 'Миниатюры'], ['carousel', 'Карусель'], ['stack', 'Стопка'], ['icons', 'Значки'], ['list', 'Список']], 'view')),
                 line('Размер', '', seg([['s', 'S'], ['m', 'M'], ['l', 'L']], 'size')),
                 line('Окна', '', seg([['all', 'Все мониторы'], ['here', 'Текущий']], 'monitor')),
                 line('Экран', '', seg([['primary', 'Основной'], ['active', 'С окном']], 'screen')))),
             h('div', { class: 'col at-opts' + (off ? ' off' : '') },
               line('Свёрнутые окна', 'показывать в списке', toggle(c.minimized !== false, (v) => set({ minimized: v }))),
-              line('Названия окон', 'под миниатюрами и значками', toggle(c.titles !== false, (v) => set({ titles: v }))),
+              line('Названия окон', 'над окнами и под значками', toggle(c.titles !== false, (v) => set({ titles: v }))),
               line('Затемнять фон', 'пока открыт переключатель', toggle(c.dim !== false, (v) => set({ dim: v }))),
-              line('В играх', 'иначе в игре — обычный Alt+Tab Windows', toggle(c.game === true, (v) => set({ game: v }))),
+              line('В играх', 'иначе Alt+Tab Windows', toggle(c.game === true, (v) => set({ game: v }))),
               h('div', { class: 'muted small' }, 'Держите Alt и жмите Tab (Shift+Tab — назад, стрелки — по сетке), отпустите Alt — откроется выбранное окно. Esc — отмена, колёсико мыши или крестик — закрыть окно. Если впереди окно администратора, Windows покажет свой Alt+Tab.'))));
         }
         draw();

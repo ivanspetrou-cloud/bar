@@ -1107,4 +1107,7 @@ select.field:hover, select:hover { background: var(--ctl-hi); }
 .at-opts.off { opacity: .45; pointer-events: none; }
 /* подписи переключателей — в одну строку, подпись строки не сжимается в столбик */
 .at-seg button { white-space: nowrap; }
-.at-opts .sw > span:first-child { white-space: nowrap; }
+/* строка «Вид»: подпись сверху, все виды — во всю ширину под ней */
+.sw.at-view { flex-direction: column; align-items: stretch; gap: 8px; }
+.sw.at-view .seg { display: flex; align-self: stretch; }
+.sw.at-view .seg button { flex: 1; padding: 0 4px; }
