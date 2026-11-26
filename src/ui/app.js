@@ -2010,8 +2010,24 @@ function muSet(s) {
   MU.src = ytOn && (ytPlaying || !(MU.web && MU.web.playing)) ? 'ytm' : MU.web ? 'web' : ytOn ? 'ytm' : null;
   MU.tab = !!MU.src || !!s.tab;
   if (MU.src === 'web') MU.st = webSt(MU.web); else if (s.ready) MU.st = s; else if (!s.tab) MU.st = null;
+  muVolSync(ytOn, s);
   musicHooks.forEach((f) => { try { f(); } catch {} });
 }
+// Громкость YouTube Music запоминается: страница сама её не хранит, если менять не её ползунком, и после
+// перезагрузки или пробуждения вкладки возвращает старую. Пока вкладка на связи — запоминаем, что в ней стоит
+// (ползунок Bar или сам сайт); вкладка подключилась заново — выставляем запомненную.
+const MuVol = { v: store.get('muVol', null), on: false, fix: 0 };
+function muVolSync(ytOn, s) {
+  if (!ytOn || typeof s.volume !== 'number') { MuVol.on = false; return; }
+  if (!MuVol.on) { MuVol.on = true; MuVol.fix = MuVol.v != null && s.volume !== MuVol.v ? 3 : 0; }
+  if (MuVol.fix > 0) {
+    if (s.volume === MuVol.v) { MuVol.fix = 0; return; }
+    MuVol.fix--; bar.musicCmd('volume', MuVol.v).catch(() => {});
+    return;
+  }
+  if (s.volume !== MuVol.v) { MuVol.v = s.volume; store.set('muVol', s.volume); }
+}
+const muVolSet = (v) => { MuVol.v = v; MuVol.fix = 0; store.set('muVol', v); };
 bar.onMusic(muSet);
 bar.musicStatus().then((s) => muSet(Object.assign({ ext: s.ext, tab: s.tab }, s.state || {}))).catch(() => {});
 
@@ -2097,7 +2113,7 @@ tool({
       const dislike = ib('thumbsdown', 'Не нравится', () => { const m = likeMode === 'DISLIKE' ? 'INDIFFERENT' : 'DISLIKE'; setLike(m); anim(dislike, 'pop'); likeT = Date.now(); mcmd('dislike'); });
       const vol = makeSlider({ min: 0, max: 100, label: 'Громкость плеера' }); vol.classList.add('vol');
       let volDrag = false, volT = 0, artSrc = null;
-      vol.addEventListener('input', () => { volDrag = true; clearTimeout(volT); volT = setTimeout(() => { mcmd('volume', +vol.value); volDrag = false; }, 120); });
+      vol.addEventListener('input', () => { volDrag = true; clearTimeout(volT); volT = setTimeout(() => { if (MU.src !== 'web') muVolSet(+vol.value); mcmd('volume', +vol.value); volDrag = false; }, 120); });
       const frac = (e) => { const r = seek.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
       const showDrag = () => { const st = MU.st || {}; seekFill.style.width = knob.style.left = (seekDrag * 100) + '%'; t1.textContent = fmtT(seekDrag * (st.duration || 0)); };
       seek.addEventListener('pointerdown', (e) => {
