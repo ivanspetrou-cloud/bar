@@ -350,7 +350,7 @@ pub fn handle(label: &str, ch: &str, a: &[Value]) -> Value {
         "tb-refresh" => { std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(120)); refresh(); }); Value::Null }
         "tb-start" => { act("startmenu", ""); Value::Null }
         "tb-desktop" => { act("showdesktop", ""); Value::Null }
-        "tb-open" => { crate::shell::place(&arg(0)); Value::Null }
+        "tb-open" => { bar_agent::win::allow_foreground(); crate::shell::place(&arg(0)); Value::Null }
         "tb-power" => { crate::shell::power(arg(0).as_str().unwrap_or("")); Value::Null }
         "tb-lock" => { crate::shell::lock(); Value::Null }
         "tb-closewin" => { if let Some(h) = arg(0).as_i64().or_else(|| arg(0).as_str().and_then(|x| x.parse().ok())) { act("closewin", &h.to_string()); std::thread::spawn(|| { std::thread::sleep(Duration::from_millis(150)); refresh(); }); } Value::Null }

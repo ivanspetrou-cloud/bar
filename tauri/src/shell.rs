@@ -143,6 +143,7 @@ pub fn list_voice() -> Value {
 
 // ---------- запуск программ, места Windows, питание ----------
 pub fn app_launch(a: &Value) -> Value {
+    bar_agent::win::allow_foreground(); // запущенная программа откроется впереди, а не позади (см. win.rs)
     let id = a["id"].as_str().unwrap_or("");
     if !id.is_empty() && !id.starts_with("exe:") { explorer(&format!("shell:AppsFolder\\{}", id)); }
     else if let Some(e) = a["exe"].as_str().filter(|e| !e.is_empty()) { open_path(e); }

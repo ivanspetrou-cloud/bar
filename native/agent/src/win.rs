@@ -185,6 +185,10 @@ pub fn win_icon(exe: &str) -> Value {
 // Вывести окно вперёд. Windows не даёт фоновой программе забрать фокус, пока пользователь последним кликал
 // в другом окне (например, на другом мониторе), — поэтому несколько способов по очереди, с проверкой результата.
 pub fn focus(h: i64) -> bool { focus_opts(h, true) }
+/// Перед запуском программы из дока: Windows разрешает выйти вперёд только процессу, который получил последний ввод.
+/// Клик по доку в Tauri получает процесс WebView2, а не Bar, — поэтому запущенная программа открывалась позади,
+/// пока не кликнешь куда-нибудь ещё. Нажатие Alt делает Bar «последним вводом», а затем это право отдаём любой программе.
+pub fn allow_foreground() { unsafe { key(0x12, false); key(0x12, true); let _ = AllowSetForegroundWindow(ASFW_ANY); } }
 /// minimize: разрешить последний способ — свернуть и развернуть окно (виден как анимация Windows; для нотча — нельзя)
 pub fn focus_opts(h: i64, minimize: bool) -> bool {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
