@@ -9,6 +9,7 @@ html, body.tb-body { background: transparent; overflow: hidden; }
   transition: transform .55s var(--spring), opacity .3s ease;
 }
 body.shown .tb-shell { transform: none; opacity: 1; }
+body.away .tb-shell, body.away.shown .tb-shell { transform: translateY(calc(100% + var(--tb-edge) + 12px)); opacity: 0; transition: transform .4s var(--glide), opacity .35s ease .05s; }
 body.mode-hide:not(.shown) .tb-shell { transition: transform .4s var(--glide), opacity .35s ease .05s; }
 /* фон отдельным слоем: при увеличении иконок он растягивается в стороны, не трогая раскладку */
 .tb-bg {

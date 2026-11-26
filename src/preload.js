@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('bar', {
   g435Read: () => ipcRenderer.invoke('g435-read'),
   g435Info: () => ipcRenderer.invoke('g435-info'),
   onTbPeek: on('tb-peek'),
+  onTbAway: on('tb-away'),
   onTbWins: on('tb-wins'),
   onTbCfg: on('tb-cfg'),
   tbInteractive: (v) => ipcRenderer.send('tb-interactive', !!v),

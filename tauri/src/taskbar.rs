@@ -18,7 +18,7 @@ const EDGE: f64 = 8.0;
 const WIN_H: f64 = 420.0;
 
 struct Dock { label: String, hwnd: isize, mon: Monitor, id: String, zoom: f64, zone: Option<(f64, f64, f64, f64)>, clickable: bool, page: bool, hover: bool,
-    game: bool, full: bool, peek: bool, edge_at: Option<Instant>, leave_at: Option<Instant>, visible: bool, reserved: bool }
+    game: bool, full: bool, peek: bool, edge_at: Option<Instant>, leave_at: Option<Instant>, visible: bool, reserved: bool, hiding: bool }
 #[derive(Default)]
 struct St { on: bool, docks: Vec<Dock>, list: Value, thumbs: HashMap<i64, String>, last_fg: i64, mm: HashMap<String, f64>, gen: u64 }
 static S: Mutex<Option<St>> = Mutex::new(None);
@@ -100,10 +100,28 @@ fn reserve(d: &mut Dock, on: bool) {
         d.reserved = true;
     } else if d.reserved { d.reserved = false; act("appbaroff", &h.to_string()); }
 }
+// В игре и полноэкранном видео док прячется. Раньше окно пропадало и появлялось мгновенно — док «телепортировался».
+// Теперь страница сначала плавно уводит его вниз (tb-away), окно прячется после анимации; при показе — наоборот.
 fn visible_sync(d: &mut Dock) {
     let hide = (d.game || d.full) && !d.peek;
-    if hide && d.visible { unsafe { let _ = ShowWindow(hw(d), SW_HIDE); } d.visible = false; }
-    else if !hide && !d.visible { unsafe { let _ = ShowWindow(hw(d), SW_SHOWNOACTIVATE); } d.visible = true; }
+    if hide && d.visible && !d.hiding {
+        d.hiding = true;
+        ctx::emit_to(&d.label, "tb-away", json!(true));
+        let label = d.label.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(450));
+            with(|s| if let Some(d) = s.docks.iter_mut().find(|d| d.label == label) {
+                if d.hiding { unsafe { let _ = ShowWindow(hw(d), SW_HIDE); } d.visible = false; d.hiding = false; }
+            });
+        });
+    } else if !hide && d.hiding {
+        d.hiding = false; // передумали прятать (мышь у края) — окно ещё видно, просто вернуть док
+        ctx::emit_to(&d.label, "tb-away", json!(false));
+    } else if !hide && !d.visible {
+        unsafe { let _ = ShowWindow(hw(d), SW_SHOWNOACTIVATE); }
+        d.visible = true;
+        ctx::emit_to(&d.label, "tb-away", json!(false)); // страница уже в положении «внизу» — док выезжает
+    }
 }
 
 fn create(m: &Monitor, all: &[Monitor], n: usize) -> Option<Dock> {
@@ -130,7 +148,7 @@ fn create(m: &Monitor, all: &[Monitor], n: usize) -> Option<Dock> {
         let _ = tx.send(w.ok().and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize));
     });
     let hwnd = rx.recv().ok().flatten()?;
-    let d = Dock { label, hwnd, mon: m.clone(), id, zoom: zoom_of(m, all), zone: None, clickable: false, page: false, hover: false, game: false, full: false, peek: false, edge_at: None, leave_at: None, visible: false, reserved: false };
+    let d = Dock { label, hwnd, mon: m.clone(), id, zoom: zoom_of(m, all), zone: None, clickable: false, page: false, hover: false, game: false, full: false, peek: false, edge_at: None, leave_at: None, visible: false, reserved: false, hiding: false };
     place(&d);
     Some(d)
 }

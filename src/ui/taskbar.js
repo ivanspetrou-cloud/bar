@@ -499,6 +499,8 @@ bar.onTbWins((list) => {
 });
 bar.onTbCfg(applyCfg);
 // в игре: док выехал по задержке у края — показать (и спрятать, если мышь на него не зашла)
+// игра / полноэкранное видео: док плавно уезжает вниз перед тем, как окно спрячется, и выезжает, когда снова нужен
+if (bar.onTbAway) bar.onTbAway((on) => requestAnimationFrame(() => document.body.classList.toggle('away', !!on)));
 bar.onTbPeek(() => { show(); hideSoon(2500); sendZone(); });
 // прямоугольник дока (и превью, если открыто) — главному процессу, чтобы в играх он сам делал док кликабельным
 function sendZone() {
