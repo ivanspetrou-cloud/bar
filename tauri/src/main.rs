@@ -178,9 +178,25 @@ pub fn quit(app: &AppHandle) {
     app.exit(0);
 }
 
+/// Движок окон прошлого Bar (msedgewebview2) ещё закрывается — подождать до 5 с: иначе WebView2 не создаст окна
+/// с новыми параметрами в той же папке данных, и Bar тихо закроется (так было после обновления на медленном ПК).
+/// Пока движок жив, файл-замок его папки занят.
+fn wait_old_webview() {
+    let id = if ctx::DATA == "Bar" { "app.bar.notch" } else { "app.bar.tauri" };
+    let Ok(base) = std::env::var("LOCALAPPDATA") else { return };
+    let lock = std::path::Path::new(&base).join(id).join("EBWebView").join("lockfile");
+    for _ in 0..25 {
+        if !lock.exists() { return; }
+        // занят ли: открыть на запись без совместного доступа
+        use std::os::windows::fs::OpenOptionsExt;
+        match std::fs::OpenOptions::new().write(true).share_mode(0).open(&lock) { Ok(_) => return, Err(_) => std::thread::sleep(std::time::Duration::from_millis(200)) }
+    }
+}
+
 fn main() {
     // помощник Alt+Tab с правами администратора: без окон Bar, только перехват клавиш (см. alttab.rs)
     if std::env::args().any(|a| a == "--alttab-helper") { alttab::helper_main(); return; }
+    wait_old_webview();
     // данные Bar и окно нотча: настройки нужны раньше окна (оно спрашивает монитор)
     let settings = settings::Settings::load();
     ctx::set_settings(settings.clone());

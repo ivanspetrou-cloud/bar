@@ -31,6 +31,9 @@ UninstPage instfiles
 Section "Bar"
   ; закрыть работающий Bar (и прежнюю Electron-версию)
   nsExec::Exec 'taskkill /F /T /IM Bar.exe'
+  ; процессы движка окон (msedgewebview2) именно Bar — по его папке данных; чужие (Teams, Edge) не трогаем.
+  ; Пока они живы, новый Bar с другими параметрами движка не может создать окна и тихо закрывается
+  nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$q = { Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $$_.CommandLine -like '*app.bar.notch*' } }; & $$q | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }; for ($$i = 0; $$i -lt 25; $$i++) { if (-not (& $$q)) { break }; Start-Sleep -Milliseconds 200 }"`
   ; помощник Alt+Tab (с правами администратора) закрывается сам следом за Bar — ждём, пока освободит Bar.exe
   Sleep 1200
   ; файлы прежней версии — только файлы программы в её папке
