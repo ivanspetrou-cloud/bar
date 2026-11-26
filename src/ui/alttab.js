@@ -76,8 +76,13 @@ function deckPos(i) {
     let d = ((i - sel) % n + n) % n; if (d > n / 2) d -= n; // ближайшее расстояние по кругу
     const a = Math.min(Math.abs(d), 4), s = Math.sign(d);
     const SC = [1, .7, .5, .38, .3], C = [0, .89, 1.53, 2.01, 2.39]; // масштаб и центр (в ширинах карточки)
+    // боковых — сколько целиком помещается на этом экране (на XL — меньше): за краем окна ничего не рисуем
+    const front = grid.children[sel], dw = (front && front.offsetWidth) || 300;
+    const half = (window.innerWidth / 2 - 12) / dw;
+    let fit = 0; while (fit < 3 && C[fit + 1] + SC[fit + 1] / 2 <= half) fit++;
+    const show = Math.abs(d) <= fit;
     const dimK = [1, .72, .5, .36, 0][a];
-    return { t: `translateX(${s * C[a] * 100}%) scale(${SC[a]})`, o: Math.abs(d) > 3 ? 0 : 1, z: 50 - a, f: `brightness(${.4 + dimK * .6})`, live: Math.abs(d) <= 3, dimK };
+    return { t: `translateX(${s * C[a] * 100}%) scale(${SC[a]})`, o: show ? 1 : 0, z: 50 - a, f: `brightness(${.4 + dimK * .6})`, live: show, dimK };
   }
   const d = ((i - sel) % n + n) % n; // стопка: 0 — передняя, дальше — глубже
   const v = Math.min(d, 5);
@@ -179,6 +184,7 @@ function thumbItems() {
     else if (deck() && c !== grid.children[sel]) continue;      // стопка — только передняя (задние закрыты передней)
     const r = c._shot.getBoundingClientRect();                  // с учётом масштаба и сдвига карточки
     if (!deck() && (r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) continue; // прокручено за край панели
+    if (car && (r.left < 0 || r.right > window.innerWidth)) continue; // за краем экрана (при перетаскивании) — Windows нарисовала бы её на соседнем мониторе
     const m = 4 * (r.width / (c._shot.offsetWidth || r.width));
     items.push({ hwnd: c._w.hwnd, l: (r.left + m) * k, t: (r.top + m) * k, r: (r.right - m) * k, b: (r.bottom - m) * k, o: car ? .35 + c._dim * .65 : 1 });
   }
