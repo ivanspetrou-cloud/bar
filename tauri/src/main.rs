@@ -3,6 +3,7 @@
 // Работа с Windows — библиотека bar-agent (тот же код, что у bar-agent.exe), прямо в этом процессе, в фоновых потоках.
 #![windows_subsystem = "windows"]
 
+mod alttab;
 mod apps;
 mod bridge;
 mod capture;
@@ -56,6 +57,7 @@ fn handle(app: &AppHandle, label: &str, ch: &str, a: &[Value]) -> Value {
     if ch.starts_with("game-") || ch == "panel-state" { return game::handle(ch, a); }
     if ch.starts_with("update-") { return updater::handle(ch); }
     if ch.starts_with("hotkeys-") { return tray::handle(app, ch, a); }
+    if ch.starts_with("at-") { return alttab::handle(ch, a); }
     if ch.starts_with("tb-") || ch.starts_with("taskbar-") || ch == "pick-exe" || ch == "pick-folder" { return taskbar::handle(label, ch, a); }
     match ch {
         // ---------- окно нотча ----------
@@ -202,6 +204,7 @@ fn main() {
             music::start();
             game::start();
             taskbar::start();
+            alttab::start(&h);
             updater::start();
             // события окон Windows: таскбар (список окон) и нотч (развёрнутое окно → полоска)
             std::thread::spawn(|| {

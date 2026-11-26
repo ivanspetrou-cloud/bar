@@ -1439,14 +1439,42 @@ tool({
     const reset = h('button', { class: 'btn sm', onclick: () => { BarTheme.save({ ...BarTheme.DEFAULTS }); BarTheme.apply(); show('look'); } }, I('reset'), 'Сбросить оформление');
     const body = h('div', { class: 'settings col', style: { flex: '1', minHeight: '0' } });
     el.append(h('div', { class: 'row' }, tabs, h('span', { class: 'grow' }), reset), body);
-    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры'], ['lab', 'Дополнительно']];
+    const TABS = [['main', 'Основное'], ['ind', 'Показатели'], ['look', 'Оформление'], ['game', 'Игры'], ['alttab', 'Alt+Tab'], ['lab', 'Дополнительно']];
     function show(t) {
       store.set('settingsTab', t);
       tabs.replaceChildren(...TABS.map(([k, n]) => h('button', { class: k === t ? 'on' : '', onclick: () => show(k) }, n)));
       reset.hidden = t !== 'look';
       if (body._cleanup) { body._cleanup(); body._cleanup = null; }
       body.replaceChildren(); body._tok = null;
-      ({ main, ind, look, game, lab: () => body.append(labSettings(toggle)) })[t]();
+      ({ main, ind, look, game, alttab, lab: () => body.append(labSettings(toggle)) })[t]();
+    }
+
+    // свой переключатель окон по Alt+Tab (tauri/src/alttab.rs, alttab.html): включение и вид
+    function alttab() {
+      const tok = (body._tok = {});
+      bar.atGet().then((c) => {
+        if (body._tok !== tok) return;
+        const set = (p) => { Object.assign(c, p); bar.atSet(p); draw(); };
+        const seg = (opts, key) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', { class: c[key] === v ? 'on' : '', onclick: () => set({ [key]: v }) }, label)));
+        const line = (name, desc, ctl) => h('div', { class: 'sw' }, h('span', {}, name, desc && h('span', { class: 'muted' }, ' · ' + desc)), ctl);
+        function draw() {
+          const off = c.on === false;
+          body.replaceChildren(h('div', { class: 'split' },
+            h('div', { class: 'col' },
+              line('Свой переключатель окон', 'Alt+Tab в стиле Bar; выключите — вернётся окно Windows', toggle(c.on !== false, (v) => set({ on: v }))),
+              h('div', { class: 'col at-opts' + (off ? ' off' : '') },
+                line('Вид', '', seg([['thumbs', 'Миниатюры'], ['icons', 'Значки'], ['list', 'Список']], 'view')),
+                line('Размер', '', seg([['s', 'S'], ['m', 'M'], ['l', 'L']], 'size')),
+                line('Окна', '', seg([['all', 'Все мониторы'], ['here', 'Этот монитор']], 'monitor')))),
+            h('div', { class: 'col at-opts' + (off ? ' off' : '') },
+              line('Свёрнутые окна', 'показывать в списке', toggle(c.minimized !== false, (v) => set({ minimized: v }))),
+              line('Названия окон', 'под миниатюрами и значками', toggle(c.titles !== false, (v) => set({ titles: v }))),
+              line('Затемнять фон', 'пока открыт переключатель', toggle(c.dim !== false, (v) => set({ dim: v }))),
+              line('В играх', 'иначе в игре — обычный Alt+Tab Windows', toggle(c.game === true, (v) => set({ game: v }))),
+              h('div', { class: 'muted small' }, 'Держите Alt и жмите Tab (Shift+Tab — назад, стрелки — по сетке), отпустите Alt — откроется выбранное окно. Esc — отмена, колёсико мыши или крестик — закрыть окно. Если впереди окно администратора, Windows покажет свой Alt+Tab.'))));
+        }
+        draw();
+      });
     }
 
     function main() {

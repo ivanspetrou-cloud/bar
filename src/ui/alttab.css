@@ -1,0 +1,83 @@
+/* Переключатель окон Bar (Alt+Tab). Скругления концентричные: панель — --r + 10px при отступе 10px → карточка --r,
+   снимок внутри карточки с отступом 6px → --r − 6px. */
+html, body.at-body { background: transparent; overflow: hidden; width: 100%; height: 100%; margin: 0; }
+.at-body { display: grid; place-items: center; --at-pad: 10px; }
+.at-dim { position: fixed; inset: 0; background: rgba(0,0,0,.28); opacity: 0; transition: opacity .18s ease; }
+.at-body.dim.shown .at-dim { opacity: 1; }
+.at-body:not(.dim) .at-dim { background: transparent; }
+
+.at-panel {
+  position: relative; max-width: 86vw; max-height: 80vh; overflow: hidden auto; padding: var(--at-pad);
+  border-radius: calc(var(--r) + var(--at-pad)); background: var(--bg); color: var(--fg);
+  box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--line);
+  opacity: 0; transform: scale(.96) translateY(8px); pointer-events: none;
+  transition: opacity .16s ease, transform .3s var(--spring);
+  scrollbar-width: none;
+}
+.at-body.shown .at-panel { opacity: 1; transform: none; pointer-events: auto; }
+.at-body.leave .at-panel { transition: opacity .12s ease, transform .16s ease-in; transform: scale(.98); }
+
+.at-grid { display: grid; gap: 6px; position: relative; z-index: 1; }
+
+/* выделение — отдельный слой, который плавно переезжает к выбранной карточке */
+.at-sel {
+  position: absolute; border-radius: var(--r); background: var(--card-hi);
+  box-shadow: inset 0 0 0 2px var(--acc-g); opacity: 0; pointer-events: none; z-index: 0;
+  transition: transform .26s var(--spring), width .26s var(--spring), height .26s var(--spring), opacity .15s;
+}
+/* выделение считается от левого верхнего угла панели, а не от отступа */
+.at-sel { left: 0; top: 0; }
+
+.at-card {
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: var(--r);
+  cursor: pointer; color: var(--fg); transition: transform .2s var(--spring);
+}
+.at-card:active { transform: scale(.97); }
+.at-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 2px; }
+.at-ic { width: 18px; height: 18px; flex: none; display: grid; place-items: center; }
+.at-ic img { width: 100%; height: 100%; object-fit: contain; }
+.at-letter { width: 100%; height: 100%; border-radius: 5px; background: var(--ctl); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.at-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); font-weight: 600; color: var(--fg-2); }
+.at-card.on .at-t { color: var(--fg); }
+
+/* миниатюры */
+.at-shot {
+  width: var(--at-w); height: calc(var(--at-w) * .6); border-radius: calc(var(--r) - 6px); background: var(--card);
+  overflow: hidden; display: grid; place-items: center; position: relative;
+}
+.at-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .2s; }
+.at-shot img.ok { opacity: 1; }
+.at-shot-ic { width: 40%; height: 40%; display: grid; place-items: center; opacity: .55; }
+.at-shot-ic .at-ic { width: 44px; height: 44px; }
+.at-shot:has(img.ok) .at-shot-ic { opacity: 0; }
+.at-shot.min::after { content: "Свёрнуто"; position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: max(3px, calc(var(--r) - 12px)); background: var(--bg); color: var(--fg-2); font-size: 11px; }
+.at-head { width: var(--at-w); }
+
+/* размеры */
+[data-size="s"] { --at-w: 168px; }
+[data-size="m"] { --at-w: 220px; }
+[data-size="l"] { --at-w: 290px; }
+
+/* вид «значки»: крупный значок и подпись под ним */
+[data-view="icons"] .at-card { align-items: center; width: calc(var(--at-w) * .5); padding: 12px 6px 8px; }
+[data-view="icons"] .at-head { flex-direction: column; width: 100%; gap: 6px; }
+[data-view="icons"] .at-ic { width: calc(var(--at-w) * .22); height: calc(var(--at-w) * .22); }
+[data-view="icons"] .at-t { width: 100%; text-align: center; }
+/* вид «список»: строки */
+[data-view="list"] .at-card { flex-direction: row; padding: 8px 10px; }
+[data-view="list"] .at-head { width: calc(var(--at-w) * 1.8); }
+[data-view="list"] .at-ic { width: 20px; height: 20px; }
+[data-view="list"] .at-t { font-size: var(--fs-body, 13px); }
+
+/* закрыть окно — кружок в углу при наведении */
+.at-x {
+  position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ctl); color: var(--fg-2); cursor: pointer; opacity: 0; transform: scale(.8);
+  transition: opacity .15s, transform .2s var(--spring), background .15s, color .15s; z-index: 2;
+}
+.at-x svg.i { width: 13px; height: 13px; }
+.at-card:hover .at-x { opacity: 1; transform: none; }
+.at-x:hover { background: var(--red); color: var(--on-red); }
+[data-view="list"] .at-x { top: 50%; margin-top: -11px; right: 8px; }
+
+.at-empty { color: var(--mut); padding: 18px 26px; }

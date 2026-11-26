@@ -1101,3 +1101,7 @@ select.field:hover, select:hover { background: var(--ctl-hi); }
 /* чипы: подсветка плавно, нажатие — отклик */
 .chip { transition: background .15s, transform .15s ease-out; }
 .chip:active { transform: scale(.97); }
+
+/* настройки Alt+Tab: пока переключатель выключен, его опции приглушены */
+.at-opts { transition: opacity .2s ease; }
+.at-opts.off { opacity: .45; pointer-events: none; }
