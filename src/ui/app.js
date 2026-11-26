@@ -3053,7 +3053,6 @@ async function gameExit(m) {
   if (!Game.on) return;
   Game.busy = true;
   const from = Game.rect || cornerRect(200, HUD_H, Game.corner);
-  renderBar(); // ширина полоски — по нынешнему содержимому, чтобы после посадки она уже не менялась
   const pillW = parseFloat(island.style.getPropertyValue('--pill-w')) || 196;
   const dx = parseFloat(getComputedStyle(island).getPropertyValue('--oled-dx')) || 0;
   const to = { x: (m.w - pillW) / 2 + dx, y: 0, w: pillW, h: 32 }; // ровно туда, где встанет обычный нотч

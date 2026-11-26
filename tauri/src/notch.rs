@@ -91,15 +91,6 @@ impl Notch {
         let Ok(hw) = self.win.hwnd() else { return };
         let h = windows::Win32::Foundation::HWND(hw.0 as *mut _);
         unsafe {
-            // окно без рамки только «на вид»: у него остаются стили заголовка, и с регионом Windows рисует
-            // системную рамку с кнопками. Убираем их совсем (окно-«всплывашка»); Tauri может вернуть — проверяем каждый раз.
-            use windows::Win32::UI::WindowsAndMessaging::*;
-            let st = GetWindowLongPtrW(h, GWL_STYLE) as u32;
-            let bad = (WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME).0;
-            if st & bad != 0 {
-                SetWindowLongPtrW(h, GWL_STYLE, ((st & !bad) | WS_POPUP.0) as isize);
-                let _ = SetWindowPos(h, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            }
             match r {
                 Some((x, y, w, ht)) => { let rg = CreateRectRgn(x, y, x + w, y + ht); let _ = SetWindowRgn(h, Some(rg), true); } // регион теперь принадлежит окну
                 None => { let _ = SetWindowRgn(h, Some(HRGN::default()), true); }
@@ -206,8 +197,6 @@ impl Notch {
         let p = cursor();
         let on_mine = self.display().map_or(false, |m| inside(&m, p)); // до блокировки: display() сам её берёт
         let mut st = self.st.lock().unwrap();
-        // в игре отсчёт простоя стоит: после выхода нотч не должен сразу уезжать за край
-        if crate::game::active() { st.idle_last = Some(Instant::now()); st.idle_pt = p; }
         if secs <= 0.0 || crate::game::active() { if st.idle_hidden { st.idle_hidden = false; drop(st); ctx::emit("idle", false); } return; }
         let moved = p != st.idle_pt;
         st.idle_pt = p;
