@@ -4,7 +4,7 @@
 # на диске новый Bar.exe, помощник Alt+Tab (если был) снова запущен.
 # Запуск: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-check.ps1 -Version 0.6.13
 # Код выхода 0 — всё в порядке, 1 — обновление сломано (релиз выпускать нельзя), 2 — проверку нельзя запускать сейчас.
-param([Parameter(Mandatory)][string]$Version, [string]$Installer, [string]$From)  # From — прошлая версия, по умолчанию последний релиз
+param([Parameter(Mandatory)][string]$Version, [string]$Installer, [string]$From, [switch]$Force)  # From — прошлая версия, по умолчанию последний релиз
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Installer) { $Installer = Join-Path $root "dist\Bar-Setup-$Version.exe" }
@@ -39,8 +39,39 @@ function RunInstaller($path) {
 }
 
 # 0. не мешать игре
-$game = Get-Process dota2, cs2 -ErrorAction SilentlyContinue
-if ($game) { Write-Host "Запущена игра ($($game[0].Name)) — проверка обновления перезапускает Bar, сейчас нельзя." -ForegroundColor Yellow; exit 2 }
+#    игра — это: (а) любое окно во весь экран на переднем плане (так игру определяет сам Bar);
+#    (б) процесс из папки игр Steam/Epic/Riot/GOG/Xbox/Battle.net/Ubisoft/EA; (в) процесс из списка игр, которые Bar уже видел
+function GameRunning {
+    Add-Type -Namespace W -Name U -MemberDefinition @'
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern bool IsZoomed(System.IntPtr h);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint pid);
+public struct RECT { public int L, T, R, B; }
+'@ -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.Windows.Forms
+    $skip = 'explorer', 'Bar', 'msedgewebview2', 'ShellExperienceHost', 'SearchHost', 'StartMenuExperienceHost', 'LockApp'
+    $fg = [W.U]::GetForegroundWindow(); $r = New-Object W.U+RECT; $fpid = 0
+    if ($fg -ne [IntPtr]::Zero -and [W.U]::GetWindowRect($fg, [ref]$r)) {
+        [void][W.U]::GetWindowThreadProcessId($fg, [ref]$fpid)
+        $p = Get-Process -Id $fpid -ErrorAction SilentlyContinue
+        $full = [System.Windows.Forms.Screen]::AllScreens | Where-Object { $b = $_.Bounds; $r.L -le $b.Left -and $r.T -le $b.Top -and $r.R -ge $b.Right -and $r.B -ge $b.Bottom }
+        # развёрнутое окно (Claude, браузер) тоже закрывает экран, когда панель задач скрыта, — это не игра
+        if ($full -and -not [W.U]::IsZoomed($fg) -and $p -and $skip -notcontains $p.Name) { return "$($p.Name) (во весь экран)" }
+    }
+    $dirs = '\steamapps\common\', '\Epic Games\', '\Riot Games\', '\GOG Games\', '\XboxGames\', '\Battle.net\', '\Blizzard\', '\Ubisoft Game Launcher\games\', '\EA Games\', '\Electronic Arts\'
+    $seen = @()
+    try { $seen = @((Get-Content (Join-Path $env:APPDATA 'Bar\settings.json') -Raw -Encoding UTF8 | ConvertFrom-Json).game.seen) | Where-Object { $_ -and $_ -notlike "$env:TEMP*" -and $_ -notlike '*\WindowsApps\*' } } catch {}
+    foreach ($p in Get-Process) {
+        $path = $p.Path; if (-not $path) { continue }
+        if ('wallpaper32', 'wallpaper64', 'webwallpaper32', 'ui32' -contains $p.Name) { continue }  # Wallpaper Engine лежит в steamapps, но не игра
+        if ($dirs | Where-Object { $path -like "*$_*" }) { return $p.Name }
+        if ($seen -contains $path) { return $p.Name }
+    }
+    $null
+}
+$game = GameRunning
+if ($game -and -not $Force) { Write-Host "Запущена игра: $game — проверка обновления перезапускает Bar, сейчас нельзя (-Force — всё равно запустить)." -ForegroundColor Yellow; exit 2 }
 if (-not (Test-Path $Installer)) { Write-Host "Нет установщика $Installer"; exit 2 }
 
 # 1. прошлая версия — последний опубликованный релиз
