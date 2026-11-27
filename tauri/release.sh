@@ -17,4 +17,4 @@ const sha=c.createHash('sha512').update(b).digest('base64');
 fs.writeFileSync('dist/latest.yml',['version: '+v,'files:','  - url: '+name,'    sha512: '+sha,'    size: '+b.length,'path: '+name,'sha512: '+sha,\"releaseDate: '\"+new Date().toISOString()+\"'\",''].join('\n'));
 console.log(name, (b.length/1048576).toFixed(1)+' МБ')"
 # проверка обновления «прошлый релиз → этот» (как кнопка «Скачать»); провал — релиз не выпускать. SKIP_UPDATE_CHECK=1 — пропустить
-[ -n "$SKIP_UPDATE_CHECK" ] || powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/update-check.ps1 -Version "$VER"
+[ -n "$SKIP_UPDATE_CHECK" ] || powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/update-check.ps1 -Version "$VER" ${UPDATE_CHECK_FORCE:+-Force}

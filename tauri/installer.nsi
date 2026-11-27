@@ -75,7 +75,7 @@ Section "Bar"
   ; автозапуск уже включён — путь к Bar.exe тот же; обновить его на всякий случай
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "app.bar.notch"
   ${If} $0 != ""
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "app.bar.notch" '"$INSTDIR\Bar.exe"'
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "app.bar.notch" '"$INSTDIR\Bar.exe" --autostart'
   ${EndIf}
 
   ; запуск: обычная установка — всегда; тихая (обновление) — с ключом --force-run
@@ -95,6 +95,7 @@ Section "Uninstall"
   nsExec::Exec 'taskkill /F /T /IM Bar.exe'
   ; задача помощника Alt+Tab (с правами администратора); без прав может не удалиться — тогда просто не запускается
   nsExec::Exec 'schtasks /Delete /TN "Bar Alt+Tab" /F'
+  nsExec::Exec 'schtasks /Delete /TN "Bar" /F'
   Sleep 600
   Delete "$INSTDIR\Bar.exe"
   RMDir /r "$INSTDIR\presentmon"

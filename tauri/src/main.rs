@@ -198,13 +198,18 @@ fn main() {
     if std::env::args().any(|a| a == "--alttab-helper") { alttab::helper_main(); return; }
     // сбой — в журнал (иначе Bar закрывался молча)
     std::panic::set_hook(Box::new(|i| ctx::log(&format!("СБОЙ: {i}"))));
-    ctx::log("запуск Bar");
+    let auto = std::env::args().any(|a| a == shell::AUTOSTART_ARG);
+    ctx::log(if auto { "запуск Bar (автозапуск)" } else { "запуск Bar" });
+    // при входе в Windows задача Планировщика может запустить Bar раньше панели задач — подождать её (до 60 с):
+    // Bar прячет панель задач, держит свой значок трея и ищет окна проводника
+    if auto { for _ in 0..240 { if bar_agent::win::explorer_tray() != 0 { break; } std::thread::sleep(std::time::Duration::from_millis(250)); } }
     wait_old_webview();
     // данные Bar и окно нотча: настройки нужны раньше окна (оно спрашивает монитор)
     let settings = settings::Settings::load();
     ctx::set_settings(settings.clone());
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| { std::thread::spawn(tray::toggle); }))
+        // второй запуск: показать нотч; второй автозапуск (задача + автозагрузка Windows) — ничего не делать
+        .plugin(tauri_plugin_single_instance::init(|_app, args, _cwd| { if !args.iter().any(|a| a == shell::AUTOSTART_ARG) { std::thread::spawn(tray::toggle); } }))
         .plugin(tray::plugin())
         .register_asynchronous_uri_scheme_protocol("barcap", |_ctx, _req, resp| {
             std::thread::spawn(move || resp.respond(tauri::http::Response::builder().header("Content-Type", "application/octet-stream").header("Access-Control-Allow-Origin", "*").body(capture::bytes()).unwrap()));
@@ -219,6 +224,8 @@ fn main() {
             let pid = std::process::id();
             // первая установка: Bar сам включается в автозапуск (выключить — Настройки → Основное)
             if settings.first_run && ctx::DATA == "Bar" { shell::set_autostart(true); }
+            // автозапуск уже включён (в том числе из прошлых версий) — перевести на задачу Планировщика и ключ --autostart
+            else if ctx::DATA == "Bar" && shell::autostart() { shell::set_autostart(true); }
             let init = migrate::init_script(&ctx::data_dir());
             let notch = notch::Notch::create(&h, &init)?;
             let w = |n| worker::Worker::spawn(n, pid);

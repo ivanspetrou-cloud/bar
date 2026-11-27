@@ -99,9 +99,15 @@ pub fn popup_menu(owner: &str, items: &Value) -> Value {
     match rx.recv() { Ok(n) if n > 0 => items.get(n - 1).map(|it| it["id"].clone()).unwrap_or(Value::Null), _ => Value::Null }
 }
 
-// ---------- автозапуск: та же запись, что у Electron-версии (HKCU\…\Run, «app.bar.notch» → путь к Bar.exe) ----------
+// ---------- автозапуск ----------
+// Запись в HKCU\…\Run (как у Electron-версии) Windows запускает в общей очереди автозагрузки — после Discord, Steam
+// и прочих, иногда через минуту после входа. Поэтому главный путь — задача Планировщика «Bar» на вход этого
+// пользователя (без прав администратора, без очереди). Запись Run остаётся запасной (если задачу не дала создать
+// политика) и признаком «автозапуск включён». Оба запуска — с ключом --autostart: второй Bar молча выходит.
 const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_NAME: &str = "app.bar.notch";
+const TASK: &str = "Bar";
+pub const AUTOSTART_ARG: &str = "--autostart";
 fn exe() -> String { std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default() }
 pub fn autostart() -> bool {
     use windows::Win32::System::Registry::*;
@@ -116,12 +122,45 @@ pub fn set_autostart(on: bool) {
         let mut k = HKEY::default();
         if RegCreateKeyExW(HKEY_CURRENT_USER, &HSTRING::from(RUN), None, PCWSTR::null(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, None, &mut k, None).is_err() { return; }
         if on {
-            let v: Vec<u16> = format!("\"{}\"", exe()).encode_utf16().chain(Some(0)).collect();
+            let v: Vec<u16> = format!("\"{}\" {AUTOSTART_ARG}", exe()).encode_utf16().chain(Some(0)).collect();
             let b = std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 2);
             let _ = RegSetValueExW(k, &HSTRING::from(RUN_NAME), None, REG_SZ, Some(b));
         } else { let _ = RegDeleteValueW(k, &HSTRING::from(RUN_NAME)); }
         let _ = RegCloseKey(k);
     }
+    std::thread::spawn(move || if on { ensure_task(); } else { schtasks(&["/Delete", "/TN", TASK, "/F"]); });
+}
+fn schtasks(a: &[&str]) -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("schtasks").args(a).creation_flags(0x0800_0000).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().map_or(false, |s| s.success())
+}
+fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
+/// задача «Bar» на вход пользователя: создать или обновить (путь к Bar.exe). При запуске Bar и при включении автозапуска
+pub fn ensure_task() {
+    if !autostart() { return; }
+    let user = format!("{}\\{}", std::env::var("USERDOMAIN").unwrap_or_default(), std::env::var("USERNAME").unwrap_or_default());
+    let xml = format!(r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Bar: запуск при входе в Windows</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{u}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{u}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{e}</Command><Arguments>{AUTOSTART_ARG}</Arguments></Exec></Actions>
+</Task>"#, u = xml_esc(&user), e = xml_esc(&exe()));
+    let f = std::env::temp_dir().join("bar-autostart-task.xml");
+    let mut b: Vec<u8> = vec![0xFF, 0xFE];
+    for c in xml.encode_utf16() { b.extend(c.to_le_bytes()); }
+    if std::fs::write(&f, b).is_err() { return; }
+    let ok = schtasks(&["/Create", "/TN", TASK, "/XML", &f.to_string_lossy(), "/F"]);
+    let _ = std::fs::remove_file(&f);
+    crate::ctx::log(if ok { "автозапуск: задача Планировщика готова" } else { "автозапуск: задачу создать не удалось — остаётся автозагрузка Windows" });
 }
 
 // ---------- диктофон ----------

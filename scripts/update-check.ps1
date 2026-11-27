@@ -4,9 +4,29 @@
 # на диске новый Bar.exe, помощник Alt+Tab (если был) снова запущен.
 # Запуск: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-check.ps1 -Version 0.6.13
 # Код выхода 0 — всё в порядке, 1 — обновление сломано (релиз выпускать нельзя), 2 — проверку нельзя запускать сейчас.
-param([Parameter(Mandatory)][string]$Version, [string]$Installer, [string]$From, [switch]$Force)  # From — прошлая версия, по умолчанию последний релиз
+param([Parameter(Mandatory)][string]$Version, [string]$Installer, [string]$From, [switch]$Force, [switch]$Detached)  # From — прошлая версия, по умолчанию последний релиз
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+# Консоль Claude (приложение из Microsoft Store) подменяет %APPDATA% и HKCU своей виртуальной копией — и для всех
+# программ, запущенных из неё. Bar, запущенный оттуда, пишет настройки и журнал не туда, а установщик — не в тот
+# реестр. Поэтому проверка всегда перезапускает себя через WMI: процесс от службы WMI живёт вне этой песочницы.
+$outLog = Join-Path $root 'dist\update-check.log'; $outCode = Join-Path $root 'dist\update-check.code'
+if (-not $Detached) {
+    Remove-Item $outLog, $outCode -ErrorAction SilentlyContinue
+    $a = "-Version `"$Version`"" + $(if ($Installer) { " -Installer `"$Installer`"" }) + $(if ($From) { " -From `"$From`"" }) + $(if ($Force) { ' -Force' })
+    $cmd = "cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Detached $a > `"$outLog`" 2>&1"
+    # окно консоли скрыто (ShowWindow = 0), иначе у пользователя вылезает чёрное окно cmd
+    $si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+    $r = Invoke-CimMethod Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = $root; ProcessStartupInformation = $si }
+    if ($r.ReturnValue -ne 0) { Write-Host "не удалось запустить проверку вне песочницы ($($r.ReturnValue))"; exit 2 }
+    $p = Get-Process -Id $r.ProcessId -ErrorAction SilentlyContinue
+    if ($p) { $p.WaitForExit(300000) | Out-Null }
+    if (Test-Path $outLog) { Get-Content $outLog -Encoding UTF8 }
+    $code = if (Test-Path $outCode) { [int](Get-Content $outCode) } else { 1 }
+    exit $code
+}
+function Done($c) { Set-Content $outCode $c; exit $c }
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 if (-not $Installer) { $Installer = Join-Path $root "dist\Bar-Setup-$Version.exe" }
 $log = Join-Path $env:APPDATA 'Bar\crash.log'
 $exe = Join-Path $env:LOCALAPPDATA 'Programs\bar-notch\Bar.exe'
@@ -32,7 +52,12 @@ function WaitStarted($ver, $t, $sec) {
 }
 function RunInstaller($path) {
     # как updater.rs: установщик запускается, пока Bar ещё открыт
-    $p = Start-Process $path -ArgumentList '/S', '--updated', '--force-run' -PassThru
+    # отдельным процессом через WMI: без общей консоли с проверкой (иначе Ctrl+C от дочерних процессов установщика обрывал её)
+    # (без скрытия окна: установщик тихий и окон не показывает, а скрытие передалось бы запущенному им Bar)
+    $r = Invoke-CimMethod Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$path`" /S --updated --force-run" }
+    $p = Get-Process -Id $r.ProcessId -ErrorAction SilentlyContinue
+    if ($r.ReturnValue -ne 0 -or -not $p) { Fail "не удалось запустить $(Split-Path -Leaf $path)"; return $false }
+    $null = $p.Handle  # чтобы потом прочитать код выхода
     if (-not $p.WaitForExit(90000)) { Fail "установщик $(Split-Path -Leaf $path) не завершился за 90 с"; return $false }
     if ($p.ExitCode -ne 0) { Fail "установщик $(Split-Path -Leaf $path) вернул код $($p.ExitCode)"; return $false }
     $true
@@ -71,14 +96,14 @@ public struct RECT { public int L, T, R, B; }
     $null
 }
 $game = GameRunning
-if ($game -and -not $Force) { Write-Host "Запущена игра: $game — проверка обновления перезапускает Bar, сейчас нельзя (-Force — всё равно запустить)." -ForegroundColor Yellow; exit 2 }
-if (-not (Test-Path $Installer)) { Write-Host "Нет установщика $Installer"; exit 2 }
+if ($game -and -not $Force) { Write-Host "Запущена игра: $game — проверка обновления перезапускает Bar, сейчас нельзя (-Force — всё равно запустить)." -ForegroundColor Yellow; Done 2 }
+if (-not (Test-Path $Installer)) { Write-Host "Нет установщика $Installer"; Done 2 }
 
 # 1. прошлая версия — последний опубликованный релиз
 $tag = if ($From) { 'v' + $From.TrimStart('v') } else { '' }
 $ghArgs = @('release', 'view') + @($tag | Where-Object { $_ }) + @('-R', 'ivanspetrou-cloud/bar', '--json', 'tagName,assets')
 $rel = (& gh @ghArgs) -join "`n" | ConvertFrom-Json
-if (-not $rel) { Write-Host 'Не удалось получить релиз с GitHub'; exit 2 }
+if (-not $rel) { Write-Host 'Не удалось получить релиз с GitHub'; Done 2 }
 $asset = $rel.assets | Where-Object { $_.name -like 'Bar-Setup-*.exe' } | Select-Object -First 1
 $prevVer = $rel.tagName.TrimStart('v')
 $prevDir = Join-Path $root "dist\prev-$prevVer"
@@ -128,6 +153,6 @@ if (Test-Path $built) {
     if ((Get-FileHash $exe).Hash -eq (Get-FileHash $built).Hash) { Ok 'Bar.exe на диске — новый' } else { Fail 'Bar.exe на диске не совпадает с собранным (файл не заменился?)' }
 }
 
-if ($fails.Count) { Write-Host "ОБНОВЛЕНИЕ СЛОМАНО ($($fails.Count)) — релиз не выпускать" -ForegroundColor Red; exit 1 }
+if ($fails.Count) { Write-Host "ОБНОВЛЕНИЕ СЛОМАНО ($($fails.Count)) — релиз не выпускать" -ForegroundColor Red; Done 1 }
 Write-Host 'Обновление работает' -ForegroundColor Green
-exit 0
+Done 0
