@@ -86,11 +86,15 @@ fn download() {
 fn install() {
     let Some(f) = FILE.lock().unwrap().clone() else { return };
     set(json!({ "state": "installing" }));
-    log("install requested");
+    log(&format!("install requested {}", f.display()));
     crate::taskbar::stop();
+    // помощник Alt+Tab (с правами администратора) держит Bar.exe — закрыть его до установщика
+    crate::alttab::quit_helper();
     // тихая установка; установщик сам закроет Bar, если тот ещё работает, и запустит новую версию
-    if std::process::Command::new(&f).args(["/S", "--updated", "--force-run"]).spawn().is_ok() { std::thread::sleep(Duration::from_millis(400)); ctx::app().exit(0); }
-    else { set(json!({ "state": "error", "error": "Установка не запустилась — скачайте установщик с GitHub", "manual": true })); }
+    match std::process::Command::new(&f).args(["/S", "--updated", "--force-run"]).spawn() {
+        Ok(_) => { log("installer started"); std::thread::sleep(Duration::from_millis(400)); ctx::app().exit(0); }
+        Err(e) => { log(&format!("installer start error {e}")); set(json!({ "state": "error", "error": "Установка не запустилась — скачайте установщик с GitHub", "manual": true })); }
+    }
 }
 
 pub fn start() {

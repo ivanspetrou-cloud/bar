@@ -28,14 +28,26 @@ VIAddVersionKey "LegalCopyright" "ivanspetrou-cloud"
 Page instfiles
 UninstPage instfiles
 
+; журнал установки — в тот же update.log, что пишет обновление в Bar: по нему видно, где обновление застряло
+!macro LOG msg
+  CreateDirectory "$APPDATA\Bar"
+  FileOpen $9 "$APPDATA\Bar\update.log" a
+  FileSeek $9 0 END
+  FileWrite $9 "installer ${VER}: ${msg}$\r$\n"
+  FileClose $9
+!macroend
+
 Section "Bar"
+  !insertmacro LOG "start"
   ; закрыть работающий Bar (и прежнюю Electron-версию)
   nsExec::Exec 'taskkill /F /T /IM Bar.exe'
   ; процессы движка окон (msedgewebview2) именно Bar — по его папке данных; чужие (Teams, Edge) не трогаем.
   ; Пока они живы, новый Bar с другими параметрами движка не может создать окна и тихо закрывается
   nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$q = { Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $$_.CommandLine -like '*app.bar.notch*' } }; & $$q | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }; for ($$i = 0; $$i -lt 25; $$i++) { if (-not (& $$q)) { break }; Start-Sleep -Milliseconds 200 }"`
-  ; помощник Alt+Tab (с правами администратора) закрывается сам следом за Bar — ждём, пока освободит Bar.exe
-  Sleep 1200
+  ; помощник Alt+Tab (с правами администратора) этот установщик закрыть не может — он закрывается сам следом за Bar.
+  ; Ждём, пока закроются все Bar.exe (до 10 с), иначе Bar.exe не заменится и останется старая версия
+  nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "for ($$i = 0; $$i -lt 50; $$i++) { if (-not (Get-Process Bar -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 200 }"`
+  Sleep 300
   ; файлы прежней версии — только файлы программы в её папке
   RMDir /r "$INSTDIR\locales"
   RMDir /r "$INSTDIR\resources"
@@ -49,7 +61,23 @@ Section "Bar"
   RMDir /r "$LOCALAPPDATA\bar-notch-updater"
 
   SetOutPath "$INSTDIR"
+  ; Bar.exe ещё занят — повторять до 15 с, а не молча оставить старый файл
+  SetOverwrite try
+  StrCpy $8 0
+  bar_retry:
+  ClearErrors
   File "/oname=Bar.exe" "${EXE}"
+  ${If} ${Errors}
+    IntOp $8 $8 + 1
+    ${If} $8 < 30
+      Sleep 500
+      Goto bar_retry
+    ${EndIf}
+    !insertmacro LOG "Bar.exe is busy - NOT replaced"
+  ${Else}
+    !insertmacro LOG "Bar.exe replaced"
+  ${EndIf}
+  SetOverwrite on
   SetOutPath "$INSTDIR\presentmon"
   File "${PM}\PresentMon.exe"
   File "${PM}\LICENSE.txt"
@@ -78,6 +106,7 @@ Section "Bar"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "app.bar.notch" '"$INSTDIR\Bar.exe" --autostart'
   ${EndIf}
 
+  !insertmacro LOG "done, starting Bar"
   ; запуск: обычная установка — всегда; тихая (обновление) — с ключом --force-run
   ${GetParameters} $R0
   ClearErrors

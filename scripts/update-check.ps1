@@ -145,6 +145,8 @@ if ($fallback) { Fail "движок окон не принял параметр�
 $crash = $lines | Where-Object { $_ -like '*СБОЙ*' }
 if ($crash) { Fail "сбой в журнале: $($crash[0])" } else { Ok 'сбоев в журнале нет' }
 
+$ulog = Join-Path $env:APPDATA 'Bar\update.log'
+if ((Test-Path $ulog) -and (Get-Content $ulog -Tail 20 | Where-Object { $_ -like "installer ${Version}: Bar.exe is busy*" })) { Fail 'установщик не смог заменить Bar.exe (занят)' }
 $dv = (Get-ItemProperty $ukey -ErrorAction SilentlyContinue).DisplayVersion
 if ($dv -eq $Version) { Ok "в системе версия $dv" } else { Fail "в системе записана версия «$dv», а не $Version" }
 # на диске именно новый Bar.exe (не остался старый, занятый процессом)

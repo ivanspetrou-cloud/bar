@@ -192,12 +192,15 @@ pub fn start(app: &tauri::AppHandle) {
     let (tx, rx) = channel();
     let _ = TX.set(Mutex::new(tx));
     std::thread::spawn(move || worker(rx));
+    { let c = cfg(); ctx::log(&format!("Alt+Tab: включён={} окна администратора={}", c["on"] != false, c["admin"] == true)); }
     std::thread::spawn(|| loop {
         let allow = compute_allow();
         ALLOW.store(allow, Ordering::Relaxed);
         // помощник с правами администратора: есть ли он, и передать ему «перехватывать ли»
         let h = helper_hwnd();
+        if h.is_some() != HELPER_ON.load(Ordering::Relaxed) { ctx::log(if h.is_some() { "Alt+Tab: помощник с правами администратора работает" } else { "Alt+Tab: помощник с правами администратора закрылся" }); }
         HELPER_ON.store(h.is_some(), Ordering::Relaxed);
+        if h.is_none() && allow { note_elevated_foreground(); }
         if let Some(h) = h { unsafe { let _ = PostMessageW(Some(h), WM_AT_ALLOW, WPARAM(allow as usize), LPARAM(0)); } }
         std::thread::sleep(Duration::from_millis(200));
     });
@@ -206,6 +209,7 @@ pub fn start(app: &tauri::AppHandle) {
     std::thread::spawn(|| unsafe {
         let inst = GetModuleHandleW(None).unwrap_or_default();
         let mut hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(kb), Some(inst.into()), 0).ok();
+        if hook.is_none() { ctx::log(&format!("Alt+Tab: перехватчик клавиш не установился: {}", windows::core::Error::from_thread())); }
         // раз в 30 с — заново: если Windows сняла перехватчик (например, ПК подвис), он вернётся сам
         let _ = SetTimer(None, 0, 30_000, None);
         let mut msg = MSG::default();
@@ -323,11 +327,12 @@ fn create_helper_task() -> bool {
             lpVerb: windows::core::PCWSTR(verb.as_ptr()), lpFile: windows::core::PCWSTR(file.as_ptr()), lpParameters: windows::core::PCWSTR(par.as_ptr()),
             nShow: SW_HIDE.0, ..Default::default()
         };
-        if ShellExecuteExW(&mut i).is_err() || i.hProcess.is_invalid() { return false; } // отказались в окне Windows
+        if ShellExecuteExW(&mut i).is_err() || i.hProcess.is_invalid() { ctx::log("Alt+Tab: в окне Windows отказались дать права администратора"); return false; }
         WaitForSingleObject(i.hProcess, 20_000);
         let mut code = 1u32;
         let _ = GetExitCodeProcess(i.hProcess, &mut code);
         let _ = windows::Win32::Foundation::CloseHandle(i.hProcess);
+        ctx::log(&format!("Alt+Tab: задача помощника {}", if code == 0 { "создана".to_string() } else { format!("не создана (код {code})") }));
         code == 0
     }
 }
@@ -335,7 +340,43 @@ fn create_helper_task() -> bool {
 fn run_helper_task() {
     use std::os::windows::process::CommandExt;
     if helper_hwnd().is_some() { return; }
-    let _ = std::process::Command::new("schtasks").args(["/Run", "/TN", TASK]).creation_flags(0x0800_0000).status();
+    let ok = std::process::Command::new("schtasks").args(["/Run", "/TN", TASK]).creation_flags(0x0800_0000)
+        .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().map_or(false, |s| s.success());
+    if !ok { ctx::log("Alt+Tab: задачу помощника запустить не удалось (её нет? выключите и включите «Окна администратора»)"); }
+}
+/// закрыть помощника и дождаться (до 3 с): перед обновлением — он с правами администратора держит Bar.exe,
+/// и установщик (с обычными правами) не может ни закрыть его, ни заменить файл
+pub fn quit_helper() {
+    let Some(h) = helper_hwnd() else { return };
+    unsafe { let _ = PostMessageW(Some(h), WM_AT_QUIT, WPARAM(0), LPARAM(0)); }
+    for _ in 0..30 { if helper_hwnd().is_none() { return; } std::thread::sleep(Duration::from_millis(100)); }
+    ctx::log("Alt+Tab: помощник не закрылся за 3 с");
+}
+/// окно на переднем плане запущено с правами администратора, а помощника нет — Alt+Tab Bar над ним не сработает.
+/// В журнал один раз на программу: так видно, почему у кого-то в игре открывается Alt+Tab Windows
+fn note_elevated_foreground() {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::*;
+    static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+        if pid == 0 || pid == std::process::id() { return; }
+        let Ok(p) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return };
+        let mut t = windows::Win32::Foundation::HANDLE::default();
+        let elevated = OpenProcessToken(p, windows::Win32::Security::TOKEN_QUERY, &mut t).is_err();
+        if !elevated { let _ = CloseHandle(t); }
+        let mut buf = [0u16; 512]; let mut n = buf.len() as u32;
+        let name = if QueryFullProcessImageNameW(p, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut n).is_ok() {
+            String::from_utf16_lossy(&buf[..n as usize]).rsplit('\\').next().unwrap_or("").to_string()
+        } else { String::new() };
+        let _ = CloseHandle(p);
+        if !elevated || name.is_empty() { return; }
+        let mut seen = SEEN.lock().unwrap();
+        if seen.contains(&name) { return; }
+        seen.push(name.clone());
+        ctx::log(&format!("Alt+Tab: {name} запущен с правами администратора — над ним работает Alt+Tab Windows (нужна галочка «Окна администратора», окна администратора={})", cfg()["admin"] == true));
+    }
 }
 
 // ---------- сам помощник (Bar.exe --alttab-helper, с правами администратора) ----------
